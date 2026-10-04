@@ -4,8 +4,8 @@
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 let photoSamples = [];
 let keywords = [];   /* [{ text, enabled }] */
@@ -30,7 +30,7 @@ async function load() {
     settings: {}, keywords: [], photoSamples: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
   const s = data.settings || {};
-  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'fuzzy'); });
+  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { if (id in s) $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
@@ -123,11 +123,15 @@ async function fileToSample(file) {
     i.onerror = rej;
     i.src = dataUrl;
   });
+  let embedding = null;
+  try { embedding = await window.YB.semantic.embed(dataUrl); }
+  catch (e) { console.warn('[YB] SigLIP sample embedding unavailable:', e.message); }
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
     hash: window.YB.image.dhash(img),
     phash: window.YB.image.phash(img),
+    embedding,
     /* храним уменьшенный превью, чтобы не раздувать storage */
     dataUrl: await thumbnailDataUrl(img, 64)
   };
