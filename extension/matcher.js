@@ -55,8 +55,9 @@
     if (!fuzzy || k.length < 5 || t.length < 2) return false;
     if (t[0] !== k[0] || t[1] !== k[1]) return false;
     if (levenshtein(t, k) <= maxEditDistance(k.length)) return true;
-    /* Полное ключевое слово как начало более длинного слова: напр. "электр" → "электромобиль". */
-    return t.startsWith(k);
+    /* Для режима «абсолютно неинтересно» не используем prefix-match:
+       он даёт опасные совпадения вроде «auto» → «automatic». */
+    return false;
   }
 
   function tokensMatch(textTokens, kwTokens, fuzzy) {
