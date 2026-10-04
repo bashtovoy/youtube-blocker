@@ -1,10 +1,9 @@
-/* semantic-worker.js — local SigLIP text ↔ image embeddings */
+/* semantic-worker.js — local SigLIP text ↔ image semantic matching */
 import {
   env,
   AutoProcessor,
   AutoTokenizer,
-  SiglipVisionModel,
-  SiglipTextModel,
+  SiglipModel,
   RawImage
 } from './lib/transformers.min.js';
 
@@ -20,28 +19,14 @@ if (env.backends?.onnx?.wasm) {
 
 let processor = null;
 let tokenizer = null;
-let visionModel = null;
-let textModel = null;
+let model = null;
 let device = null;
 let initPromise = null;
+let textInputs = null;
+let textLabels = [];
 
-function normalizeVector(data) {
-  const out = Float32Array.from(data);
-  let norm = 0;
-  for (const x of out) norm += x * x;
-  norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < out.length; i++) out[i] /= norm;
-  return Array.from(out);
-}
-
-function splitAndNormalize(data, dims) {
-  const rows = Number(dims?.[0]) || 1;
-  const width = Number(dims?.[1]) || Math.floor(data.length / rows);
-  const out = [];
-  for (let row = 0; row < rows; row++) {
-    out.push(normalizeVector(data.slice(row * width, (row + 1) * width)));
-  }
-  return out;
+function tensorToArray(tensor) {
+  return tensor?.data ? Array.from(tensor.data) : [];
 }
 
 async function init(preferredDevice = 'wasm') {
@@ -50,27 +35,19 @@ async function init(preferredDevice = 'wasm') {
     const tryDevice = async (candidate) => {
       processor = await AutoProcessor.from_pretrained(MODEL_ID);
       tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
-
-      const dtype = candidate === 'webgpu' ? 'q4f16' : 'q4';
-      visionModel = await SiglipVisionModel.from_pretrained(MODEL_ID, {
+      model = await SiglipModel.from_pretrained(MODEL_ID, {
         device: candidate,
-        dtype
-      });
-      textModel = await SiglipTextModel.from_pretrained(MODEL_ID, {
-        device: candidate,
-        dtype
+        dtype: candidate === 'webgpu' ? 'q4f16' : 'q4'
       });
       device = candidate;
     };
-
     try {
       await tryDevice(preferredDevice);
     } catch (firstError) {
       if (preferredDevice !== 'wasm') {
         processor = null;
         tokenizer = null;
-        visionModel = null;
-        textModel = null;
+        model = null;
         await tryDevice('wasm');
       } else {
         throw firstError;
@@ -84,25 +61,44 @@ async function init(preferredDevice = 'wasm') {
   return initPromise;
 }
 
-async function embedImage(source) {
-  const image = await RawImage.read(source);
-  const inputs = await processor(image);
-  const output = await visionModel(inputs);
-  if (!output?.pooler_output?.data) {
-    throw new Error('SigLIP vision model returned no pooler_output');
+async function setTexts(labels) {
+  const list = (labels || []).map(x => String(x || '').trim()).filter(Boolean);
+  if (!list.length) {
+    textInputs = null;
+    textLabels = [];
+    return [];
   }
-  return normalizeVector(output.pooler_output.data);
+  await init();
+  /*
+   * SigLIP was trained with natural-language prompts. Keeping the user's
+   * wording in the visible result while using a photo prompt improves
+   * image/text alignment for short concepts.
+   */
+  const prompts = list.map(x => /^a photo of\b/i.test(x) ? x : 'a photo of ' + x);
+  textInputs = tokenizer(prompts, { padding: 'max_length', truncation: true });
+  textLabels = list;
+  return list;
 }
 
-async function embedTexts(texts) {
-  const list = (texts || []).map(x => String(x || '').trim()).filter(Boolean);
-  if (!list.length) return [];
-  const inputs = tokenizer(list, { padding: 'max_length', truncation: true });
-  const output = await textModel(inputs);
-  if (!output?.pooler_output?.data) {
-    throw new Error('SigLIP text model returned no pooler_output');
+async function scoreImage(source) {
+  await init();
+  if (!textInputs || !textLabels.length) return [];
+  const image = await RawImage.read(source);
+  const imageInputs = await processor(image);
+  const output = await model({ ...textInputs, ...imageInputs });
+  const logits = tensorToArray(output?.logits_per_image);
+  if (logits.length !== textLabels.length) {
+    throw new Error('SigLIP returned unexpected logits shape');
   }
-  return splitAndNormalize(output.pooler_output.data, output.pooler_output.dims);
+  /*
+   * SigLIP uses independent sigmoid scores rather than a softmax over labels.
+   * Return both calibrated probability and raw logit for diagnostics.
+   */
+  return textLabels.map((text, i) => {
+    const logit = logits[i];
+    const probability = 1 / (1 + Math.exp(-logit));
+    return { text, score: probability, logit };
+  });
 }
 
 self.onmessage = async (event) => {
@@ -111,14 +107,12 @@ self.onmessage = async (event) => {
     if (msg.type === 'init') {
       const ready = await init(msg.device || (self.navigator?.gpu ? 'webgpu' : 'wasm'));
       self.postMessage({ type: 'ready', id: msg.id, ...ready });
-    } else if (msg.type === 'embed-image') {
-      await init(msg.device || (self.navigator?.gpu ? 'webgpu' : 'wasm'));
-      const vector = await embedImage(msg.source);
-      self.postMessage({ type: 'image-embedding', id: msg.id, vector });
-    } else if (msg.type === 'embed-texts') {
-      await init(msg.device || (self.navigator?.gpu ? 'webgpu' : 'wasm'));
-      const vectors = await embedTexts(msg.texts);
-      self.postMessage({ type: 'text-embeddings', id: msg.id, vectors });
+    } else if (msg.type === 'set-texts') {
+      const labels = await setTexts(msg.texts);
+      self.postMessage({ type: 'texts-ready', id: msg.id, labels });
+    } else if (msg.type === 'score-image') {
+      const scores = await scoreImage(msg.source);
+      self.postMessage({ type: 'image-scores', id: msg.id, scores });
     } else if (msg.type === 'ping') {
       self.postMessage({ type: 'pong', id: msg.id, device, modelId: MODEL_ID });
     }
@@ -130,4 +124,3 @@ self.onmessage = async (event) => {
     });
   }
 };
-
