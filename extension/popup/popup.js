@@ -27,7 +27,7 @@ function normalizeKeywords(list) {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], photoSamples: [], blockedCount: 0
+    settings: {}, keywords: [], photoSamples: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
   const s = data.settings || {};
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'fuzzy'); });
@@ -36,7 +36,8 @@ async function load() {
   renderKeywords();
   photoSamples = data.photoSamples || [];
   renderSamples();
-  $('blocked').textContent = data.blockedCount ? `скрыто: ${data.blockedCount}` : '';
+  const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
+  $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · локально: ${hid}` : '';
 }
 
 function renderKeywords() {
@@ -126,6 +127,7 @@ async function fileToSample(file) {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
     hash: window.YB.image.dhash(img),
+    phash: window.YB.image.phash(img),
     /* храним уменьшенный превью, чтобы не раздувать storage */
     dataUrl: await thumbnailDataUrl(img, 64)
   };

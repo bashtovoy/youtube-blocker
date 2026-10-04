@@ -1,8 +1,8 @@
-/* image.js — загрузка изображений, перцептивный хэш (dHash), сравнение */
+/* image.js — dHash + pHash для устойчивого сравнения миниатюр */
 (function () {
   'use strict';
 
-  const HASH_W = 9, HASH_H = 8; /* dHash 8x8 -> 64 бита */
+  const HASH_W = 9, HASH_H = 8;
 
   function loadImage(url) {
     return new Promise((resolve, reject) => {
@@ -14,30 +14,62 @@
     });
   }
 
-  function imgToGrayMatrix(img, w, h) {
+  function pixels(img, w, h) {
     const c = document.createElement('canvas');
-    c.width = w; c.height = h;
+    c.width = w;
+    c.height = h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, w, h);
     return ctx.getImageData(0, 0, w, h).data;
   }
 
-  /**
-   * dHash: для каждой строки сравниваем соседние пиксели по яркости.
-   * @returns {string} 64-символьная строка '0'/'1'
-   */
+  function lum(r, g, b) {
+    return r * 0.299 + g * 0.587 + b * 0.114;
+  }
+
   function dhash(img) {
-    const rgba = imgToGrayMatrix(img, HASH_W, HASH_H);
+    const w = HASH_W, h = HASH_H;
+    const rgba = pixels(img, w, h);
     let bits = '';
-    for (let y = 0; y < HASH_H; y++) {
-      for (let x = 0; x < HASH_W - 1; x++) {
-        const i1 = (y * HASH_W + x) * 4;
-        const i2 = (y * HASH_W + x + 1) * 4;
-        const l1 = rgba[i1] * 0.299 + rgba[i1 + 1] * 0.587 + rgba[i1 + 2] * 0.114;
-        const l2 = rgba[i2] * 0.299 + rgba[i2 + 1] * 0.587 + rgba[i2 + 2] * 0.114;
-        bits += l1 > l2 ? '1' : '0';
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w - 1; x++) {
+        const i1 = (y * w + x) * 4;
+        const i2 = (y * w + x + 1) * 4;
+        bits += lum(rgba[i1], rgba[i1 + 1], rgba[i1 + 2]) >
+          lum(rgba[i2], rgba[i2 + 1], rgba[i2 + 2]) ? '1' : '0';
       }
     }
+    return bits;
+  }
+
+  /* pHash: низкочастотный 8×8 блок 2D-DCT, 64 бита. */
+  function phash(img) {
+    const N = 16;
+    const rgba = pixels(img, N, N);
+    const gray = new Float64Array(N * N);
+    for (let i = 0; i < N * N; i++) {
+      const j = i * 4;
+      gray[i] = lum(rgba[j], rgba[j + 1], rgba[j + 2]);
+    }
+    const c = new Float64Array(64);
+    const factor = Math.PI / (2 * N);
+    for (let u = 0; u < 8; u++) {
+      for (let v = 0; v < 8; v++) {
+        let sum = 0;
+        for (let y = 0; y < N; y++) {
+          const cy = Math.cos((2 * y + 1) * u * factor);
+          for (let x = 0; x < N; x++) {
+            sum += gray[y * N + x] * cy * Math.cos((2 * x + 1) * v * factor);
+          }
+        }
+        c[u * 8 + v] = sum;
+      }
+    }
+    const vals = Array.from(c.slice(1));
+    const sorted = vals.slice().sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    let bits = '';
+    for (let i = 0; i < 64; i++) bits += c[i] >= median ? '1' : '0';
     return bits;
   }
 
@@ -48,28 +80,40 @@
     return d;
   }
 
+  function descriptor(img) {
+    return { hash: dhash(img), phash: phash(img) };
+  }
+
   /**
-   * Поиск наиболее похожего образца.
-   * @param {string} hash хэш миниатюры
-   * @param {{hash:string}[]} samples образцы из списка
-   * @param {number} threshold макс. расстояние Хэмминга (0..64)
-   * @returns {{sample:object,distance:number}|null}
+   * Сначала используем быстрый dHash. Если он чуть менее близок, pHash
+   * помогает сохранить совпадение при небольшом кадрировании/изменении цвета.
    */
-  function matchHash(hash, samples, threshold) {
+  function matchHash(desc, samples, threshold) {
+    const dThreshold = Math.max(0, Number(threshold) || 0);
     let best = null;
     for (const s of samples || []) {
       if (!s || !s.hash) continue;
-      const d = hamming(hash, s.hash);
-      if (d <= threshold && (!best || d < best.distance)) best = { sample: s, distance: d };
+      const d = hamming(desc.hash, s.hash);
+      const p = desc.phash && s.phash ? hamming(desc.phash, s.phash) : Infinity;
+      const dOk = d <= dThreshold;
+      const pOk = Number.isFinite(p) && p <= Math.min(12, dThreshold + 4);
+      if (!dOk && !pOk) continue;
+      const score = dOk ? d : d + 0.65 * p;
+      if (!best || score < best.score) {
+        best = { sample: s, distance: d, phashDistance: p, score };
+      }
     }
     return best;
   }
 
+  async function descriptorFromUrl(url) {
+    return descriptor(await loadImage(url));
+  }
+
   async function hashFromUrl(url) {
-    const img = await loadImage(url);
-    return dhash(img);
+    return (await descriptorFromUrl(url)).hash;
   }
 
   window.YB = window.YB || {};
-  window.YB.image = { loadImage, dhash, hamming, matchHash, hashFromUrl };
+  window.YB.image = { loadImage, dhash, phash, descriptor, hamming, matchHash, descriptorFromUrl, hashFromUrl };
 })();

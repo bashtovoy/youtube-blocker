@@ -1,75 +1,68 @@
-/* content.js — оркестратор: сканирует выдачу YouTube, детектит совпадения, отправляет «Не интересно» */
+/* content.js — детект в зоне прокрутки, каскад текст → image → OCR → речь, затем штатное «Не интересно» */
 (function () {
   'use strict';
 
   const api = (typeof browser !== 'undefined') ? browser : chrome;
-
   const DEFAULTS = {
     enabled: true,
-    mode: 'dismiss',            /* dismiss | hide */
-    fuzzy: true,                /* нечёткое сравнение ключевых слов */
+    mode: 'dismiss',
+    fuzzy: true,
     checkTitle: true,
     checkThumbOcr: false,
     checkThumbHash: true,
     checkSpeech: false,
     ocrLangs: 'eng+rus',
-    hashThreshold: 8,           /* расстояние Хэмминга для образцов фото (0..64) */
+    hashThreshold: 8,
     speechLang: 'ru',
-    speechModel: 'models/ggml-base.en.q8_0.bin',
+    speechModel: 'models/ggml-base.bin',
     speechMaxSeconds: 120,
-    actionDelayMs: 2500,        /* пауза между отправкой сигналов */
+    actionDelayMs: 2500,
     logMatch: true
   };
 
   const state = {
     settings: Object.assign({}, DEFAULTS),
     keywords: [],
-    photoSamples: [],           /* [{id, hash, label, dataUrl}] */
-    processed: new Set(),       /* videoId|signature уже проверенных */
+    photoSamples: [],
+    processed: new Set(),
     inFlight: new Set(),
     lastActionAt: 0,
     observer: null,
-    io: null,                   /* IntersectionObserver — обрабатываем только видимое */
-    observed: new WeakSet(),    /* карточки, уже поставленные на наблюдение */
-    scanTimer: null
+    io: null,
+    observed: new WeakSet(),
+    imageListeners: new WeakSet(),
+    scanTimer: null,
+    imageCache: new Map()
   };
 
   const log = (...a) => {
-    const line = a.map(x => (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(' ');
     console.log('[YB]', ...a);
-    if (window.YB.dev) window.YB.dev.log(line);
+    if (window.YB.dev) window.YB.dev.log(a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' '));
   };
 
-  /* ---------- конфигурация ---------- */
+  function hasDetectionTargets() {
+    return state.keywords.length > 0 || state.photoSamples.length > 0;
+  }
 
   async function loadConfig() {
-    const data = await api.storage.local.get({
-      settings: DEFAULTS,
-      keywords: [],
-      photoSamples: []
-    });
+    const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [], photoSamples: [] });
     state.settings = Object.assign({}, DEFAULTS, data.settings || {});
     state.keywords = (data.keywords || [])
-      .map(k => (typeof k === 'string' ? { text: k, enabled: true } : k))
+      .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && k.text && k.enabled !== false)
       .map(k => k.text);
     state.photoSamples = data.photoSamples || [];
     log('config loaded', { keywords: state.keywords.length, photos: state.photoSamples.length });
-    if (state.settings.checkSpeech && state.settings.enabled && hasDetectionTargets()) {
+    if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
       api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }).catch(() => {});
       initSpeechSoon();
     }
-  }
-
-  function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.photoSamples.length > 0;
   }
 
   let speechInitTried = false;
   function initSpeechSoon() {
     if (speechInitTried) return;
     speechInitTried = true;
-    /* инициализация тяжёлой модели — только когда страница простаивает */
     const go = () => window.YB.speech.init({
       modelPath: state.settings.speechModel,
       language: state.settings.speechLang,
@@ -80,15 +73,30 @@
     else setTimeout(go, 8000);
   }
 
-  /* ---------- извлечение данных из элемента выдачи ---------- */
-
   const ITEM_SELECTOR = [
-    'ytd-video-renderer',            /* поиск */
-    'ytd-grid-video-renderer',       /* главная / канал */
-    'ytd-rich-item-renderer',        /* home / subscriptions */
-    'ytd-compact-video-renderer',    /* сайдбар просмотра */
-    'ytd-playlist-panel-video-renderer'
+    'ytd-video-renderer',
+    'ytd-grid-video-renderer',
+    'ytd-rich-item-renderer',
+    'ytd-compact-video-renderer',
+    'ytd-playlist-panel-video-renderer',
+    'ytd-reel-item-renderer'
   ].join(', ');
+
+  function bestThumbUrl(img, videoId) {
+    if (!img) return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    const candidates = [
+      img.currentSrc,
+      img.getAttribute('src'),
+      img.getAttribute('data-thumb'),
+      img.getAttribute('data-src'),
+      img.getAttribute('data-img-src')
+    ].filter(Boolean).filter(v => !v.startsWith('data:'));
+    let url = candidates[0] || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    if (url.includes('googleusercontent') || url.includes('ytimg')) {
+      url = url.replace(/=w\d+-h\d+[^:]*$/, '=w480-h270-c36-far-c');
+    }
+    return url;
+  }
 
   function extract(item) {
     const a = item.querySelector('a#video-title, a#thumbnail, a.yt-simple-endpoint[href*="videoId"], a[href*="/watch"], a[href*="/shorts/"]');
@@ -100,22 +108,46 @@
       videoId = m ? m[1] : '';
     }
     if (!videoId) return null;
-    const titleEl = item.querySelector('#video-title, yt-formatted-string#video-title, h3.ytd-rich-item-renderer');
-    const title = (titleEl && (titleEl.getAttribute('title') || titleEl.textContent) || '').trim();
+    const titleEl = item.querySelector('#video-title, yt-formatted-string#video-title, h3.ytd-rich-item-renderer, [id="video-title"]');
+    const title = (titleEl && (titleEl.getAttribute('title') || titleEl.textContent) || '').replace(/\s+/g, ' ').trim();
     if (!title) return null;
-    const chanEl = item.querySelector('ytd-channel-name #text a, #channel-name a, a[href^="/@"]');
+    const chanEl = item.querySelector('ytd-channel-name #text a, #channel-name a, a[href^="/@"], a[href*="/channel/"]');
     const channel = ((chanEl && chanEl.textContent) || '').replace(/\s+/g, ' ').trim();
-    const img = item.querySelector('img[src]');
-    let thumb = img ? (img.getAttribute('src') || '') : '';
-    if (!thumb || thumb.startsWith('data:')) {
-      thumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-    } else {
-      thumb = thumb.replace(/=w\d+-h\d+[^:]*$/, '=w480-h270-c36-far-c');
-    }
-    return { videoId, title, channel, thumb, item };
+    const img = item.querySelector('img');
+    const thumb = bestThumbUrl(img, videoId);
+    return { videoId, title, channel, thumb, item, img };
   }
 
-  /* ---------- детект и действие ---------- */
+  function waitForImage(img, timeout = 1600) {
+    if (!img || img.complete && img.naturalWidth > 0) return Promise.resolve(true);
+    return new Promise(resolve => {
+      let done = false;
+      const finish = ok => { if (done) return; done = true; img.removeEventListener('load', onload); img.removeEventListener('error', onerror); resolve(ok); };
+      const onload = () => finish(true);
+      const onerror = () => finish(false);
+      img.addEventListener('load', onload, { once: true });
+      img.addEventListener('error', onerror, { once: true });
+      setTimeout(() => finish(img.complete && img.naturalWidth > 0), timeout);
+    });
+  }
+
+  function thumbKey(v) {
+    return v.videoId + '|' + v.thumb;
+  }
+
+  function descriptorCached(url) {
+    if (state.imageCache.has(url)) return state.imageCache.get(url);
+    const p = window.YB.image.descriptorFromUrl(url).then(desc => {
+      state.imageCache.set(url, Promise.resolve(desc));
+      while (state.imageCache.size > 120) state.imageCache.delete(state.imageCache.keys().next().value);
+      return desc;
+    }).catch(err => {
+      state.imageCache.delete(url);
+      throw err;
+    });
+    state.imageCache.set(url, p);
+    return p;
+  }
 
   async function throttleAction() {
     const wait = state.settings.actionDelayMs - (Date.now() - state.lastActionAt);
@@ -123,35 +155,40 @@
     state.lastActionAt = Date.now();
   }
 
+  const actionQueue = { tail: Promise.resolve(), push(fn) { const p = this.tail.then(fn, fn); this.tail = p.catch(() => {}); return p; } };
+
   async function applyAction(v, reason) {
-    await throttleAction();
-    if (state.settings.mode === 'dismiss') {
-      try {
-        await window.YB.dismiss.notInterested(v.item);
-        /* верификация: YouTube обязан показать снэкбар с «Отменить» */
-        if (await window.YB.dismiss.waitForUndo(v.item)) {
-          log('dismissed', v.videoId, '←', reason);
-          api.runtime.sendMessage({ type: 'ybincrement', by: 1 }).catch(() => {});
-          return;
+    return actionQueue.push(async () => {
+      await throttleAction();
+      if (state.settings.mode === 'dismiss') {
+        try {
+          const info = await window.YB.dismiss.notInterested(v.item);
+          const result = await window.YB.dismiss.waitForOutcome(v.item, info.undoBefore);
+          if (result.ok) {
+            log('dismissed', v.videoId, '←', reason, result.via);
+            api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'dismissed' }).catch(() => {});
+            return true;
+          }
+          log('dismiss unverified, local hide:', v.videoId, reason);
+        } catch (e) {
+          log('dismiss unavailable, local hide:', v.videoId, e.message);
         }
-        log('dismiss unverified, fallback to hide:', v.videoId);
-      } catch (e) {
-        log('dismiss failed, fallback to hide:', v.videoId, e.message);
       }
-    }
-    window.YB.dismiss.hideItem(v.item);
-    log('hidden', v.videoId, '←', reason);
-    api.runtime.sendMessage({ type: 'ybincrement', by: 1 }).catch(() => {});
+      window.YB.dismiss.hideItem(v.item);
+      log('hidden locally', v.videoId, '←', reason);
+      api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
+      return false;
+    });
   }
 
   function matchTitle(v) {
     if (!state.settings.checkTitle) return null;
     const opt = { fuzzy: state.settings.fuzzy };
     const t = window.YB.matcher.matchKeywords(v.title, state.keywords, opt);
-    if (t) return t;
+    if (t) return { source: 'title', keyword: t };
     if (v.channel) {
       const c = window.YB.matcher.matchKeywords(v.channel, state.keywords, opt);
-      if (c) return c;
+      if (c) return { source: 'channel', keyword: c };
     }
     return null;
   }
@@ -160,17 +197,16 @@
     const hashNeeded = state.settings.checkThumbHash && state.photoSamples.length > 0;
     const ocrNeeded = state.settings.checkThumbOcr && state.keywords.length > 0;
     if (!hashNeeded && !ocrNeeded) return null;
-
     if (hashNeeded) {
       try {
-        const hash = await window.YB.image.hashFromUrl(v.thumb);
-        const m = window.YB.image.matchHash(hash, state.photoSamples, state.settings.hashThreshold);
-        if (m) return { source: 'photo', keyword: m.sample.label || 'образец фото', distance: m.distance };
-      } catch (e) { /* CORS/404 — пробуем OCR, если нужен */ }
+        const desc = await descriptorCached(v.thumb);
+        const m = window.YB.image.matchHash(desc, state.photoSamples, state.settings.hashThreshold);
+        if (m) return { source: 'photo', keyword: m.sample.label || 'образец фото', distance: m.distance, phashDistance: m.phashDistance };
+      } catch (e) { log('image descriptor fail', v.videoId, e.message); }
     }
     if (ocrNeeded) {
       try {
-        const text = await window.YB.ocr.recognizeUrl(v.thumb, v.videoId + ':' + state.settings.ocrLangs, state.settings.ocrLangs);
+        const text = await window.YB.ocr.recognizeUrl(v.thumb, thumbKey(v) + ':' + state.settings.ocrLangs, state.settings.ocrLangs);
         const kw = window.YB.matcher.matchKeywords(text, state.keywords, { fuzzy: false });
         if (kw) return { source: 'ocr', keyword: kw };
       } catch (e) { log('ocr fail', v.videoId, e.message); }
@@ -189,52 +225,48 @@
   }
 
   async function processVideo(v) {
-    const key = v.videoId + '|' + (v.title || '').slice(0, 60);
+    if (!v) return;
+    await waitForImage(v.img).catch(() => false);
+    const current = extract(v.item) || v;
+    const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
     if (state.processed.has(key) || state.inFlight.has(key)) return;
     state.inFlight.add(key);
     try {
-      /* 1. быстрая проверка по названию */
-      const titleKw = matchTitle(v);
-      if (titleKw) {
+      const titleHit = matchTitle(current);
+      if (titleHit) {
         state.processed.add(key);
-        await applyAction(v, 'title:' + titleKw);
+        await applyAction(current, titleHit.source + ':' + titleHit.keyword);
         return;
       }
-      /* 2. фото: хэш-образцы + OCR */
-      const thumbHit = await matchThumbnail(v);
+      const thumbHit = await matchThumbnail(current);
       if (thumbHit) {
         state.processed.add(key);
-        await applyAction(v, thumbHit.source + ':' + thumbHit.keyword);
+        await applyAction(current, thumbHit.source + ':' + thumbHit.keyword);
         return;
       }
-      /* 3. речь — только если видео уже попало в зону видимости и режим включён */
       if (state.settings.checkSpeech) {
-        const speechHit = await matchSpeech(v);
+        const speechHit = await matchSpeech(current);
         if (speechHit) {
           state.processed.add(key);
-          await applyAction(v, speechHit.source + ':' + speechHit.keyword);
+          await applyAction(current, speechHit.source + ':' + speechHit.keyword);
           return;
         }
       }
       state.processed.add(key);
     } finally {
       state.inFlight.delete(key);
-      /* элемент обработан — снимаем его с наблюдения, чтобы не держать в IO */
-      if (state.io && v.item) state.io.unobserve(v.item);
+      if (state.io && current.item) state.io.unobserve(current.item);
     }
   }
 
-  /* ---------- сканирование: наблюдение за зоной видимости ---------- */
-
   function ensureIO() {
     if (state.io) return state.io;
-    /* rootMargin: запас сверху 600px и снизу 900px — успеваем проверить
-       миниатюру немного до того, как карточка реально появится на экране */
     state.io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (!e.isIntersecting) continue;
         const v = extract(e.target);
-        if (v) processVideo(v);
+        if (!v) continue;
+        processVideo(v);
       }
     }, { root: null, rootMargin: '600px 0px 900px 0px', threshold: 0.01 });
     return state.io;
@@ -243,15 +275,15 @@
   function resetIO() {
     if (state.io) { state.io.disconnect(); state.io = null; }
     state.observed = new WeakSet();
+    state.imageListeners = new WeakSet();
+    state.imageCache.clear();
   }
 
   function scanNow() {
     if (!state.settings.enabled || !hasDetectionTargets()) return;
     const obs = ensureIO();
-    const items = document.querySelectorAll(ITEM_SELECTOR);
-    for (const item of items) {
-      if (item.classList.contains('yb-hidden')) continue;
-      if (state.observed.has(item)) continue;
+    for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
+      if (item.classList.contains('yb-hidden') || state.observed.has(item)) continue;
       state.observed.add(item);
       obs.observe(item);
     }
@@ -259,28 +291,23 @@
 
   function scheduleScan() {
     clearTimeout(state.scanTimer);
-    state.scanTimer = setTimeout(scanNow, 400);
+    state.scanTimer = setTimeout(scanNow, 350);
   }
 
   function startObservers() {
-    if (state.observer) return;
-    state.observer = new MutationObserver((muts) => {
-      for (const m of muts) {
-        if (m.addedNodes && m.addedNodes.length) { scheduleScan(); return; }
-      }
+    if (state.observer) { scanNow(); return; }
+    state.observer = new MutationObserver(muts => {
+      for (const m of muts) if (m.addedNodes && m.addedNodes.length) { scheduleScan(); return; }
     });
     state.observer.observe(document.documentElement, { childList: true, subtree: true });
-    /* scroll-слушатель убран: саму видимость отслеживает IntersectionObserver,
-       а новые карточки в DOM добавляет YouTube → ловит MutationObserver */
     scanNow();
   }
 
-  /* ---------- сообщения и изменения настроек ---------- */
-
-  api.runtime.onMessage.addListener((msg) => {
+  api.runtime.onMessage.addListener(msg => {
     if (!msg) return;
     if (msg.type === 'config-changed') {
       state.processed.clear();
+      speechInitTried = false;
       resetIO();
       loadConfig().then(scheduleScan);
     } else if (msg.type === 'rescan' || msg.type === 'dev-rescan') {
@@ -291,7 +318,6 @@
     }
   });
 
-  /* ---------- старт ---------- */
   loadConfig().then(() => {
     if (state.settings.enabled && hasDetectionTargets()) startObservers();
   });
