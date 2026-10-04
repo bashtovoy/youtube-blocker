@@ -37,7 +37,8 @@ async function init(preferredDevice = 'wasm') {
       processor = await AutoProcessor.from_pretrained(MODEL_ID);
       model = await SiglipVisionModel.from_pretrained(MODEL_ID, {
         device: candidate,
-        dtype: 'q4f16'
+        // q4f16 is the compact WebGPU path; q4 is the safer CPU/WASM path.
+        dtype: candidate === 'webgpu' ? 'q4f16' : 'q4'
       });
       device = candidate;
     };
