@@ -13,6 +13,8 @@
     worker.onmessage = e => {
       const m = e.data || {};
       if (m.type === 'ready') {
+        const p = pending.get(m.id);
+        if (p) { pending.delete(m.id); p.resolve(m); }
         if (ready) ready.resolve(m);
         return;
       }
