@@ -4,8 +4,26 @@
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  checkTitle: true,
+  checkThumbHash: true,
+  checkSemanticImage: true,
+  checkThumbOcr: false,
+  checkSpeech: false,
+  fuzzy: true,
+  mode: 'dismiss',
+  ocrLangs: 'eng+rus',
+  hashThreshold: 8,
+  semanticThreshold: 0.82,
+  actionDelayMs: 2500,
+  speechLang: 'ru',
+  speechModel: 'models/ggml-base.bin',
+  speechMaxSeconds: 120
+};
 
 let photoSamples = [];
 let keywords = [];   /* [{ text, enabled }] */
@@ -29,9 +47,9 @@ async function load() {
   const data = await api.storage.local.get({
     settings: {}, keywords: [], photoSamples: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
-  const s = data.settings || {};
-  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'fuzzy'); });
-  VALUE_IDS.forEach(id => { if (id in s) $(id).value = s[id]; });
+  const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
+  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'checkSemanticImage' || id === 'fuzzy'); });
+  VALUE_IDS.forEach(id => { $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
   photoSamples = data.photoSamples || [];
@@ -123,11 +141,17 @@ async function fileToSample(file) {
     i.onerror = rej;
     i.src = dataUrl;
   });
+  let embedding = null;
+  if ($('checkSemanticImage')?.checked) {
+    try { embedding = await window.YB.semantic.embed(dataUrl); }
+    catch (e) { console.warn('[YB] SigLIP sample embedding unavailable:', e.message); }
+  }
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
     hash: window.YB.image.dhash(img),
     phash: window.YB.image.phash(img),
+    embedding,
     /* храним уменьшенный превью, чтобы не раздувать storage */
     dataUrl: await thumbnailDataUrl(img, 64)
   };
@@ -146,12 +170,29 @@ async function save() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
+  const semanticRaw = Number(settings.semanticThreshold);
+  settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.50 && semanticRaw <= 0.99
+    ? semanticRaw
+    : DEFAULT_SETTINGS.semanticThreshold;
+  const hashRaw = Number(settings.hashThreshold);
+  settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0
+    ? hashRaw
+    : DEFAULT_SETTINGS.hashThreshold;
   settings.logMatch = true;
   const kws = keywords
     .map(k => ({ text: k.text.trim(), enabled: k.enabled !== false }))
     .filter(k => k.text);
   keywords = kws;
   renderKeywords();
+  if (settings.checkSemanticImage && photoSamples.length) {
+    try {
+      status('Готовлю семантические эталоны…');
+      await window.YB.semantic.embedSamples(photoSamples, (done, total) => status(`SigLIP: ${done}/${total}`));
+    } catch (e) {
+      console.warn('[YB] semantic samples unavailable:', e.message);
+      status('SigLIP недоступен — сохранены dHash/pHash', false);
+    }
+  }
   await api.storage.local.set({ settings, keywords: kws, photoSamples });
   /* уведомляем все вкладки YouTube */
   const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });

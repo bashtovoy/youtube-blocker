@@ -102,7 +102,8 @@
     <fieldset>
       <legend>Что проверять</legend>
       <label class="row"><input type="checkbox" id="checkTitle"> Название видео</label>
-      <label class="row"><input type="checkbox" id="checkThumbHash"> Фото: сравнение с образцами</label>
+      <label class="row"><input type="checkbox" id="checkThumbHash"> Фото: точное/перцептивное сравнение</label>
+      <label class="row"><input type="checkbox" id="checkSemanticImage"> Фото: семантическое сравнение (SigLIP)</label>
       <label class="row"><input type="checkbox" id="checkThumbOcr"> Фото: OCR текста на миниатюре</label>
       <label class="row"><input type="checkbox" id="checkSpeech"> Речь в видео (Whisper, тяжело)</label>
       <label class="row"><input type="checkbox" id="fuzzy"> Нечёткое сравнение (опечатки, падежи)</label>
@@ -123,8 +124,11 @@
           <option value="eng">eng</option>
         </select>
       </label>
-      <label class="row">Порог сходства фото:
-        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(меньше = строже, из 64)</span>
+      <label class="row">Порог dHash/pHash:
+        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(меньше = строже)</span>
+      </label>
+      <label class="row">Порог SigLIP:
+        <input type="number" id="semanticThreshold" min="0.50" max="0.99" step="0.01" style="width:58px"> <span class="hint">(выше = строже)</span>
       </label>
       <label class="row">Пауза между сигналами, мс:
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
@@ -154,6 +158,7 @@
   </main>
   <script src="../matcher.js"></script>
   <script src="../image.js"></script>
+  <script src="../semantic.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
