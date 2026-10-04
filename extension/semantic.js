@@ -1,6 +1,7 @@
-/* semantic.js — local semantic image matching (SigLIP), no network at runtime */
+/* semantic.js — local SigLIP text ↔ image semantic matching */
 (function () {
   'use strict';
+
   const api = (typeof browser !== 'undefined') ? browser : chrome;
   const MODEL_DIR = 'models/siglip-base-patch16-224/';
   const workerUrl = api.runtime.getURL('semantic-worker.js');
@@ -21,7 +22,8 @@
       const p = pending.get(m.id);
       if (!p) return;
       pending.delete(m.id);
-      if (m.type === 'embedding') p.resolve(m.vector);
+      if (m.type === 'image-embedding') p.resolve(m.vector);
+      else if (m.type === 'text-embeddings') p.resolve(m.vectors);
       else p.reject(new Error(m.error || 'semantic worker error'));
     };
     worker.onerror = e => {
@@ -49,57 +51,49 @@
     const promise = new Promise((r, j) => { resolve = r; reject = j; });
     ready = { promise, resolve, reject };
     try {
-      const result = await request('init', { device: navigator.gpu ? 'webgpu' : 'wasm' });
-      return result;
+      return await request('init', { device: navigator.gpu ? 'webgpu' : 'wasm' });
     } catch (e) {
       ready = null;
       throw e;
     }
   }
 
-  async function embed(source) {
+  async function embedImage(source) {
     await init();
-    return request('embed', { source });
+    return request('embed-image', { source });
+  }
+
+  async function embedTexts(texts) {
+    await init();
+    return request('embed-texts', { texts });
   }
 
   function cosine(a, b) {
     if (!a || !b || a.length !== b.length) return -1;
-    let dot = 0, na = 0, nb = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      na += a[i] * a[i];
-      nb += b[i] * b[i];
-    }
-    return dot / ((Math.sqrt(na) * Math.sqrt(nb)) || 1);
+    let dot = 0;
+    for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+    return dot;
   }
 
-  function bestMatch(vector, samples, threshold) {
+  function bestTextMatch(imageVector, textEntries, threshold) {
+    const min = Number.isFinite(Number(threshold)) ? Number(threshold) : 0.30;
     let best = null;
-    const min = Number.isFinite(Number(threshold)) ? Number(threshold) : 0.82;
-    for (const sample of samples || []) {
-      if (!Array.isArray(sample.embedding) || !sample.embedding.length) continue;
-      const score = cosine(vector, sample.embedding);
-      if (!best || score > best.score) best = { sample, score };
+    for (const entry of textEntries || []) {
+      if (!entry?.vector || !entry.text) continue;
+      const score = cosine(imageVector, entry.vector);
+      if (!best || score > best.score) best = { text: entry.text, score };
     }
     return best && best.score >= min ? best : null;
-  }
-
-  async function embedSamples(samples, onProgress) {
-    const out = [];
-    for (let i = 0; i < (samples || []).length; i++) {
-      const s = samples[i];
-      if (!Array.isArray(s.embedding) || s.embedding.length < 100) {
-        s.embedding = await embed(s.dataUrl);
-      }
-      out.push(s);
-      if (onProgress) onProgress(i + 1, samples.length);
-    }
-    return out;
   }
 
   window.YB = window.YB || {};
   window.YB.semantic = {
     modelDir: MODEL_DIR,
-    init, embed, cosine, bestMatch, embedSamples
+    init,
+    embed: embedImage,
+    embedImage,
+    embedTexts,
+    cosine,
+    bestTextMatch
   };
 })();
