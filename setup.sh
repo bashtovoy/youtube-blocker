@@ -6,8 +6,21 @@ cd "$(dirname "$0")"
 
 LIB="extension/lib"
 MODELS="extension/models"
-mkdir -p "$LIB" "$MODELS"
+SEMANTIC_MODEL="$MODELS/siglip-base-patch16-224"
+mkdir -p "$LIB" "$MODELS" "$SEMANTIC_MODEL"
 
+echo "==> Transformers.js + SigLIP semantic vision (опциональный, локальный)"
+curl -fsSL -o "$LIB/transformers.min.js" \
+  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/transformers.min.js"
+curl -fsSL -o "$SEMANTIC_MODEL/config.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/config.json"
+curl -fsSL -o "$SEMANTIC_MODEL/preprocessor_config.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/preprocessor_config.json"
+mkdir -p "$SEMANTIC_MODEL/onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_q4f16.onnx"
+echo "SigLIP готов: ~55 МБ; инференс выполняется локально в браузере."
+echo
 echo "==> Tesseract.js (OCR миниатюр) — v4.1.1"
 curl -fsSL -o "$LIB/tesseract.min.js" \
   "https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"
