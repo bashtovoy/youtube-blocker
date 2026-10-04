@@ -61,6 +61,11 @@ if [[ "$ANSWER" == "y" || "$ANSWER" == "Y" || "$ANSWER" == "yes" ]]; then
 fi
 
 echo
+test -s "$LIB/ort-wasm-simd-threaded.jsep.mjs"
+test -s "$LIB/ort-wasm-simd-threaded.jsep.wasm"
+test -s "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx"
+test -s "$SEMANTIC_MODEL/onnx/vision_model_q4.onnx"
+
 echo "Готово. Содержимое extension/lib:"
 ls -lh "$LIB"
 echo
