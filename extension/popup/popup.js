@@ -170,6 +170,14 @@ async function save() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
+  const semanticRaw = Number(settings.semanticThreshold);
+  settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.50 && semanticRaw <= 0.99
+    ? semanticRaw
+    : DEFAULT_SETTINGS.semanticThreshold;
+  const hashRaw = Number(settings.hashThreshold);
+  settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0
+    ? hashRaw
+    : DEFAULT_SETTINGS.hashThreshold;
   settings.logMatch = true;
   const kws = keywords
     .map(k => ({ text: k.text.trim(), enabled: k.enabled !== false }))
