@@ -1,8 +1,10 @@
-/* semantic-worker.js — local SigLIP vision encoder for semantic image similarity */
+/* semantic-worker.js — local SigLIP text ↔ image embeddings */
 import {
   env,
   AutoProcessor,
+  AutoTokenizer,
   SiglipVisionModel,
+  SiglipTextModel,
   RawImage
 } from './lib/transformers.min.js';
 
@@ -17,7 +19,9 @@ if (env.backends?.onnx?.wasm) {
 }
 
 let processor = null;
-let model = null;
+let tokenizer = null;
+let visionModel = null;
+let textModel = null;
 let device = null;
 let initPromise = null;
 
@@ -30,15 +34,31 @@ function normalizeVector(data) {
   return Array.from(out);
 }
 
+function splitAndNormalize(data, dims) {
+  const rows = Number(dims?.[0]) || 1;
+  const width = Number(dims?.[1]) || Math.floor(data.length / rows);
+  const out = [];
+  for (let row = 0; row < rows; row++) {
+    out.push(normalizeVector(data.slice(row * width, (row + 1) * width)));
+  }
+  return out;
+}
+
 async function init(preferredDevice = 'wasm') {
   if (initPromise) return initPromise;
   initPromise = (async () => {
     const tryDevice = async (candidate) => {
       processor = await AutoProcessor.from_pretrained(MODEL_ID);
-      model = await SiglipVisionModel.from_pretrained(MODEL_ID, {
+      tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
+
+      const dtype = candidate === 'webgpu' ? 'q4f16' : 'q4';
+      visionModel = await SiglipVisionModel.from_pretrained(MODEL_ID, {
         device: candidate,
-        // q4f16 is the compact WebGPU path; q4 is the safer CPU/WASM path.
-        dtype: candidate === 'webgpu' ? 'q4f16' : 'q4'
+        dtype
+      });
+      textModel = await SiglipTextModel.from_pretrained(MODEL_ID, {
+        device: candidate,
+        dtype
       });
       device = candidate;
     };
@@ -48,7 +68,9 @@ async function init(preferredDevice = 'wasm') {
     } catch (firstError) {
       if (preferredDevice !== 'wasm') {
         processor = null;
-        model = null;
+        tokenizer = null;
+        visionModel = null;
+        textModel = null;
         await tryDevice('wasm');
       } else {
         throw firstError;
@@ -62,14 +84,25 @@ async function init(preferredDevice = 'wasm') {
   return initPromise;
 }
 
-async function embed(source) {
+async function embedImage(source) {
   const image = await RawImage.read(source);
   const inputs = await processor(image);
-  const output = await model(inputs);
+  const output = await visionModel(inputs);
   if (!output?.pooler_output?.data) {
     throw new Error('SigLIP vision model returned no pooler_output');
   }
   return normalizeVector(output.pooler_output.data);
+}
+
+async function embedTexts(texts) {
+  const list = (texts || []).map(x => String(x || '').trim()).filter(Boolean);
+  if (!list.length) return [];
+  const inputs = tokenizer(list, { padding: 'max_length', truncation: true });
+  const output = await textModel(inputs);
+  if (!output?.pooler_output?.data) {
+    throw new Error('SigLIP text model returned no pooler_output');
+  }
+  return splitAndNormalize(output.pooler_output.data, output.pooler_output.dims);
 }
 
 self.onmessage = async (event) => {
@@ -78,10 +111,14 @@ self.onmessage = async (event) => {
     if (msg.type === 'init') {
       const ready = await init(msg.device || (self.navigator?.gpu ? 'webgpu' : 'wasm'));
       self.postMessage({ type: 'ready', id: msg.id, ...ready });
-    } else if (msg.type === 'embed') {
+    } else if (msg.type === 'embed-image') {
       await init(msg.device || (self.navigator?.gpu ? 'webgpu' : 'wasm'));
-      const vector = await embed(msg.source);
-      self.postMessage({ type: 'embedding', id: msg.id, vector });
+      const vector = await embedImage(msg.source);
+      self.postMessage({ type: 'image-embedding', id: msg.id, vector });
+    } else if (msg.type === 'embed-texts') {
+      await init(msg.device || (self.navigator?.gpu ? 'webgpu' : 'wasm'));
+      const vectors = await embedTexts(msg.texts);
+      self.postMessage({ type: 'text-embeddings', id: msg.id, vectors });
     } else if (msg.type === 'ping') {
       self.postMessage({ type: 'pong', id: msg.id, device, modelId: MODEL_ID });
     }
@@ -93,3 +130,4 @@ self.onmessage = async (event) => {
     });
   }
 };
+
