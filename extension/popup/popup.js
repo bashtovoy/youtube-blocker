@@ -5,7 +5,7 @@ const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
 
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = {
   mode: 'dismiss',
   ocrLangs: 'eng+rus',
   hashThreshold: 8,
-  semanticThreshold: 0.82,
+  semanticThreshold: 0.15,
   actionDelayMs: 2500,
   speechLang: 'ru',
   speechModel: 'models/ggml-base.bin',
@@ -46,7 +46,7 @@ async function load() {
     settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
-  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'checkSemanticImage' || id === 'fuzzy'); });
+  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
