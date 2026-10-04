@@ -1,16 +1,15 @@
-/* popup.js — управление списком, образцами фото и настройками */
+/* popup.js — управление текстовым списком семантических понятий и настройками */
 'use strict';
 
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
 const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
   checkTitle: true,
-  checkThumbHash: true,
   checkSemanticImage: true,
   checkThumbOcr: false,
   checkSpeech: false,
@@ -25,7 +24,6 @@ const DEFAULT_SETTINGS = {
   speechMaxSeconds: 120
 };
 
-let photoSamples = [];
 let keywords = [];   /* [{ text, enabled }] */
 
 function status(msg, ok = true) {
@@ -45,15 +43,13 @@ function normalizeKeywords(list) {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], photoSamples: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
+    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
-  photoSamples = data.photoSamples || [];
-  renderSamples();
   const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
   $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · локально: ${hid}` : '';
 }
@@ -104,68 +100,6 @@ function addKeyword(text) {
   return true;
 }
 
-function renderSamples() {
-  const box = $('samples');
-  box.innerHTML = '';
-  for (const p of photoSamples) {
-    const div = document.createElement('div');
-    div.className = 'sample';
-    const img = document.createElement('img');
-    img.src = p.dataUrl;
-    img.title = p.label + ` (hash: ${p.hash})`;
-    const lbl = document.createElement('div');
-    lbl.className = 'lbl';
-    lbl.textContent = p.label;
-    const del = document.createElement('button');
-    del.className = 'del';
-    del.textContent = '×';
-    del.onclick = () => { photoSamples = photoSamples.filter(x => x.id !== p.id); renderSamples(); };
-    div.append(img, lbl, del);
-    box.appendChild(div);
-  }
-  if (!photoSamples.length) {
-    box.innerHTML = '<span class="hint">пока пусто</span>';
-  }
-}
-
-async function fileToSample(file) {
-  const dataUrl = await new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-  const img = await new Promise((res, rej) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = dataUrl;
-  });
-  let embedding = null;
-  if ($('checkSemanticImage')?.checked) {
-    try { embedding = await window.YB.semantic.embed(dataUrl); }
-    catch (e) { console.warn('[YB] SigLIP sample embedding unavailable:', e.message); }
-  }
-  return {
-    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
-    label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
-    hash: window.YB.image.dhash(img),
-    phash: window.YB.image.phash(img),
-    embedding,
-    /* храним уменьшенный превью, чтобы не раздувать storage */
-    dataUrl: await thumbnailDataUrl(img, 64)
-  };
-}
-
-function thumbnailDataUrl(img, size) {
-  const c = document.createElement('canvas');
-  const k = size / Math.max(img.naturalWidth, img.naturalHeight);
-  c.width = Math.max(1, Math.round(img.naturalWidth * k));
-  c.height = Math.max(1, Math.round(img.naturalHeight * k));
-  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', 0.6);
-}
-
 async function save() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
@@ -184,32 +118,12 @@ async function save() {
     .filter(k => k.text);
   keywords = kws;
   renderKeywords();
-  if (settings.checkSemanticImage && photoSamples.length) {
-    try {
-      status('Готовлю семантические эталоны…');
-      await window.YB.semantic.embedSamples(photoSamples, (done, total) => status(`SigLIP: ${done}/${total}`));
-    } catch (e) {
-      console.warn('[YB] semantic samples unavailable:', e.message);
-      status('SigLIP недоступен — сохранены dHash/pHash', false);
-    }
-  }
-  await api.storage.local.set({ settings, keywords: kws, photoSamples });
+  await api.storage.local.set({ settings, keywords: kws });
   /* уведомляем все вкладки YouTube */
   const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
   await Promise.all(tabs.map(t => api.tabs.sendMessage(t.id, { type: 'config-changed' }).catch(() => {})));
   status('Сохранено, вкладки обновлены');
 }
-
-$('addPhotos').onclick = () => $('photoFile').click();
-$('photoFile').onchange = async (e) => {
-  for (const f of Array.from(e.target.files)) {
-    try { photoSamples.push(await fileToSample(f)); }
-    catch (err) { status('Не удалось добавить ' + f.name + ': ' + err.message, false); }
-  }
-  e.target.value = '';
-  renderSamples();
-};
-$('clearPhotos').onclick = () => { photoSamples = []; renderSamples(); };
 
 $('kwAdd').onclick = () => { if (addKeyword($('kwInput').value)) $('kwInput').value = ''; };
 $('kwInput').onkeydown = (e) => {
@@ -246,7 +160,6 @@ $('importFile').onchange = async (e) => {
     await api.storage.local.set({
       settings: data.settings || {},
       keywords: data.keywords || [],
-      photoSamples: data.photoSamples || []
     });
     await load();
     status('Импортировано');
