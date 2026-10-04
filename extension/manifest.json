@@ -1,0 +1,71 @@
+{
+  "manifest_version": 2,
+  "name": "Youtube Blocker",
+  "version": "1.0.3",
+  "description": "Детектирует видео YouTube по названию и по миниатюре (OCR текста на картинке, сравнение с образцами, опционально — речь через Whisper) и отправляет сигнал «Не интересно» для совпадений из вашего списка.",
+  "icons": {
+    "48": "icons/icon48.png",
+    "96": "icons/icon96.png"
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "*://*.youtube.com/*",
+    "*://music.youtube.com/*",
+    "*://*.ytimg.com/*",
+    "*://*.googlevideo.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://music.youtube.com/*"
+      ],
+      "js": [
+        "lib/tesseract.min.js",
+        "lib/whisper.js",
+        "matcher.js",
+        "image.js",
+        "speech.js",
+        "ocr.js",
+        "dismiss.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "web_accessible_resources": [
+        "lib/worker-tesseract.min.js",
+        "lib/tesseract-core*.js",
+        "lib/tesseract-core*.wasm.js",
+        "lib/tesseract-core*.wasm",
+        "lib/eng.traineddata.gz",
+        "lib/rus.traineddata.gz",
+        "lib/*.traineddata.gz",
+        "models/*.bin",
+        "models/*.ggml"
+      ]
+    }
+  ],
+  "browser_action": {
+    "default_title": "Youtube Blocker",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "96": "icons/icon96.png"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "youtube-blocker@local.dev",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
+    }
+  }
+}

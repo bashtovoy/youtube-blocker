@@ -1,0 +1,24 @@
+{
+  "comment": "Антивоенный блок-лист: всё, что не мирный контент. Мультиязычный (ru/en/de). Осторожно: war/warrior/verdict-подобные токены могут задевать легковые названия (The Witcher, Verdict) — при ложном срабатывании уберите строку из списка в попапе.",
+  "keywords": [
+    "война", "военный", "военные", "военная", "войсковой", "войска", "вооруженные",
+    "оружие", "вооружение", "стрельба", "обстрел", "артиллерия", "миномет",
+    "ракета", "ракетный", "пуск ракет", "баллистическая", "ядерный", "ядерное оружие",
+    "танк", "бронетехника", "штурм", "наступление",
+    "фронт", "боевые", "боевик", "боестолкновение", "перестрелка", "атака дрона", "удар дрона",
+    "бомбардировка", "саботаж", "диверсия", "ПВО", "зенитный",
+    "вермахт", "ваффен", "нацист", "агрессор",
+    "красная армия", "росгвардия", "чвк", "мобилизация", "военкомат", "призывник",
+    "смерть", "погибшие", "жертвы войны", "кровопролитие", "геноцид", "террор", "теракт",
+    "экстремизм", "милитари", "спецназ", "антитеррор", "война в украине",
+    "war", "warfare", "weapon", "weapons", "gunfight", "shooting", "artillery",
+    "missile", "bombing", "bomb", "airstrike", "air raid", "air defense",
+    "combat", "battlefield", "battle", "frontline", "invasion", "military offensive",
+    "military", "army", "navy", "marines", "paratroopers", "special forces",
+    "soldiers", "soldier", "conscription", "tanks", "fighter jet",
+    "bomber", "drone strike", "uav", "nuclear", "warhead", "ammunition",
+    "firearms", "rifle", "machine gun", "grenade", "warship",
+    "world war", "civil war", "war crime", "casualties", "killed in action",
+    "Bundeswehr", "Wehrmacht", "Krieg", "Militär", "Panzer", "Waffe", "Raketen", "Soldaten"
+  ]
+}

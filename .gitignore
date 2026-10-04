@@ -1,0 +1,25 @@
+# ОС / редакторы
+.DS_Store
+*.swp
+
+# Артефакты сборки (подписанные/собранные пакеты)
+web-ext-artifacts/
+*.xpi
+*.zip
+
+# Сторонние библиотеки и модели — скачиваются setup.sh, не храним в git
+extension/lib/
+extension/models/
+
+# Логи и рантайм дев-моста
+dev.log
+web-ext-run.log
+devcommands.json
+
+# Дев-мост расширения (опрашивает localhost и выполняет удалённые команды)
+# не входит в публичный релиз
+extension/devreport.js
+
+# node
+node_modules/
+npm-debug.log*

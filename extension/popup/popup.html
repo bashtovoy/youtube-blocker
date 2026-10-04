@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { width: 360px; margin: 0; font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg,#fff7ee 0%,#fdeef4 55%,#eaf4ff 100%); color: #33354f; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
+      background: linear-gradient(135deg,#ff8a65 0%,#ff5c8a 55%,#b06bf5 100%); color: #fff;
+      box-shadow: 0 2px 10px rgba(176,107,245,.25); }
+    header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .2px; }
+    header h1::before { content: "\1F324\FE0F  "; }
+    #blocked { background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.4);
+      padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    main { padding: 12px 14px; }
+    textarea { width: 100%; height: 110px; background: #fff; color: #33354f; border: 1px solid #e3d9e8;
+      border-radius: 10px; padding: 8px; font: inherit; resize: vertical; box-shadow: inset 0 1px 2px rgba(0,0,0,.03); }
+    label.row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+    label.row input[type=checkbox] { accent-color: #ff5c8a; width: 15px; height: 15px; margin: 0; }
+    select, input[type=number] { background: #fff; color: #33354f; border: 1px solid #e3d9e8; border-radius: 8px; padding: 3px 6px; }
+    button { background: linear-gradient(135deg,#2dd4bf,#38bdf8); color: #fff; border: 0; border-radius: 10px;
+      padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(56,189,248,.3);
+      transition: transform .08s ease, box-shadow .08s ease, filter .08s ease; }
+    button:hover { filter: brightness(1.05); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(56,189,248,.35); }
+    button:active { transform: translateY(0); }
+    button.secondary { background: #fff; color: #6b3fd6; border: 1px solid #d9ccf7; box-shadow: none; }
+    button.secondary:hover { background: #f3edff; }
+    button.danger { background: linear-gradient(135deg,#ff6b6b,#ff8a5c); color: #fff; box-shadow: 0 2px 6px rgba(255,107,107,.3); }
+    .rowbtns { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+    #samples { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+    .sample { position: relative; }
+    .sample img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; border: 2px solid #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,.12); display: block; }
+    .sample .del { position: absolute; top: -6px; right: -6px; background: #ff5c5c; color: #fff; border-radius: 50%;
+      width: 18px; height: 18px; line-height: 16px; text-align: center; cursor: pointer; font-size: 12px; border: 2px solid #fff; padding: 0; }
+    .sample .lbl { font-size: 10px; max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7a7391; }
+    fieldset { border: 1px solid #eadfe9; border-radius: 14px; margin: 10px 0; padding: 10px 12px;
+      background: rgba(255,255,255,.65); box-shadow: 0 2px 8px rgba(120,90,160,.06); }
+    legend { padding: 2px 10px; color: #6b3fd6; font-size: 12px; font-weight: 700; background: #f3edff;
+      border: 1px solid #e2d4fb; border-radius: 999px; }
+    #status { color: #12a150; min-height: 16px; font-size: 12px; font-weight: 600; }
+    .hint { color: #8a839c; font-size: 11px; }
+    .kwlist { max-height: 200px; overflow-y: auto; border: 1px solid #eadfe9; border-radius: 10px; background: #fff; margin-bottom: 6px; }
+    .kwlist:empty::after { content: "список пуст — добавьте слова ниже \1F331"; color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
+    .kwrow { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #f2ecf6; }
+    .kwrow:last-child { border-bottom: 0; }
+    .kwrow:hover { background: #faf6ff; }
+    .kwrow input[type=checkbox] { accent-color: #2dd4bf; margin: 0; }
+    .kwrow input[type=text] { flex: 1; background: transparent; color: #33354f; border: 0; padding: 3px 2px; font: inherit; }
+    .kwrow input[type=text]:focus { outline: 2px solid #bfe9ff; border-radius: 4px; }
+    .kwrow.off { opacity: .5; }
+    .kwrow.off input[type=text] { text-decoration: line-through; color: #a49bb5; }
+    .kwrow .cnt { color: #38bdf8; font-size: 11px; font-weight: 700; min-width: 18px; text-align: right; }
+    .kwrow .del { background: transparent; color: #ff9db0; border: 0; font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
+    .kwrow .del:hover { color: #ff5c5c; }
+    .kwadd { display: flex; gap: 6px; }
+    .kwadd input[type=text] { flex: 1; background: #fff; color: #33354f; border: 1px solid #e3d9e8; border-radius: 10px; padding: 7px; font: inherit; }
+    .kwadd input[type=text]:focus { outline: 2px solid #bfe9ff; border-color: #38bdf8; }
+    details.bulk { margin-top: 8px; }
+    details.bulk summary { cursor: pointer; color: #6b3fd6; font-size: 12px; font-weight: 600; }
+    details.bulk textarea { margin-top: 6px; }
+    .kwcount { color: #7a7391; font-size: 11px; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Youtube Blocker</h1>
+    <span id="blocked"></span>
+  </header>
+  <main>
+    <label class="row"><input type="checkbox" id="enabled"> Расширение включено</label>
+
+    <fieldset>
+      <legend>Список слов для блокировки</legend>
+      <div id="kwList" class="kwlist"></div>
+      <div class="kwadd">
+        <input type="text" id="kwInput" placeholder="новое слово или фраза, Enter — добавить">
+        <button id="kwAdd" class="secondary">Добавить</button>
+      </div>
+      <div class="kwcount" id="kwCount"></div>
+      <details class="bulk">
+        <summary>Массовое редактирование</summary>
+        <textarea id="keywordsBulk" placeholder="по одному слову/фразе на строку"></textarea>
+        <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Применить из текста</button></div>
+      </details>
+      <div class="hint">Совпадение по названию — нечёткое (учитывает опечатки/падежи). Снимите галочку, чтобы временно отключить слово, не удаляя его.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Образцы фото (миниатюры для сравнения)</legend>
+      <div id="samples"></div>
+      <div class="rowbtns">
+        <input type="file" id="photoFile" accept="image/*" multiple hidden>
+        <button id="addPhotos" class="secondary">Добавить фото…</button>
+        <button id="clearPhotos" class="danger">Очистить</button>
+      </div>
+      <div class="hint">Миниатюры сравниваются с образцами по перцептивному хэшу; OCR читает текст на картинке и ищет его в списке слов.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Что проверять</legend>
+      <label class="row"><input type="checkbox" id="checkTitle"> Название видео</label>
+      <label class="row"><input type="checkbox" id="checkThumbHash"> Фото: сравнение с образцами</label>
+      <label class="row"><input type="checkbox" id="checkThumbOcr"> Фото: OCR текста на миниатюре</label>
+      <label class="row"><input type="checkbox" id="checkSpeech"> Речь в видео (Whisper, тяжело)</label>
+      <label class="row"><input type="checkbox" id="fuzzy"> Нечёткое сравнение (опечатки, падежи)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Действие и тонкая настройка</legend>
+      <label class="row">Действие:
+        <select id="mode">
+          <option value="dismiss">«Не интересно» (сигнал YouTube)</option>
+          <option value="hide">Только скрыть из выдачи</option>
+        </select>
+      </label>
+      <label class="row">OCR языки:
+        <select id="ocrLangs">
+          <option value="eng+rus">eng+rus</option>
+          <option value="rus">rus</option>
+          <option value="eng">eng</option>
+        </select>
+      </label>
+      <label class="row">Порог сходства фото:
+        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(меньше = строже, из 64)</span>
+      </label>
+      <label class="row">Пауза между сигналами, мс:
+        <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
+      </label>
+    </fieldset>
+
+    <div class="rowbtns">
+      <button id="save">Сохранить</button>
+      <button id="export" class="secondary">Экспорт JSON</button>
+      <button id="import" class="secondary">Импорт JSON</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+    </div>
+    <div id="status"></div>
+  </main>
+  <script src="../matcher.js"></script>
+  <script src="../image.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
