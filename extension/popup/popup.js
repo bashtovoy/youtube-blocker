@@ -105,7 +105,7 @@ async function save() {
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
   const semanticRaw = Number(settings.semanticThreshold);
-  settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.50 && semanticRaw <= 0.99
+  settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.05 && semanticRaw <= 0.95
     ? semanticRaw
     : DEFAULT_SETTINGS.semanticThreshold;
   const hashRaw = Number(settings.hashThreshold);
