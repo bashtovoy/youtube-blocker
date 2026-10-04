@@ -7,6 +7,24 @@ const $ = id => document.getElementById(id);
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
 const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  checkTitle: true,
+  checkThumbHash: true,
+  checkSemanticImage: true,
+  checkThumbOcr: false,
+  checkSpeech: false,
+  fuzzy: true,
+  mode: 'dismiss',
+  ocrLangs: 'eng+rus',
+  hashThreshold: 8,
+  semanticThreshold: 0.82,
+  actionDelayMs: 2500,
+  speechLang: 'ru',
+  speechModel: 'models/ggml-base.bin',
+  speechMaxSeconds: 120
+};
+
 let photoSamples = [];
 let keywords = [];   /* [{ text, enabled }] */
 
@@ -29,9 +47,9 @@ async function load() {
   const data = await api.storage.local.get({
     settings: {}, keywords: [], photoSamples: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
-  const s = data.settings || {};
+  const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'checkSemanticImage' || id === 'fuzzy'); });
-  VALUE_IDS.forEach(id => { if (id in s) $(id).value = s[id]; });
+  VALUE_IDS.forEach(id => { $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
   photoSamples = data.photoSamples || [];
