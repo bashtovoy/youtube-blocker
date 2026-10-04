@@ -195,14 +195,26 @@
 
   async function matchThumbnail(v) {
     const hashNeeded = state.settings.checkThumbHash && state.photoSamples.length > 0;
+    const semanticNeeded = state.settings.checkSemanticImage && state.photoSamples.some(s => Array.isArray(s.embedding) && s.embedding.length);
     const ocrNeeded = state.settings.checkThumbOcr && state.keywords.length > 0;
-    if (!hashNeeded && !ocrNeeded) return null;
+    if (!hashNeeded && !semanticNeeded && !ocrNeeded) return null;
     if (hashNeeded) {
       try {
         const desc = await descriptorCached(v.thumb);
         const m = window.YB.image.matchHash(desc, state.photoSamples, state.settings.hashThreshold);
         if (m) return { source: 'photo', keyword: m.sample.label || 'образец фото', distance: m.distance, phashDistance: m.phashDistance };
       } catch (e) { log('image descriptor fail', v.videoId, e.message); }
+    }
+    if (semanticNeeded) {
+      try {
+        const vector = await window.YB.semantic.embed(v.thumb);
+        const m = window.YB.semantic.bestMatch(vector, state.photoSamples, state.settings.semanticThreshold);
+        if (m) return {
+          source: 'semantic-image',
+          keyword: m.sample.label || 'семантический образ',
+          score: Number(m.score.toFixed(4))
+        };
+      } catch (e) { log('semantic image fail', v.videoId, e.message); }
     }
     if (ocrNeeded) {
       try {
