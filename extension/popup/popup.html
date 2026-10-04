@@ -85,26 +85,14 @@
         <textarea id="keywordsBulk" placeholder="по одному слову/фразе на строку"></textarea>
         <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Применить из текста</button></div>
       </details>
-      <div class="hint">Совпадение по названию — нечёткое (учитывает опечатки/падежи). Снимите галочку, чтобы временно отключить слово, не удаляя его.</div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Образцы фото (миниатюры для сравнения)</legend>
-      <div id="samples"></div>
-      <div class="rowbtns">
-        <input type="file" id="photoFile" accept="image/*" multiple hidden>
-        <button id="addPhotos" class="secondary">Добавить фото…</button>
-        <button id="clearPhotos" class="danger">Очистить</button>
-      </div>
-      <div class="hint">Миниатюры сравниваются с образцами по перцептивному хэшу; OCR читает текст на картинке и ищет его в списке слов.</div>
+      <div class="hint">Каждый пункт — понятие, которое расширение ищет и в названии, и семантически в самой миниатюре. Например: «футбол», «электромобили», «Трамп». OCR можно включить дополнительно для текста на миниатюрах.</div>
     </fieldset>
 
     <fieldset>
       <legend>Что проверять</legend>
       <label class="row"><input type="checkbox" id="checkTitle"> Название видео</label>
-      <label class="row"><input type="checkbox" id="checkThumbHash"> Фото: точное/перцептивное сравнение</label>
-      <label class="row"><input type="checkbox" id="checkSemanticImage"> Фото: семантическое сравнение (SigLIP)</label>
-      <label class="row"><input type="checkbox" id="checkThumbOcr"> Фото: OCR текста на миниатюре</label>
+            <label class="row"><input type="checkbox" id="checkSemanticImage"> Семантика: список → изображение (SigLIP)</label>
+      <label class="row"><input type="checkbox" id="checkThumbOcr"> OCR текста на миниатюре</label>
       <label class="row"><input type="checkbox" id="checkSpeech"> Речь в видео (Whisper, тяжело)</label>
       <label class="row"><input type="checkbox" id="fuzzy"> Нечёткое сравнение (опечатки, падежи)</label>
     </fieldset>
@@ -127,8 +115,8 @@
       <label class="row">Порог dHash/pHash:
         <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(меньше = строже)</span>
       </label>
-      <label class="row">Порог SigLIP:
-        <input type="number" id="semanticThreshold" min="0.50" max="0.99" step="0.01" style="width:58px"> <span class="hint">(выше = строже)</span>
+      <label class="row">Порог семантики:
+        <input type="number" id="semanticThreshold" min="0.05" max="0.95" step="0.01" style="width:58px"> <span class="hint">(выше = строже)</span>
       </label>
       <label class="row">Пауза между сигналами, мс:
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
