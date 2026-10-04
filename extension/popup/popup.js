@@ -156,6 +156,15 @@ async function save() {
     .filter(k => k.text);
   keywords = kws;
   renderKeywords();
+  if (settings.checkSemanticImage && photoSamples.length) {
+    try {
+      status('Готовлю семантические эталоны…');
+      await window.YB.semantic.embedSamples(photoSamples, (done, total) => status(`SigLIP: ${done}/${total}`));
+    } catch (e) {
+      console.warn('[YB] semantic samples unavailable:', e.message);
+      status('SigLIP недоступен — сохранены dHash/pHash', false);
+    }
+  }
   await api.storage.local.set({ settings, keywords: kws, photoSamples });
   /* уведомляем все вкладки YouTube */
   const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
