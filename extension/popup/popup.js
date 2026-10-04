@@ -141,7 +141,7 @@ document.querySelector('details.bulk').addEventListener('toggle', (e) => {
 $('save').onclick = save;
 
 $('export').onclick = async () => {
-  const data = await api.storage.local.get(['settings', 'keywords', 'photoSamples']);
+  const data = await api.storage.local.get(['settings', 'keywords']);
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
