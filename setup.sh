@@ -16,6 +16,12 @@ curl -fsSL -o "$SEMANTIC_MODEL/config.json" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/config.json"
 curl -fsSL -o "$SEMANTIC_MODEL/preprocessor_config.json" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/preprocessor_config.json"
+curl -fsSL -o "$SEMANTIC_MODEL/tokenizer.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/tokenizer.json"
+curl -fsSL -o "$SEMANTIC_MODEL/tokenizer_config.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/tokenizer_config.json"
+curl -fsSL -o "$SEMANTIC_MODEL/special_tokens_map.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/special_tokens_map.json"
 mkdir -p "$SEMANTIC_MODEL/onnx"
 curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_q4f16.onnx"
@@ -73,8 +79,11 @@ echo
 for F in \
   "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
   "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
-  "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
-  "$SEMANTIC_MODEL/onnx/vision_model_q4.onnx"; do
+  "$SEMANTIC_MODEL/onnx/model_q4f16.onnx" \
+  "$SEMANTIC_MODEL/onnx/model_q4.onnx" \
+  "$SEMANTIC_MODEL/tokenizer.json" \
+  "$SEMANTIC_MODEL/tokenizer_config.json" \
+  "$SEMANTIC_MODEL/special_tokens_map.json"; do
   if [[ -s "$F" ]]; then echo "OK  $F"; else echo "!!  отсутствует/пуст: $F — семантический WASM-fallback может не работать"; fi
 done
 
