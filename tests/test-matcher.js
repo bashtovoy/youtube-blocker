@@ -1,0 +1,10 @@
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const sandbox = { window: {} };
+vm.runInNewContext(fs.readFileSync(require('path').join(__dirname, '../extension/matcher.js'), 'utf8'), sandbox);
+const m = sandbox.window.YB.matcher;
+assert.strictEqual(m.matchKeywords('Политика Германии сегодня', ['политика'], {fuzzy: true}), 'политика');
+assert.strictEqual(m.matchKeywords('This is a chair', ['AI'], {fuzzy: true}), null);
+assert.strictEqual(m.matchKeywords('Электромобили и батареи', ['электромобил'], {fuzzy: true}), 'электромобил');
+assert.strictEqual(m.matchKeywords('Новое видео про Claude AI', ['claude ai'], {fuzzy: true}), 'claude ai');
+assert.strictEqual(m.matchKeywords('машины будущего', ['машин'], {fuzzy: true}), 'машин');
+console.log('matcher tests: OK');

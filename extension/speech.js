@@ -72,7 +72,7 @@
       w.postMessage({
         type: 'init',
         libUrl: browser.runtime.getURL('lib/whisper.js'),
-        modelUrl: browser.runtime.getURL(opts.modelPath || 'models/ggml-base.en.q8_0.bin'),
+        modelUrl: browser.runtime.getURL(opts.modelPath || 'models/ggml-base.bin'),
         language: opts.language || 'ru',
         threadCount: opts.threadCount || 2
       });

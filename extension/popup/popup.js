@@ -5,7 +5,7 @@ const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
 
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'actionDelayMs'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 let photoSamples = [];
 let keywords = [];   /* [{ text, enabled }] */

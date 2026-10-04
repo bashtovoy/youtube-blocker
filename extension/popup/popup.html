@@ -129,6 +129,19 @@
       <label class="row">Пауза между сигналами, мс:
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
       </label>
+      <label class="row">Язык речи:
+        <select id="speechLang">
+          <option value="ru" selected>ru</option>
+          <option value="en">en</option>
+          <option value="auto">auto</option>
+        </select>
+      </label>
+      <label class="row">Модель Whisper:
+        <input type="text" id="speechModel" value="models/ggml-base.bin" style="flex:1">
+      </label>
+      <label class="row">Анализировать речи, сек:
+        <input type="number" id="speechMaxSeconds" min="10" max="600" step="10" value="120" style="width:70px">
+      </label>
     </fieldset>
 
     <div class="rowbtns">
