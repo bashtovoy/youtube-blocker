@@ -9,11 +9,9 @@
     fuzzy: true,
     checkTitle: true,
     checkThumbOcr: false,
-    checkThumbHash: true,
     checkSemanticImage: true,
     checkSpeech: false,
     ocrLangs: 'eng+rus',
-    hashThreshold: 8,
     semanticThreshold: 0.15,
     speechLang: 'ru',
     speechModel: 'models/ggml-base.bin',
@@ -44,7 +42,7 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.photoSamples.length > 0;
+    return state.keywords.length > 0;
   }
 
   async function loadConfig() {
