@@ -124,8 +124,10 @@ async function fileToSample(file) {
     i.src = dataUrl;
   });
   let embedding = null;
-  try { embedding = await window.YB.semantic.embed(dataUrl); }
-  catch (e) { console.warn('[YB] SigLIP sample embedding unavailable:', e.message); }
+  if ($('checkSemanticImage')?.checked) {
+    try { embedding = await window.YB.semantic.embed(dataUrl); }
+    catch (e) { console.warn('[YB] SigLIP sample embedding unavailable:', e.message); }
+  }
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
