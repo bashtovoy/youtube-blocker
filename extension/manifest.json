@@ -28,7 +28,6 @@
         "*://music.youtube.com/*"
       ],
       "js": [
-        "lib/transformers.min.js",
         "lib/tesseract.min.js",
         "lib/whisper.js",
         "matcher.js",
