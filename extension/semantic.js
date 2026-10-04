@@ -1,4 +1,4 @@
-/* semantic.js — local SigLIP text ↔ image semantic matching */
+/* semantic.js — local SigLIP text → image semantic matching */
 (function () {
   'use strict';
 
@@ -22,8 +22,8 @@
       const p = pending.get(m.id);
       if (!p) return;
       pending.delete(m.id);
-      if (m.type === 'image-embedding') p.resolve(m.vector);
-      else if (m.type === 'text-embeddings') p.resolve(m.vectors);
+      if (m.type === 'texts-ready') p.resolve(m.labels);
+      else if (m.type === 'image-scores') p.resolve(m.scores);
       else p.reject(new Error(m.error || 'semantic worker error'));
     };
     worker.onerror = e => {
@@ -58,30 +58,22 @@
     }
   }
 
-  async function embedImage(source) {
+  async function setTexts(texts) {
     await init();
-    return request('embed-image', { source });
+    return request('set-texts', { texts });
   }
 
-  async function embedTexts(texts) {
+  async function scoreImage(source) {
     await init();
-    return request('embed-texts', { texts });
+    return request('score-image', { source });
   }
 
-  function cosine(a, b) {
-    if (!a || !b || a.length !== b.length) return -1;
-    let dot = 0;
-    for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
-    return dot;
-  }
-
-  function bestTextMatch(imageVector, textEntries, threshold) {
-    const min = Number.isFinite(Number(threshold)) ? Number(threshold) : 0.30;
+  function bestTextMatch(scores, threshold) {
+    const min = Number.isFinite(Number(threshold)) ? Number(threshold) : 0.15;
     let best = null;
-    for (const entry of textEntries || []) {
-      if (!entry?.vector || !entry.text) continue;
-      const score = cosine(imageVector, entry.vector);
-      if (!best || score > best.score) best = { text: entry.text, score };
+    for (const item of scores || []) {
+      if (!item?.text || !Number.isFinite(item.score)) continue;
+      if (!best || item.score > best.score) best = item;
     }
     return best && best.score >= min ? best : null;
   }
@@ -90,10 +82,8 @@
   window.YB.semantic = {
     modelDir: MODEL_DIR,
     init,
-    embed: embedImage,
-    embedImage,
-    embedTexts,
-    cosine,
+    setTexts,
+    scoreImage,
     bestTextMatch
   };
 })();
