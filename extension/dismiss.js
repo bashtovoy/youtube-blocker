@@ -65,10 +65,10 @@
       await sleep(50);
       const entry = findNotInterestedEntry(document);
       if (entry) return entry;
-      const menus = document.querySelectorAll('ytd-popup-container tp-yt-paper-listbox, tp-yt-paper-listbox, [role="menu"]');
-      for (const menu of menus) if (visible(menu)) return menu;
+      /* Наличие открытого меню само по себе не является успехом: ждём именно
+         однозначный пункт «Не интересно», иначе безопасно завершаем ожидание. */
     }
-    throw new Error('menu did not open');
+    throw new Error('not-interested entry did not appear');
   }
 
   function snapshotUndo() {
@@ -77,9 +77,9 @@
     )).filter(visible).map(b => b));
   }
 
-  async function clickDismissConfirm() {
+  async function clickDismissConfirm(dialogBefore) {
     await sleep(250);
-    const dialog = Array.from(document.querySelectorAll('tp-yt-paper-dialog, [role="dialog"]')).find(visible);
+    const dialog = Array.from(document.querySelectorAll('tp-yt-paper-dialog, [role="dialog"]')).find(d => visible(d) && !dialogBefore.has(d));
     if (!dialog) return false;
     const buttons = Array.from(dialog.querySelectorAll('tp-yt-paper-button, button, yt-button-shape button')).filter(visible);
     const rejectUndo = t => /undo|отмен|cancel|назад|back|close|закрыт/i.test(t);
@@ -95,6 +95,7 @@
 
   async function notInterested(item) {
     const undoBefore = snapshotUndo();
+    const dialogBefore = new Set(Array.from(document.querySelectorAll('tp-yt-paper-dialog, [role="dialog"]')));
     const entry = await openMenu(item);
     if (!entry || !entry.querySelector) throw new Error('no menu entry');
 
@@ -109,7 +110,7 @@
       ? (target.shadowRoot.querySelector('a, #button, paper-button') || target)
       : (target.querySelector('a, #button, tp-yt-paper-button, paper-button, button') || target);
     fullClick(clickable);
-    await clickDismissConfirm();
+    await clickDismissConfirm(dialogBefore);
     return { undoBefore };
   }
 

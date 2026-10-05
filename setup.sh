@@ -6,8 +6,37 @@ cd "$(dirname "$0")"
 
 LIB="extension/lib"
 MODELS="extension/models"
-mkdir -p "$LIB" "$MODELS"
+SEMANTIC_MODEL="$MODELS/siglip-base-patch16-224"
+mkdir -p "$LIB" "$MODELS" "$SEMANTIC_MODEL"
 
+echo "==> Transformers.js + SigLIP semantic vision (опциональный, локальный)"
+curl -fsSL -o "$LIB/transformers.min.js" \
+  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/transformers.min.js"
+curl -fsSL -o "$SEMANTIC_MODEL/config.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/config.json"
+curl -fsSL -o "$SEMANTIC_MODEL/preprocessor_config.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/preprocessor_config.json"
+curl -fsSL -o "$SEMANTIC_MODEL/tokenizer.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/tokenizer.json"
+curl -fsSL -o "$SEMANTIC_MODEL/tokenizer_config.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/tokenizer_config.json"
+curl -fsSL -o "$SEMANTIC_MODEL/special_tokens_map.json" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/special_tokens_map.json"
+curl -fsSL -o "$SEMANTIC_MODEL/spiece.model" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/spiece.model"
+mkdir -p "$SEMANTIC_MODEL/onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/model_q4f16.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/model_q4f16.onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/model_q4.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/model_q4.onnx"
+# Локальный ONNX Runtime WASM (fallback для CPU/WASM) — тот же dist, что и transformers.min.js.
+# Worker задаёт wasmPaths=./lib/, поэтому эти файлы обязаны лежать в extension/lib/.
+curl -fsSL -o "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
+  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/ort-wasm-simd-threaded.jsep.mjs"
+curl -fL --progress-bar -o "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
+  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/ort-wasm-simd-threaded.jsep.wasm"
+echo "SigLIP готов: q4f16 (WebGPU) + q4 (WASM) + локальный ONNX WASM runtime; инференс — локально в браузере."
+echo
 echo "==> Tesseract.js (OCR миниатюр) — v4.1.1"
 curl -fsSL -o "$LIB/tesseract.min.js" \
   "https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"
@@ -48,6 +77,19 @@ if [[ "$ANSWER" == "y" || "$ANSWER" == "Y" || "$ANSWER" == "yes" ]]; then
 fi
 
 echo
+# Мягкая проверка (не обрывает скрипт при set -e): предупреждаем, если что-то не докачалось.
+for F in \
+  "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
+  "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
+  "$SEMANTIC_MODEL/onnx/model_q4f16.onnx" \
+  "$SEMANTIC_MODEL/onnx/model_q4.onnx" \
+  "$SEMANTIC_MODEL/tokenizer.json" \
+  "$SEMANTIC_MODEL/tokenizer_config.json" \
+  "$SEMANTIC_MODEL/special_tokens_map.json" \
+  "$SEMANTIC_MODEL/spiece.model"; do
+  if [[ -s "$F" ]]; then echo "OK  $F"; else echo "!!  отсутствует/пуст: $F — семантический WASM-fallback может не работать"; fi
+done
+
 echo "Готово. Содержимое extension/lib:"
 ls -lh "$LIB"
 echo

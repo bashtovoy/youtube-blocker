@@ -1,13 +1,29 @@
-/* popup.js — управление списком, образцами фото и настройками */
+/* popup.js — управление текстовым списком семантических понятий и настройками */
 'use strict';
 
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkThumbHash', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'hashThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'fuzzy'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
-let photoSamples = [];
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  checkTitle: true,
+  checkSemanticImage: true,
+  checkThumbOcr: false,
+  checkSpeech: false,
+  fuzzy: true,
+  mode: 'dismiss',
+  ocrLangs: 'eng+rus',
+  hashThreshold: 8,
+  semanticThreshold: 0.15,
+  actionDelayMs: 2500,
+  speechLang: 'ru',
+  speechModel: 'models/ggml-base.bin',
+  speechMaxSeconds: 120
+};
+
 let keywords = [];   /* [{ text, enabled }] */
 
 function status(msg, ok = true) {
@@ -27,15 +43,13 @@ function normalizeKeywords(list) {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], photoSamples: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
+    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
   });
-  const s = data.settings || {};
-  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkThumbHash' || id === 'fuzzy'); });
-  VALUE_IDS.forEach(id => { if (id in s) $(id).value = s[id]; });
+  const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
+  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
+  VALUE_IDS.forEach(id => { $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
-  photoSamples = data.photoSamples || [];
-  renderSamples();
   const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
   $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · локально: ${hid}` : '';
 }
@@ -86,89 +100,30 @@ function addKeyword(text) {
   return true;
 }
 
-function renderSamples() {
-  const box = $('samples');
-  box.innerHTML = '';
-  for (const p of photoSamples) {
-    const div = document.createElement('div');
-    div.className = 'sample';
-    const img = document.createElement('img');
-    img.src = p.dataUrl;
-    img.title = p.label + ` (hash: ${p.hash})`;
-    const lbl = document.createElement('div');
-    lbl.className = 'lbl';
-    lbl.textContent = p.label;
-    const del = document.createElement('button');
-    del.className = 'del';
-    del.textContent = '×';
-    del.onclick = () => { photoSamples = photoSamples.filter(x => x.id !== p.id); renderSamples(); };
-    div.append(img, lbl, del);
-    box.appendChild(div);
-  }
-  if (!photoSamples.length) {
-    box.innerHTML = '<span class="hint">пока пусто</span>';
-  }
-}
-
-async function fileToSample(file) {
-  const dataUrl = await new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-  const img = await new Promise((res, rej) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = dataUrl;
-  });
-  return {
-    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
-    label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
-    hash: window.YB.image.dhash(img),
-    phash: window.YB.image.phash(img),
-    /* храним уменьшенный превью, чтобы не раздувать storage */
-    dataUrl: await thumbnailDataUrl(img, 64)
-  };
-}
-
-function thumbnailDataUrl(img, size) {
-  const c = document.createElement('canvas');
-  const k = size / Math.max(img.naturalWidth, img.naturalHeight);
-  c.width = Math.max(1, Math.round(img.naturalWidth * k));
-  c.height = Math.max(1, Math.round(img.naturalHeight * k));
-  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', 0.6);
-}
-
 async function save() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
+  const semanticRaw = Number(settings.semanticThreshold);
+  settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.05 && semanticRaw <= 0.95
+    ? semanticRaw
+    : DEFAULT_SETTINGS.semanticThreshold;
+  const hashRaw = Number(settings.hashThreshold);
+  settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0
+    ? hashRaw
+    : DEFAULT_SETTINGS.hashThreshold;
   settings.logMatch = true;
   const kws = keywords
     .map(k => ({ text: k.text.trim(), enabled: k.enabled !== false }))
     .filter(k => k.text);
   keywords = kws;
   renderKeywords();
-  await api.storage.local.set({ settings, keywords: kws, photoSamples });
+  await api.storage.local.set({ settings, keywords: kws });
   /* уведомляем все вкладки YouTube */
   const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
   await Promise.all(tabs.map(t => api.tabs.sendMessage(t.id, { type: 'config-changed' }).catch(() => {})));
   status('Сохранено, вкладки обновлены');
 }
-
-$('addPhotos').onclick = () => $('photoFile').click();
-$('photoFile').onchange = async (e) => {
-  for (const f of Array.from(e.target.files)) {
-    try { photoSamples.push(await fileToSample(f)); }
-    catch (err) { status('Не удалось добавить ' + f.name + ': ' + err.message, false); }
-  }
-  e.target.value = '';
-  renderSamples();
-};
-$('clearPhotos').onclick = () => { photoSamples = []; renderSamples(); };
 
 $('kwAdd').onclick = () => { if (addKeyword($('kwInput').value)) $('kwInput').value = ''; };
 $('kwInput').onkeydown = (e) => {
@@ -186,7 +141,7 @@ document.querySelector('details.bulk').addEventListener('toggle', (e) => {
 $('save').onclick = save;
 
 $('export').onclick = async () => {
-  const data = await api.storage.local.get(['settings', 'keywords', 'photoSamples']);
+  const data = await api.storage.local.get(['settings', 'keywords']);
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -205,7 +160,6 @@ $('importFile').onchange = async (e) => {
     await api.storage.local.set({
       settings: data.settings || {},
       keywords: data.keywords || [],
-      photoSamples: data.photoSamples || []
     });
     await load();
     status('Импортировано');

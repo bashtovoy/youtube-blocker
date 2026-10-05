@@ -1,4 +1,20 @@
+## 1.2.0 — text → image semantic filtering
+
+- Текстовый список пользователя сравнивается с визуальным содержанием миниатюр через локальный SigLIP.
+- Убраны образцы фото как обязательная часть semantic workflow.
+- SigLIP использует projected image-text logits и sigmoid score.
+- OCR и title/channel matching остаются дополнительными каналами.
+
 # Changelog
+
+## 1.1.1
+
+- Добавлен локальный semantic vision слой SigLIP для визуально-смыслового сравнения миниатюр.
+- Эталонные фотографии получают нормализованные 768-мерные embeddings и сохраняются локально.
+- Инференс выполняется в отдельном Worker; при отсутствии модели сохраняется работа классического каскада.
+- Добавлены настройки `checkSemanticImage` и `semanticThreshold`.
+- Уточнена проверка `Not interested`, текстовый matcher и комбинированный dHash/pHash matcher.
+
 
 Все значимые изменения проекта описаны здесь. Формат — [Keep a Changelog](https://keepachangelog.com/),
 версионирование — [Semantic Versioning](https://semver.org/).

@@ -9,10 +9,10 @@
     fuzzy: true,
     checkTitle: true,
     checkThumbOcr: false,
-    checkThumbHash: true,
+    checkSemanticImage: true,
     checkSpeech: false,
     ocrLangs: 'eng+rus',
-    hashThreshold: 8,
+    semanticThreshold: 0.15,
     speechLang: 'ru',
     speechModel: 'models/ggml-base.bin',
     speechMaxSeconds: 120,
@@ -23,7 +23,6 @@
   const state = {
     settings: Object.assign({}, DEFAULTS),
     keywords: [],
-    photoSamples: [],
     processed: new Set(),
     inFlight: new Set(),
     lastActionAt: 0,
@@ -32,7 +31,9 @@
     observed: new WeakSet(),
     imageListeners: new WeakSet(),
     scanTimer: null,
-    imageCache: new Map()
+    imageCache: new Map(),
+    semanticKeywordsKey: '',
+    semanticReady: false
   };
 
   const log = (...a) => {
@@ -41,18 +42,19 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.photoSamples.length > 0;
+    return state.keywords.length > 0;
   }
 
   async function loadConfig() {
-    const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [], photoSamples: [] });
+    const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [] });
     state.settings = Object.assign({}, DEFAULTS, data.settings || {});
     state.keywords = (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && k.text && k.enabled !== false)
       .map(k => k.text);
-    state.photoSamples = data.photoSamples || [];
-    log('config loaded', { keywords: state.keywords.length, photos: state.photoSamples.length });
+    state.semanticKeywordsKey = '';
+    state.semanticReady = false;
+    log('config loaded', { keywords: state.keywords.length });
     if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
       api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }).catch(() => {});
       initSpeechSoon();
@@ -193,17 +195,35 @@
     return null;
   }
 
+  async function ensureSemanticTexts() {
+    if (!state.settings.checkSemanticImage || !state.keywords.length) return false;
+    const key = state.keywords.join('\u0001');
+    if (state.semanticReady && state.semanticKeywordsKey === key) return true;
+    await window.YB.semantic.setTexts(state.keywords);
+    state.semanticKeywordsKey = key;
+    state.semanticReady = true;
+    log('semantic text concepts ready', state.keywords.length);
+    return true;
+  }
+
   async function matchThumbnail(v) {
-    const hashNeeded = state.settings.checkThumbHash && state.photoSamples.length > 0;
+    const semanticNeeded = state.settings.checkSemanticImage && state.keywords.length > 0;
     const ocrNeeded = state.settings.checkThumbOcr && state.keywords.length > 0;
-    if (!hashNeeded && !ocrNeeded) return null;
-    if (hashNeeded) {
+    if (!semanticNeeded && !ocrNeeded) return null;
+
+    if (semanticNeeded) {
       try {
-        const desc = await descriptorCached(v.thumb);
-        const m = window.YB.image.matchHash(desc, state.photoSamples, state.settings.hashThreshold);
-        if (m) return { source: 'photo', keyword: m.sample.label || 'образец фото', distance: m.distance, phashDistance: m.phashDistance };
-      } catch (e) { log('image descriptor fail', v.videoId, e.message); }
+        await ensureSemanticTexts();
+        const scores = await window.YB.semantic.scoreImage(v.thumb);
+        const m = window.YB.semantic.bestTextMatch(scores, state.settings.semanticThreshold);
+        if (m) return {
+          source: 'semantic-image',
+          keyword: m.text,
+          score: Number(m.score.toFixed(4))
+        };
+      } catch (e) { log('semantic image fail', v.videoId, e.message); }
     }
+
     if (ocrNeeded) {
       try {
         const text = await window.YB.ocr.recognizeUrl(v.thumb, thumbKey(v) + ':' + state.settings.ocrLangs, state.settings.ocrLangs);

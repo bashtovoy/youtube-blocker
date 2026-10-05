@@ -96,9 +96,11 @@
       const d = hamming(desc.hash, s.hash);
       const p = desc.phash && s.phash ? hamming(desc.phash, s.phash) : Infinity;
       const dOk = d <= dThreshold;
-      const pOk = Number.isFinite(p) && p <= Math.min(12, dThreshold + 4);
+      /* pHash alone is too permissive for an «absolutely unwanted» list.
+         Use it as a tolerance layer only when dHash is also reasonably close. */
+      const pOk = Number.isFinite(p) && p <= Math.min(10, dThreshold + 2) && d <= dThreshold + 4;
       if (!dOk && !pOk) continue;
-      const score = dOk ? d : d + 0.65 * p;
+      const score = dOk ? d + 0.15 * Math.min(p, 64) : d + 0.65 * p;
       if (!best || score < best.score) {
         best = { sample: s, distance: d, phashDistance: p, score };
       }

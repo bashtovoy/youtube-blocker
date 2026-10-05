@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Youtube Blocker",
-  "version": "1.1.0",
-  "description": "Детектирует видео YouTube по названию и по миниатюре (OCR текста на картинке, сравнение с образцами, опционально — речь через Whisper) и отправляет сигнал «Не интересно» для совпадений из вашего списка.",
+  "version": "1.2.0",
+  "description": "Детектирует нежелательный контент YouTube по названию, каналу и семантическому соответствию списка пользователя визуальному содержанию миниатюр (локальный SigLIP, OCR) и отправляет штатный сигнал «Не интересно».",
   "icons": {
     "48": "icons/icon48.png",
     "96": "icons/icon96.png"
@@ -17,7 +17,9 @@
     "*://*.googlevideo.com/*"
   ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
@@ -30,6 +32,7 @@
         "lib/whisper.js",
         "matcher.js",
         "image.js",
+        "semantic.js",
         "speech.js",
         "ocr.js",
         "dismiss.js",
@@ -38,6 +41,10 @@
       "run_at": "document_idle",
       "all_frames": false,
       "web_accessible_resources": [
+        "semantic-worker.js",
+        "lib/transformers.min.js",
+        "lib/ort-wasm*.wasm",
+        "lib/ort-wasm*.mjs",
         "lib/worker-tesseract.min.js",
         "lib/tesseract-core*.js",
         "lib/tesseract-core*.wasm.js",
@@ -46,7 +53,8 @@
         "lib/rus.traineddata.gz",
         "lib/*.traineddata.gz",
         "models/*.bin",
-        "models/*.ggml"
+        "models/*.ggml",
+        "models/siglip-base-patch16-224/*"
       ]
     }
   ],
@@ -63,7 +71,9 @@
       "id": "youtube-blocker@local.dev",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"],
+        "required": [
+          "none"
+        ],
         "optional": []
       }
     }
