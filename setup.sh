@@ -22,11 +22,13 @@ curl -fsSL -o "$SEMANTIC_MODEL/tokenizer_config.json" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/tokenizer_config.json"
 curl -fsSL -o "$SEMANTIC_MODEL/special_tokens_map.json" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/special_tokens_map.json"
+curl -fsSL -o "$SEMANTIC_MODEL/spiece.model" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/spiece.model"
 mkdir -p "$SEMANTIC_MODEL/onnx"
-curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
-  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_q4f16.onnx"
-curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_q4.onnx" \
-  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_q4.onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/model_q4f16.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/model_q4f16.onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/model_q4.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/model_q4.onnx"
 # Локальный ONNX Runtime WASM (fallback для CPU/WASM) — тот же dist, что и transformers.min.js.
 # Worker задаёт wasmPaths=./lib/, поэтому эти файлы обязаны лежать в extension/lib/.
 curl -fsSL -o "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
@@ -83,7 +85,8 @@ for F in \
   "$SEMANTIC_MODEL/onnx/model_q4.onnx" \
   "$SEMANTIC_MODEL/tokenizer.json" \
   "$SEMANTIC_MODEL/tokenizer_config.json" \
-  "$SEMANTIC_MODEL/special_tokens_map.json"; do
+  "$SEMANTIC_MODEL/special_tokens_map.json" \
+  "$SEMANTIC_MODEL/spiece.model"; do
   if [[ -s "$F" ]]; then echo "OK  $F"; else echo "!!  отсутствует/пуст: $F — семантический WASM-fallback может не работать"; fi
 done
 
