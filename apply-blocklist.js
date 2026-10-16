@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* apply-blocklist.js — применить blocklist.json к расширению через dev-мост */
+/* apply-blocklist.js — blocklist.json über die Dev-Brücke auf die Erweiterung anwenden */
 'use strict';
 
 const fs = require('fs');
@@ -25,16 +25,16 @@ fs.writeFileSync(CMD_FILE, JSON.stringify([
   { action: 'rescan' },
   { action: 'done' }
 ]));
-console.log('команды в очереди: config (' + BL.keywords.length + ' слов) + rescan');
+console.log('Befehle in der Warteschlange: config (' + BL.keywords.length + ' Wörter) + rescan');
 
 (async () => {
   const t0 = Date.now();
   while (Date.now() - t0 < 60000) {
     await new Promise(r => setTimeout(r, 2000));
     if (!fs.existsSync(CMD_FILE) || fs.readFileSync(CMD_FILE, 'utf8').trim() === '[]') {
-      console.log('применено (очередь пуста)');
+      console.log('angewendet (Warteschlange leer)');
       process.exit(0);
     }
   }
-  console.log('внимание: очередь не опустела за 60с — вкладка Firefox, возможно, не активна (нужна открытая страница youtube.com)');
+  console.log('Achtung: Warteschlange nach 60 s nicht leer — der Firefox-Tab ist möglicherweise nicht aktiv (eine geöffnete Seite youtube.com ist erforderlich)');
 })();

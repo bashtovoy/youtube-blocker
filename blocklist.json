@@ -1,5 +1,5 @@
 {
-  "comment": "Антивоенный блок-лист: всё, что не мирный контент. Мультиязычный (ru/en/de). Осторожно: war/warrior/verdict-подобные токены могут задевать легковые названия (The Witcher, Verdict) — при ложном срабатывании уберите строку из списка в попапе.",
+  "comment": "Antikriegs-Blockliste: alles, was kein friedlicher Inhalt ist. Mehrsprachig (ru/en/de). Achtung: Tokens wie war/warrior/verdict können auch harmlose Titel treffen (The Witcher, Verdict) — bei einem Fehlalarm den Eintrag im Popup aus der Liste entfernen.",
   "keywords": [
     "война", "военный", "военные", "военная", "войсковой", "войска", "вооруженные",
     "оружие", "вооружение", "стрельба", "обстрел", "артиллерия", "миномет",

@@ -1,4 +1,4 @@
-/* ocr.js — OCR миниатюр через Tesseract.js в отдельном воркере (blob-URL обходит CSP) */
+/* ocr.js — OCR von Vorschaubildern über Tesseract.js in einem separaten Worker (Blob-URL umgeht CSP) */
 (function () {
   'use strict';
 
@@ -10,7 +10,7 @@
       try {
         if (msg.type === 'init') {
           worker = await Tesseract.createWorker(msg.langs, 1, {
-            langPath: msg.langPath,     /* локальные .traineddata.gz из папки lib, CDN — fallback */
+            langPath: msg.langPath,     /* lokale .traineddata.gz aus dem lib-Ordner, CDN als Fallback */
             gzip: true,
             logger: m => self.postMessage({ type: 'log', m: { status: m.status } })
           });
@@ -80,9 +80,9 @@
 
     init(langs) {
       const want = langs || this.langs || 'eng+rus';
-      /* уже инициализирован с теми же языками — ничего не делаем */
+      /* bereits mit denselben Sprachen initialisiert — nichts tun */
       if (this.initPromise && this.langs === want && this.worker) return this.initPromise;
-      /* смена языков: пересоздаём воркер с новой конфигурацией */
+      /* Sprachwechsel: Worker mit neuer Konfiguration neu erstellen */
       if (this.worker) {
         try { this.worker.terminate(); } catch (e) { /* noop */ }
         this.worker = null;
@@ -93,7 +93,7 @@
       return this.initPromise;
     }
 
-    _flush() { /* очередь задач обрабатывается последовательно через pending */ }
+    _flush() { /* Aufgabenwarteschlange wird nacheinander über pending abgearbeitet */ }
 
     async recognize(url, key, langs) {
       if (this.cache.has(key)) return this.cache.get(key);
@@ -106,7 +106,7 @@
     }
   }
 
-  /* Последовательная очередь, чтобы не грузить CPU */
+  /* Sequenzielle Warteschlange, um die CPU nicht zu belasten */
   class OcrQueue {
     constructor() { this.tail = Promise.resolve(); }
     push(fn) {
@@ -121,14 +121,14 @@
 
   YB().ocr = {
     /**
-     * Распознать текст с миниатюры.
-     * @param {string} url доступный по CORS URL картинки
-     * @param {string} key ключ кэша
-     * @param {string} langs например 'eng+rus'
+     * Erkennt Text aus einem Vorschaubild.
+     * @param {string} url per CORS erreichbare Bild-URL
+     * @param {string} key Cache-Schlüssel
+     * @param {string} langs z. B. 'eng+rus'
      */
     recognizeUrl(url, key, langs) {
       return queue.push(() => mgr.recognize(url, key, langs).catch(async (err) => {
-        /* одна повторная попытка после реинита */
+        /* ein erneuter Versuch nach dem Neu-Init */
         if (String(err.message).includes('init')) throw err;
         return mgr.recognize(url, key, langs);
       }));

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <style>
@@ -43,7 +43,7 @@
     #status { color: #12a150; min-height: 16px; font-size: 12px; font-weight: 600; }
     .hint { color: #8a839c; font-size: 11px; }
     .kwlist { max-height: 200px; overflow-y: auto; border: 1px solid #eadfe9; border-radius: 10px; background: #fff; margin-bottom: 6px; }
-    .kwlist:empty::after { content: "список пуст — добавьте слова ниже \1F331"; color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
+    .kwlist:empty::after { content: "Liste ist leer — Wörter unten hinzufügen \1F331"; color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
     .kwrow { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #f2ecf6; }
     .kwrow:last-child { border-bottom: 0; }
     .kwrow:hover { background: #faf6ff; }
@@ -70,84 +70,84 @@
     <span id="blocked"></span>
   </header>
   <main>
-    <label class="row"><input type="checkbox" id="enabled"> Расширение включено</label>
+    <label class="row"><input type="checkbox" id="enabled"> Erweiterung aktiviert</label>
 
     <fieldset>
-      <legend>Список слов для блокировки</legend>
+      <legend>Wortliste zum Blockieren</legend>
       <div id="kwList" class="kwlist"></div>
       <div class="kwadd">
-        <input type="text" id="kwInput" placeholder="новое слово или фраза, Enter — добавить">
-        <button id="kwAdd" class="secondary">Добавить</button>
+        <input type="text" id="kwInput" placeholder="neues Wort oder Satz, Enter — hinzufügen">
+        <button id="kwAdd" class="secondary">Hinzufügen</button>
       </div>
       <div class="kwcount" id="kwCount"></div>
       <details class="bulk">
-        <summary>Массовое редактирование</summary>
-        <textarea id="keywordsBulk" placeholder="по одному слову/фразе на строку"></textarea>
-        <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Применить из текста</button></div>
+        <summary>Massenbearbeitung</summary>
+        <textarea id="keywordsBulk" placeholder="ein Wort/Satz pro Zeile"></textarea>
+        <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Aus Text übernehmen</button></div>
       </details>
-      <div class="hint">Совпадение по названию — нечёткое (учитывает опечатки/падежи). Снимите галочку, чтобы временно отключить слово, не удаляя его.</div>
+      <div class="hint">Der Titel-Abgleich ist unscharf (berücksichtigt Tippfehler/Fälle). Häkchen entfernen, um ein Wort vorübergehend zu deaktivieren, ohne es zu löschen.</div>
     </fieldset>
 
     <fieldset>
-      <legend>Образцы фото (миниатюры для сравнения)</legend>
+      <legend>Fotovorlagen (Vorschaubilder zum Vergleich)</legend>
       <div id="samples"></div>
       <div class="rowbtns">
         <input type="file" id="photoFile" accept="image/*" multiple hidden>
-        <button id="addPhotos" class="secondary">Добавить фото…</button>
-        <button id="clearPhotos" class="danger">Очистить</button>
+        <button id="addPhotos" class="secondary">Fotos hinzufügen…</button>
+        <button id="clearPhotos" class="danger">Leeren</button>
       </div>
-      <div class="hint">Миниатюры сравниваются с образцами по перцептивному хэшу; OCR читает текст на картинке и ищет его в списке слов.</div>
+      <div class="hint">Vorschaubilder werden per Perceptual Hash mit den Vorlagen verglichen; OCR liest den Text im Bild und sucht ihn in der Wortliste.</div>
     </fieldset>
 
     <fieldset>
-      <legend>Что проверять</legend>
-      <label class="row"><input type="checkbox" id="checkTitle"> Название видео</label>
-      <label class="row"><input type="checkbox" id="checkThumbHash"> Фото: сравнение с образцами</label>
-      <label class="row"><input type="checkbox" id="checkThumbOcr"> Фото: OCR текста на миниатюре</label>
-      <label class="row"><input type="checkbox" id="checkSpeech"> Речь в видео (Whisper, тяжело)</label>
-      <label class="row"><input type="checkbox" id="fuzzy"> Нечёткое сравнение (опечатки, падежи)</label>
+      <legend>Was geprüft wird</legend>
+      <label class="row"><input type="checkbox" id="checkTitle"> Videotitel</label>
+      <label class="row"><input type="checkbox" id="checkThumbHash"> Foto: Vergleich mit Vorlagen</label>
+      <label class="row"><input type="checkbox" id="checkThumbOcr"> Foto: OCR des Textes im Vorschaubild</label>
+      <label class="row"><input type="checkbox" id="checkSpeech"> Sprache im Video (Whisper, aufwendig)</label>
+      <label class="row"><input type="checkbox" id="fuzzy"> Unscharfer Vergleich (Tippfehler, Fälle)</label>
     </fieldset>
 
     <fieldset>
-      <legend>Действие и тонкая настройка</legend>
-      <label class="row">Действие:
+      <legend>Aktion und Feinabstimmung</legend>
+      <label class="row">Aktion:
         <select id="mode">
-          <option value="dismiss">«Не интересно» (сигнал YouTube)</option>
-          <option value="hide">Только скрыть из выдачи</option>
+          <option value="dismiss">„Kein Interesse“ (YouTube-Signal)</option>
+          <option value="hide">Nur ausblenden</option>
         </select>
       </label>
-      <label class="row">OCR языки:
+      <label class="row">OCR-Sprachen:
         <select id="ocrLangs">
           <option value="eng+rus">eng+rus</option>
           <option value="rus">rus</option>
           <option value="eng">eng</option>
         </select>
       </label>
-      <label class="row">Порог сходства фото:
-        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(меньше = строже, из 64)</span>
+      <label class="row">Foto-Ähnlichkeitsschwelle:
+        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(kleiner = strenger, von 64)</span>
       </label>
-      <label class="row">Пауза между сигналами, мс:
+      <label class="row">Pause zwischen Signalen, ms:
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
       </label>
-      <label class="row">Язык речи:
+      <label class="row">Sprache der Spracherkennung:
         <select id="speechLang">
           <option value="ru" selected>ru</option>
           <option value="en">en</option>
           <option value="auto">auto</option>
         </select>
       </label>
-      <label class="row">Модель Whisper:
+      <label class="row">Whisper-Modell:
         <input type="text" id="speechModel" value="models/ggml-base.bin" style="flex:1">
       </label>
-      <label class="row">Анализировать речи, сек:
+      <label class="row">Sprache analysieren, Sek.:
         <input type="number" id="speechMaxSeconds" min="10" max="600" step="10" value="120" style="width:70px">
       </label>
     </fieldset>
 
     <div class="rowbtns">
-      <button id="save">Сохранить</button>
-      <button id="export" class="secondary">Экспорт JSON</button>
-      <button id="import" class="secondary">Импорт JSON</button>
+      <button id="save">Speichern</button>
+      <button id="export" class="secondary">JSON exportieren</button>
+      <button id="import" class="secondary">JSON importieren</button>
       <input type="file" id="importFile" accept="application/json" hidden>
     </div>
     <div id="status"></div>

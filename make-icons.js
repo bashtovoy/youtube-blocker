@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* make-icons.js — генерирует валидные PNG-иконки 48 и 96 без внешних зависимостей */
+/* make-icons.js — erzeugt valide PNG-Icons 48 und 96 ohne externe Abhängigkeiten */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -28,13 +28,13 @@ function chunk(type, data) {
   return Buffer.concat([len, typeBuf, data, crcBuf]);
 }
 
-/* --- рисование знака «запрет» --- */
+/* --- Zeichnen des Verbotszeichens --- */
 function render(size) {
-  const SS = 4;                 // суперсэмплинг для сглаживания
+  const SS = 4;                 // Supersampling zur Glättung
   const c = size / 2;
-  const Ro = size * 0.44;       // внешний радиус
-  const ringT = size * 0.13;    // толщина кольца
-  const barHalf = size * 0.06;  // половина толщины черты
+  const Ro = size * 0.44;       // Außenradius
+  const ringT = size * 0.13;    // Ringdicke
+  const barHalf = size * 0.06;  // halbe Balkendicke
   const sqrt2 = Math.SQRT1_2;
   const rgba = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y++) {
@@ -66,7 +66,7 @@ function encodePNG(size) {
   const rgba = render(size);
   const raw = Buffer.alloc(size * (size * 4 + 1));
   for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0; // фильтр None
+    raw[y * (size * 4 + 1)] = 0; // PNG-Filter None
     rgba.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4);
   }
   const ihdr = Buffer.alloc(13);
@@ -88,6 +88,6 @@ fs.mkdirSync(outDir, { recursive: true });
 for (const size of [48, 96]) {
   const buf = encodePNG(size);
   fs.writeFileSync(path.join(outDir, `icon${size}.png`), buf);
-  console.log('записано icon' + size + '.png', buf.length, 'байт');
+  console.log('geschrieben: icon' + size + '.png', buf.length, 'Bytes');
 }
-console.log('готово');
+console.log('fertig');

@@ -1,4 +1,4 @@
-/* popup.js — управление списком, образцами фото и настройками */
+/* popup.js — Verwaltung von Liste, Fotovorlagen und Einstellungen */
 'use strict';
 
 const api = (typeof browser !== 'undefined') ? browser : chrome;
@@ -37,7 +37,7 @@ async function load() {
   photoSamples = data.photoSamples || [];
   renderSamples();
   const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
-  $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · локально: ${hid}` : '';
+  $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · lokal: ${hid}` : '';
 }
 
 function renderKeywords() {
@@ -50,7 +50,7 @@ function renderKeywords() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = kw.enabled !== false;
-    cb.title = 'Использовать это слово';
+    cb.title = 'Dieses Wort verwenden';
     cb.onchange = () => { kw.enabled = cb.checked; row.classList.toggle('off', !cb.checked); };
 
     const inp = document.createElement('input');
@@ -61,15 +61,15 @@ function renderKeywords() {
     const del = document.createElement('button');
     del.className = 'del';
     del.textContent = '×';
-    del.title = 'Удалить';
+    del.title = 'Löschen';
     del.onclick = () => { keywords.splice(idx, 1); renderKeywords(); };
 
     row.append(cb, inp, del);
     box.appendChild(row);
   });
   const on = keywords.filter(k => k.enabled !== false && k.text.trim()).length;
-  $('kwCount').textContent = keywords.length ? `всего: ${keywords.length} · активно: ${on}` : '';
-  /* синхронизируем поле массового редактирования, когда оно свёрнуто */
+  $('kwCount').textContent = keywords.length ? `gesamt: ${keywords.length} · aktiv: ${on}` : '';
+  /* Massenbearbeitungsfeld synchronisieren, wenn es eingeklappt ist */
   const bulk = $('keywordsBulk');
   if (bulk && !bulk.closest('details').open) bulk.value = keywords.map(k => k.text).join('\n');
 }
@@ -78,7 +78,7 @@ function addKeyword(text) {
   const v = String(text || '').trim();
   if (!v) return false;
   if (keywords.some(k => k.text.toLowerCase() === v.toLowerCase())) {
-    status('Такое слово уже есть', false);
+    status('Dieses Wort ist bereits vorhanden', false);
     return false;
   }
   keywords.push({ text: v, enabled: true });
@@ -106,7 +106,7 @@ function renderSamples() {
     box.appendChild(div);
   }
   if (!photoSamples.length) {
-    box.innerHTML = '<span class="hint">пока пусто</span>';
+    box.innerHTML = '<span class="hint">noch leer</span>';
   }
 }
 
@@ -128,7 +128,7 @@ async function fileToSample(file) {
     label: file.name.replace(/\.[^.]+$/, '').slice(0, 40),
     hash: window.YB.image.dhash(img),
     phash: window.YB.image.phash(img),
-    /* храним уменьшенный превью, чтобы не раздувать storage */
+    /* verkleinertes Vorschaubild speichern, um den Storage nicht aufzublähen */
     dataUrl: await thumbnailDataUrl(img, 64)
   };
 }
@@ -153,17 +153,17 @@ async function save() {
   keywords = kws;
   renderKeywords();
   await api.storage.local.set({ settings, keywords: kws, photoSamples });
-  /* уведомляем все вкладки YouTube */
+  /* alle YouTube-Tabs benachrichtigen */
   const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
   await Promise.all(tabs.map(t => api.tabs.sendMessage(t.id, { type: 'config-changed' }).catch(() => {})));
-  status('Сохранено, вкладки обновлены');
+  status('Gespeichert, Tabs aktualisiert');
 }
 
 $('addPhotos').onclick = () => $('photoFile').click();
 $('photoFile').onchange = async (e) => {
   for (const f of Array.from(e.target.files)) {
     try { photoSamples.push(await fileToSample(f)); }
-    catch (err) { status('Не удалось добавить ' + f.name + ': ' + err.message, false); }
+    catch (err) { status('Hinzufügen fehlgeschlagen: ' + f.name + ': ' + err.message, false); }
   }
   e.target.value = '';
   renderSamples();
@@ -177,7 +177,7 @@ $('kwInput').onkeydown = (e) => {
 $('kwApplyBulk').onclick = () => {
   keywords = normalizeKeywords($('keywordsBulk').value.split('\n'));
   renderKeywords();
-  status('Список обновлён из текста');
+  status('Liste aus Text aktualisiert');
 };
 document.querySelector('details.bulk').addEventListener('toggle', (e) => {
   if (e.target.open) $('keywordsBulk').value = keywords.map(k => k.text).join('\n');
@@ -208,9 +208,9 @@ $('importFile').onchange = async (e) => {
       photoSamples: data.photoSamples || []
     });
     await load();
-    status('Импортировано');
+    status('Importiert');
   } catch (err) {
-    status('Ошибка импорта: ' + err.message, false);
+    status('Importfehler: ' + err.message, false);
   }
   e.target.value = '';
 };

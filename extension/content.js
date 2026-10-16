@@ -1,4 +1,4 @@
-/* content.js — детект в зоне прокрутки, каскад текст → image → OCR → речь, затем штатное «Не интересно» */
+/* content.js — Erkennung im Scrollbereich, Kaskade Text → Bild → OCR → Sprache, danach offizielles „Kein Interesse“ */
 (function () {
   'use strict';
 
@@ -201,7 +201,7 @@
       try {
         const desc = await descriptorCached(v.thumb);
         const m = window.YB.image.matchHash(desc, state.photoSamples, state.settings.hashThreshold);
-        if (m) return { source: 'photo', keyword: m.sample.label || 'образец фото', distance: m.distance, phashDistance: m.phashDistance };
+        if (m) return { source: 'photo', keyword: m.sample.label || 'Foto-Vorlage', distance: m.distance, phashDistance: m.phashDistance };
       } catch (e) { log('image descriptor fail', v.videoId, e.message); }
     }
     if (ocrNeeded) {

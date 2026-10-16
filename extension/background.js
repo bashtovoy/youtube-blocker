@@ -1,4 +1,4 @@
-/* background.js — счётчики штатных сигналов и локальных скрытий */
+/* background.js — Zähler für offizielle Signale und lokale Ausblendungen */
 'use strict';
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 let cfgCache = { keywords: [], settings: {} };

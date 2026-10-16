@@ -1,4 +1,4 @@
-/* image.js — dHash + pHash для устойчивого сравнения миниатюр */
+/* image.js — dHash + pHash für den robusten Vergleich von Vorschaubildern */
 (function () {
   'use strict';
 
@@ -42,7 +42,7 @@
     return bits;
   }
 
-  /* pHash: низкочастотный 8×8 блок 2D-DCT, 64 бита. */
+  /* pHash: niederfrequenter 8×8-Block der 2D-DCT, 64 Bit. */
   function phash(img) {
     const N = 16;
     const rgba = pixels(img, N, N);
@@ -85,8 +85,8 @@
   }
 
   /**
-   * Сначала используем быстрый dHash. Если он чуть менее близок, pHash
-   * помогает сохранить совпадение при небольшом кадрировании/изменении цвета.
+   * Zuerst wird der schnelle dHash verwendet. Ist er etwas weniger nah,
+   * hilft der pHash, den Treffer bei leichtem Zuschnitt/Farbänderung zu erhalten.
    */
   function matchHash(desc, samples, threshold) {
     const dThreshold = Math.max(0, Number(threshold) || 0);
