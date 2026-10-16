@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <style>
@@ -44,7 +44,7 @@
     #status { color: #12a150; min-height: 16px; font-size: 12px; font-weight: 600; }
     .hint { color: #8a839c; font-size: 11px; }
     .kwlist { max-height: 200px; overflow-y: auto; border: 1px solid #eadfe9; border-radius: 10px; background: #fff; margin-bottom: 6px; }
-    .kwlist:empty::after { content: "список пуст — добавьте слова ниже \1F331"; color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
+    .kwlist:empty::after { content: "Liste ist leer — Wörter unten hinzufügen \1F331"; color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
     .kwrow { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #f2ecf6; }
     .kwrow:last-child { border-bottom: 0; }
     .kwrow:hover { background: #faf6ff; }
@@ -71,76 +71,76 @@
     <span id="blocked"></span>
   </header>
   <main>
-    <label class="row"><input type="checkbox" id="enabled"> Расширение включено</label>
+    <label class="row"><input type="checkbox" id="enabled"> Erweiterung aktiviert</label>
 
     <fieldset>
-      <legend>Список слов для блокировки</legend>
+      <legend>Wortliste zum Blockieren</legend>
       <div id="kwList" class="kwlist"></div>
       <div class="kwadd">
-        <input type="text" id="kwInput" placeholder="новое слово или фраза, Enter — добавить">
-        <button id="kwAdd" class="secondary">Добавить</button>
+        <input type="text" id="kwInput" placeholder="neues Wort oder Satz, Enter — hinzufügen">
+        <button id="kwAdd" class="secondary">Hinzufügen</button>
       </div>
       <div class="kwcount" id="kwCount"></div>
       <details class="bulk">
-        <summary>Массовое редактирование</summary>
-        <textarea id="keywordsBulk" placeholder="по одному слову/фразе на строку"></textarea>
-        <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Применить из текста</button></div>
+        <summary>Massenbearbeitung</summary>
+        <textarea id="keywordsBulk" placeholder="ein Wort/Satz pro Zeile"></textarea>
+        <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Aus Text übernehmen</button></div>
       </details>
-      <div class="hint">Каждый пункт — понятие, которое расширение ищет и в названии, и семантически в самой миниатюре. Например: «футбол», «электромобили», «Трамп». OCR можно включить дополнительно для текста на миниатюрах.</div>
+      <div class="hint">Jeder Eintrag ist ein Begriff, den die Erweiterung im Titel und semantisch im Vorschaubild sucht. Zum Beispiel: „Fußball“, „Elektroautos“, „Trump“. OCR kann zusätzlich für Text im Vorschaubild aktiviert werden.</div>
     </fieldset>
 
     <fieldset>
-      <legend>Что проверять</legend>
-      <label class="row"><input type="checkbox" id="checkTitle"> Название видео</label>
-            <label class="row"><input type="checkbox" id="checkSemanticImage"> Семантика: список → изображение (SigLIP)</label>
-      <label class="row"><input type="checkbox" id="checkThumbOcr"> OCR текста на миниатюре</label>
-      <label class="row"><input type="checkbox" id="checkSpeech"> Речь в видео (Whisper, тяжело)</label>
-      <label class="row"><input type="checkbox" id="hideMembersOnly"> Скрывать «Members only» (бейдж участника)</label>
-      <label class="row"><input type="checkbox" id="fuzzy"> Нечёткое сравнение (опечатки, падежи)</label>
+      <legend>Was geprüft wird</legend>
+      <label class="row"><input type="checkbox" id="checkTitle"> Videotitel</label>
+      <label class="row"><input type="checkbox" id="checkSemanticImage"> Semantik: Liste → Bild (SigLIP)</label>
+      <label class="row"><input type="checkbox" id="checkThumbOcr"> OCR: Text im Vorschaubild</label>
+      <label class="row"><input type="checkbox" id="checkSpeech"> Sprache im Video (Whisper, aufwendig)</label>
+      <label class="row"><input type="checkbox" id="hideMembersOnly"> „Members only“ ausblenden (Mitglieder-Badge)</label>
+      <label class="row"><input type="checkbox" id="fuzzy"> Unscharfer Vergleich (Tippfehler, Fälle)</label>
     </fieldset>
 
     <fieldset>
-      <legend>Действие и тонкая настройка</legend>
-      <label class="row">Действие:
+      <legend>Aktion und Feinabstimmung</legend>
+      <label class="row">Aktion:
         <select id="mode">
-          <option value="dismiss">«Не интересно» (сигнал YouTube)</option>
-          <option value="hide">Только скрыть из выдачи</option>
+          <option value="dismiss">„Kein Interesse“ (YouTube-Signal)</option>
+          <option value="hide">Nur ausblenden</option>
         </select>
       </label>
-      <label class="row">OCR языки:
+      <label class="row">OCR-Sprachen:
         <select id="ocrLangs">
           <option value="eng+rus">eng+rus</option>
           <option value="rus">rus</option>
           <option value="eng">eng</option>
         </select>
       </label>
-      <label class="row">Порог dHash/pHash:
-        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(меньше = строже)</span>
+      <label class="row">dHash/pHash-Schwelle:
+        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(kleiner = strenger, von 64)</span>
       </label>
-      <label class="row">Порог семантики:
-        <input type="number" id="semanticThreshold" min="0.05" max="0.95" step="0.01" style="width:58px"> <span class="hint">(выше = строже)</span>
+      <label class="row">Semantik-Schwelle:
+        <input type="number" id="semanticThreshold" min="0.05" max="0.95" step="0.01" style="width:58px"> <span class="hint">(höher = strenger)</span>
       </label>
-      <label class="row">Пауза между сигналами, мс:
+      <label class="row">Pause zwischen Signalen, ms:
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
       </label>
-      <label class="row">Язык речи:
+      <label class="row">Sprache der Spracherkennung:
         <select id="speechLang">
           <option value="ru" selected>ru</option>
           <option value="en">en</option>
           <option value="auto">auto</option>
         </select>
       </label>
-      <label class="row">Модель Whisper:
+      <label class="row">Whisper-Modell:
         <input type="text" id="speechModel" value="models/ggml-base.bin" style="flex:1">
       </label>
-      <label class="row">Анализировать речи, сек:
+      <label class="row">Sprache analysieren, Sek.:
         <input type="number" id="speechMaxSeconds" min="10" max="600" step="10" value="120" style="width:70px">
       </label>
     </fieldset>
 
     <div class="rowbtns">
-      <button id="export" class="secondary">Экспорт JSON</button>
-      <button id="import" class="secondary">Импорт JSON</button>
+      <button id="export" class="secondary">JSON exportieren</button>
+      <button id="import" class="secondary">JSON importieren</button>
     </div>
     <div id="status"></div>
   </main>

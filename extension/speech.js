@@ -1,4 +1,4 @@
-/* speech.js — опциональное распознавание речи из видео через whisper.cpp (WASM) в воркере */
+/* speech.js — optionale Spracherkennung aus Videos über whisper.cpp (WASM) in einem Worker */
 (function () {
   'use strict';
 
@@ -105,12 +105,12 @@
   const mgr = new SpeechManager();
   const queue = { tail: Promise.resolve(), push(fn) { const p = this.tail.then(fn, fn); this.tail = p.catch(() => {}); return p; } };
 
-  /* Кэширование аудио по videoId, чтобы не качать одно и то же дважды */
+  /* Audio-Caching per videoId, damit dasselbe nicht zweimal geladen wird */
   const audioCache = new Map();
 
   async function fetchAudio16k(videoId) {
     if (audioCache.has(videoId)) return audioCache.get(videoId);
-    /* ищем audio-источник через внутренний player API YouTube */
+    /* Audioquelle über die interne Player-API von YouTube suchen */
     const page = await fetch('https://www.youtube.com/watch?v=' + videoId, { credentials: 'include' });
     const html = await page.text();
     const m = html.match(/"audioUrls":\s*\[(\{.*?\})\]/) || html.match(/(?:audioQuality|url)":\s*"([^"]+\.googlevideo\.com\/[^"]+?)"/);
@@ -118,7 +118,7 @@
     if (m) {
       try {
         const obj = JSON.parse('[' + m[1] + ']');
-        /* берём самый низкий битрейт (itag 140/141) — достаточно для речи */
+        /* niedrigste Bitrate wählen (itag 140/141) — für Sprache ausreichend */
         const pick = (obj.find(a => a.itag === 140) || obj[0]);
         audioUrl = pick && pick.url && pick.url.replace(/\\u0026/g, '&');
       } catch (e) {
@@ -136,7 +136,7 @@
       const ac = new (window.AudioContext || window.webkitAudioContext)();
       ac.decodeAudioData(buf.slice(0)).then((b) => { ac.close(); res(b); }, (e) => { ac.close(); rej(e); });
     });
-    /* ресемплим в моно 16 кГц */
+    /* auf Mono mit 16 kHz resampeln */
     const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
     const src = off.createBufferSource();
     src.buffer = decoded;
@@ -144,7 +144,7 @@
     src.start();
     const rendered = await off.startRendering();
     const f32 = rendered.getChannelData(0).slice(0);
-    /* освобождаем память AudioContext'ов */
+    /* Speicher der AudioContexts freigeben */
     audioCache.set(videoId, f32);
     if (audioCache.size > 4) {
       const first = audioCache.keys().next().value;
@@ -157,8 +157,8 @@
     isAvailable() { return mgr.ready && !mgr.failed; },
     init(opts) { return queue.push(() => mgr.init(opts)); },
     /**
-     * Распознать речь в видео (ограничиваем первые N секунд).
-     * @returns {Promise<string>} текст
+     * Erkennt Sprache im Video (nur die ersten N Sekunden).
+     * @returns {Promise<string>} Text
      */
     transcribeVideo(videoId, maxSeconds) {
       return queue.push(async () => {

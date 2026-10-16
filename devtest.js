@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/* devtest.js — энд-ту-энд тест: берёт реальные заголовки из выдачи YouTube,
-   ставит одно ключевое слово, командует расширению переход/скан, ждёт логов */
+/* devtest.js — End-to-End-Test: holt echte Titel aus den YouTube-Ergebnissen,
+   setzt ein Schlüsselwort, befiehlt der Erweiterung Navigation/Scan, wartet auf Logs */
 'use strict';
 
 const fs = require('fs');
@@ -48,12 +48,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const query = process.argv[2] || 'daily vlog';
   const titles = await getSearchTitles(query);
-  console.log('видео в выдаче поиска:', titles.length);
-  if (!titles.length) { console.error('не удалось получить заголовки'); process.exit(1); }
-  /* берём 2 верхних видео — их полные заголовки станут ключевыми словами
-     (дописываем к существующему blocklist.json, а не заменяем его) */
+  console.log('Videos in den Suchergebnissen:', titles.length);
+  if (!titles.length) { console.error('Titel konnten nicht abgerufen werden'); process.exit(1); }
+  /* die 2 obersten Videos nehmen — ihre vollständigen Titel werden zu Schlüsselwörtern
+     (werden an die bestehende blocklist.json angehängt, nicht ersetzt) */
   const targets = titles.slice(0, 2);
-  for (const t of targets) console.log('цель:', t.id, t.title.slice(0, 80));
+  for (const t of targets) console.log('Ziel:', t.id, t.title.slice(0, 80));
   let base = [];
   try {
     base = JSON.parse(fs.readFileSync(path.join(__dirname, 'blocklist.json'), 'utf8')).keywords || [];
@@ -64,7 +64,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     { action: 'log', text: '=== devtest start ===' },
     { action: 'config', settings: SETTINGS, keywords },
     { action: 'navigate', url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query) },
-    { action: 'noop' }, { action: 'noop' }, /* ~8с на загрузку */
+    { action: 'noop' }, { action: 'noop' }, /* ~8 s zum Laden */
     { action: 'scroll', fraction: 0.35 },
     { action: 'noop' }, { action: 'noop' },
     { action: 'scroll', fraction: 0.6 },
@@ -73,7 +73,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     { action: 'log', text: '=== devtest end ===' },
     { action: 'done' }
   ]));
-  console.log('команды поставлены в очередь, ожидание…');
+  console.log('Befehle in die Warteschlange gestellt, warte…');
   await sleep(45000);
-  console.log('тест завершён, см. dev.log');
+  console.log('Test abgeschlossen, siehe dev.log');
 })();

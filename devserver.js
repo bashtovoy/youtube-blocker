@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* devserver.js — локальный приёмник логов расширения + очередь тестовых команд */
+/* devserver.js — lokaler Empfänger für Erweiterungs-Logs + Warteschlange für Testbefehle */
 'use strict';
 
 const http = require('http');
@@ -38,7 +38,7 @@ http.createServer((req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/config') {
-    /* отдаём по одной команде из очереди */
+    /* Befehle einzeln aus der Warteschlange ausliefern */
     let cmds = [];
     try { cmds = JSON.parse(fs.readFileSync(CMD_FILE, 'utf8')); } catch (e) {}
     const cmd = cmds.shift() || { action: 'noop' };
@@ -50,5 +50,5 @@ http.createServer((req, res) => {
   res.writeHead(404, CORS); res.end('not found');
 }).listen(PORT, '127.0.0.1', () => {
   console.log(`dev server on http://localhost:${PORT}  (log: ${LOG_FILE})`);
-  console.log('очередь команд: devcommands.json (массив объектов {action:...})');
+  console.log('Befehlswarteschlange: devcommands.json (Array von Objekten {action:...})');
 });

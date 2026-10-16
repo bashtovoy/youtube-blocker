@@ -1,4 +1,4 @@
-/* semantic-worker.js — local SigLIP text ↔ image semantic matching */
+/* semantic-worker.js — lokales SigLIP-Matching: Text ↔ Bild */
 import {
   env,
   AutoProcessor,
@@ -70,9 +70,10 @@ async function setTexts(labels) {
   }
   await init();
   /*
-   * SigLIP was trained with natural-language prompts. Keeping the user's
-   * wording in the visible result while using a photo prompt improves
-   * image/text alignment for short concepts.
+   * SigLIP wurde mit natürlichsprachigen Prompts trainiert. Die Formulierung
+   * des Nutzers bleibt im sichtbaren Ergebnis, während für den Bildabgleich
+   * ein Foto-Prompt verwendet wird — das verbessert die Text-Bild-Zuordnung
+   * für kurze Begriffe.
    */
   const prompts = list.map(x => /^a photo of\b/i.test(x) ? x : 'a photo of ' + x);
   textInputs = tokenizer(prompts, { padding: 'max_length', truncation: true });
@@ -88,11 +89,11 @@ async function scoreImage(source) {
   const output = await model({ ...textInputs, ...imageInputs });
   const logits = tensorToArray(output?.logits_per_image);
   if (logits.length !== textLabels.length) {
-    throw new Error('SigLIP returned unexpected logits shape');
+    throw new Error('SigLIP lieferte eine unerwartete Logits-Form');
   }
   /*
-   * SigLIP uses independent sigmoid scores rather than a softmax over labels.
-   * Return both calibrated probability and raw logit for diagnostics.
+   * SigLIP verwendet unabhängige Sigmoid-Scores statt eines Softmax über alle Labels.
+   * Zurückgegeben werden sowohl die kalibrierte Wahrscheinlichkeit als auch der rohe Logit für die Diagnose.
    */
   return textLabels.map((text, i) => {
     const logit = logits[i];

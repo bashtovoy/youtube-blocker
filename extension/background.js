@@ -1,4 +1,4 @@
-/* background.js — счётчики штатных сигналов и локальных скрытий */
+/* background.js — Zähler für offizielle Signale und lokale Ausblendungen */
 'use strict';
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 let cfgCache = { keywords: [], settings: {} };
@@ -22,11 +22,11 @@ api.storage.local.onChanged.addListener(changes => {
 });
 function updateBadge(n) { api.browserAction.setBadgeText({ text: n > 0 ? String(n) : '' }); }
 
-/* Сброс счётчика при перезагрузке/навигации страницы YouTube: бейдж показывает
-   количество сработок на текущей загрузке, а не накопительно за всё время.
-   status==='loading' срабатывает на реальный reload/переход, но не на внутренние
-   pushState-навигации YouTube-SPA. content.js инжектится позже (document_idle),
-   поэтому сброс успевает произойти до новых инкрементов. */
+/* Zähler bei Neuladen/Navigieren der YouTube-Seite zurücksetzen: Das Badge zeigt
+   die Treffer der aktuellen Seitensession, nicht aufsummiert über die gesamte Zeit.
+   status==='loading' feuert bei echtem Reload/Übergang, aber nicht bei internen
+   pushState-Navigationen der YouTube-SPA. content.js wird später injiziert (document_idle),
+   daher erfolgt das Zurücksetzen rechtzeitig vor neuen Inkrementen. */
 function isYoutubeUrl(u) {
   try {
     const h = new URL(u).hostname;

@@ -1,4 +1,4 @@
-/* matcher.js — контекстное сопоставление текста с пользователями заданным списком */
+/* matcher.js — kontextbezogener Abgleich von Text mit der benutzerdefinierten Liste */
 (function () {
   'use strict';
 
@@ -51,12 +51,12 @@
 
   function tokenMatches(t, k, fuzzy) {
     if (t === k) return true;
-    /* Короткие слова сопоставляем только целиком: это заметно снижает ложные совпадения. */
+    /* Kurze Wörter werden nur vollständig verglichen: Das senkt falsche Treffer deutlich. */
     if (!fuzzy || k.length < 5 || t.length < 2) return false;
     if (t[0] !== k[0] || t[1] !== k[1]) return false;
     if (levenshtein(t, k) <= maxEditDistance(k.length)) return true;
-    /* Для режима «абсолютно неинтересно» не используем prefix-match:
-       он даёт опасные совпадения вроде «auto» → «automatic». */
+    /* Für den Modus „Absolut kein Interesse“ bewusst kein Prefix-Matching:
+       Es erzeugt gefährliche Treffer wie „auto“ → „automatic“. */
     return false;
   }
 
@@ -76,10 +76,10 @@
   }
 
   /**
-   * @param {string} text заголовок / канал / OCR / расшифровка
+   * @param {string} text Titel / Kanal / OCR / Transkript
    * @param {string[]} keywords
    * @param {{fuzzy?:boolean}} opts
-   * @returns {string|null} совпавшее ключевое слово
+   * @returns {string|null} passendes Schlüsselwort
    */
   function matchKeywords(text, keywords, opts) {
     opts = opts || {};

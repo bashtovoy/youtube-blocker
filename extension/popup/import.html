@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Импорт списка — Youtube Blocker</title>
+  <title>Wortlisten-Import — Youtube Blocker</title>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -27,16 +27,16 @@
   </style>
 </head>
 <body>
-  <h1>Импорт списка слов</h1>
-  <p class="hint">Выберите JSON-файл — список заменит текущий и сразу применится во всех вкладках YouTube.</p>
+  <h1>Wortliste importieren</h1>
+  <p class="hint">Wähle eine JSON-Datei — die Liste ersetzt die aktuelle und wird sofort in allen YouTube-Tabs übernommen.</p>
 
   <div class="card">
-    <label class="filebtn">Выбрать JSON-файл…<input type="file" id="file" accept="application/json,.json"></label>
+    <label class="filebtn">JSON-Datei wählen…<input type="file" id="file" accept="application/json,.json"></label>
     <div id="status"></div>
     <ul class="tips">
-      <li>Подходит файл «Экспорт JSON» из этого расширения.</li>
-      <li>Формат <code>{ "keywords": ["война", …] }</code> или просто массив <code>["война", …]</code>.</li>
-      <li>Элементы могут быть строками или объектами <code>{ "text": "…", "enabled": true }</code>.</li>
+      <li>Geeignet ist die Datei „JSON exportieren“ aus dieser Erweiterung.</li>
+      <li>Format <code>{ "keywords": ["krieg", …] }</code> oder einfach ein Array <code>["krieg", …]</code>.</li>
+      <li>Einträge dürfen Strings oder Objekte sein: <code>{ "text": "…", "enabled": true }</code>.</li>
     </ul>
   </div>
 

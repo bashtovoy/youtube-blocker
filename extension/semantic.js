@@ -1,4 +1,4 @@
-/* semantic.js — local SigLIP text → image semantic matching */
+/* semantic.js — lokales SigLIP-Matching: Text → Bild */
 (function () {
   'use strict';
 
@@ -24,10 +24,10 @@
       pending.delete(m.id);
       if (m.type === 'texts-ready') p.resolve(m.labels);
       else if (m.type === 'image-scores') p.resolve(m.scores);
-      else p.reject(new Error(m.error || 'semantic worker error'));
+      else p.reject(new Error(m.error || 'Semantik-Worker-Fehler'));
     };
     worker.onerror = e => {
-      const err = new Error(e.message || 'semantic worker failed');
+      const err = new Error(e.message || 'Semantik-Worker fehlgeschlagen');
       for (const p of pending.values()) p.reject(err);
       pending.clear();
       if (ready) ready.reject(err);

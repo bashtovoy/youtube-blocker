@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Youtube Blocker",
   "version": "1.2.2",
-  "description": "Детектирует нежелательный контент YouTube по названию, каналу и семантическому соответствию списка пользователя визуальному содержанию миниатюр (локальный SigLIP, OCR) и отправляет штатный сигнал «Не интересно».",
+  "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal und an der semantischen Übereinstimmung deiner Liste mit dem Inhalt des Vorschaubilds (lokales SigLIP, OCR) und sendet das Signal „Kein Interesse“.",
   "icons": {
     "48": "icons/icon48.png",
     "96": "icons/icon96.png"

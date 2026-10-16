@@ -1,19 +1,19 @@
-# Semantic Filter Routing — implementation task
+# Semantik-Filter-Routing — Implementierungsaufgabe
 
-## Scope
+## Umfang
 
-Implement the semantic filtering layer for the real Youtube Blocker product scope.
+Die semantische Filterschicht für den realen Produktumfang von Youtube Blocker implementieren.
 
-The product is NOT a universal image classifier. The user provides a concrete blacklist of unwanted concepts. Each keyword must use the most appropriate detection channel:
+Das Produkt ist KEIN universeller Bildklassifikator. Der Nutzer gibt eine konkrete Blockliste unerwünschter Begriffe vor. Jedes Schlüsselwort muss den am besten geeigneten Erkennungskanal nutzen:
 
-- title/channel text
-- thumbnail OCR
-- thumbnail semantic image matching
-- a controlled combination of the above
+- Titel-/Kanaltext
+- OCR des Vorschaubilds
+- semantischer Bildabgleich des Vorschaubilds
+- eine kontrollierte Kombination der oben genannten Kanäle
 
-Topics that are not meaningfully detectable from an image must NOT be forced through the image model.
+Themen, die aus einem Bild nicht sinnvoll erkennbar sind, dürfen NICHT durch das Bildmodell gezwungen werden.
 
-Reference user list used for validation:
+Referenzliste des Nutzers für die Validierung:
 
 - Дрон
 - Робот
@@ -33,97 +33,97 @@ Reference user list used for validation:
 - Brad Pit
 - UAV
 
-Current production baseline is commit `de571f6`.
+Der aktuelle Produktionsstand ist Commit `de571f6`.
 
-## Research conclusions already validated
+## Bereits validierte Rechercheergebnisse
 
-1. Official Hugging Face `google/siglip-base-patch16-224` and the local ONNX model agree closely on the same inputs.
-2. Padding is not the root cause.
-3. The SigLIP sigmoid score with the current `logit_bias` is not a useful absolute threshold for this YouTube-thumbnail domain.
-4. Raw cosine is useful, and contrastive margin is substantially better in the existing 431-thumbnail experiment.
-5. Hard category gating (e.g. ENGINEERED first, then concept) was counterproductive.
-6. The current production `semantic.js` still uses `bestTextMatch(scores, 0.15)`; this must not remain the semantic decision rule.
-7. The existing content pipeline is valuable and must be preserved:
-   title -> semantic thumbnail/OCR -> optional speech -> dismiss/hide.
-8. The semantic layer should be candidate-only and cached, following the general architecture seen in open-source projects such as xrai/rai:
-   cheap deterministic checks first, expensive visual inference only for remaining cards, cache results, fail open.
-9. Do NOT copy code from ytff. Its repository does not expose a license in the inspected tree. Use it only as an architectural reference for batching/caching/regression methodology.
-10. xrai/rai is MIT licensed; its candidate-only image gate, golden-set evaluation and latency/fail-open approach are valid architectural references. Do not copy unrelated X-specific code.
+1. Das offizielle Hugging-Face-Modell `google/siglip-base-patch16-224` und das lokale ONNX-Modell stimmen bei identischen Eingaben eng überein.
+2. Padding ist nicht die Ursache.
+3. Der SigLIP-Sigmoid-Score mit dem aktuellen `logit_bias` ist als absoluter Schwellenwert für die Domäne der YouTube-Vorschaubilder nicht brauchbar.
+4. Der rohe Kosinus ist nützlich, die kontrastive Margin ist im vorhandenen Experiment mit 431 Vorschaubildern deutlich besser.
+5. Hartes Kategorie-Gating (z. B. zuerst ENGINEERED, dann Konzept) war kontraproduktiv.
+6. Das aktuelle Produktions-`semantic.js` verwendet noch `bestTextMatch(scores, 0.15)`; das darf nicht die semantische Entscheidungsregel bleiben.
+7. Die bestehende Content-Pipeline ist wertvoll und muss erhalten bleiben:
+   Titel -> semantisches Vorschaubild/OCR -> optional Sprache -> Dismiss/Verstecken.
+8. Die semantische Schicht soll nur Kandidaten prüfen und cachen — entsprechend der allgemeinen Architektur von Open-Source-Projekten wie xrai/rai:
+   zuerst günstige deterministische Prüfungen, teure visuelle Inferenz nur für verbleibende Karten, Ergebnisse cachen, fail open.
+9. KEINEN Code aus ytff kopieren. Das Repository enthält im geprüften Stand keine Lizenz. Nur als Architekturreferenz für Batching/Caching/Regressionsmethodik nutzen.
+10. xrai/rai ist MIT-lizenziert; sein Kandidaten-Gate, die Golden-Set-Evaluierung und der Latenz-/Fail-Open-Ansatz sind gültige Architekturreferenzen. Keinen unrelated X-spezifischen Code kopieren.
 
-## Required implementation
+## Erforderliche Implementierung
 
-### 1. Add keyword routing metadata
+### 1. Routing-Metadaten für Schlüsselwörter hinzufügen
 
-Extend the local keyword representation so that each keyword may carry an optional detector route:
+Die lokale Schlüsselwort-Repräsentation so erweitern, dass jedes Schlüsselwort optional eine Detektor-Route tragen kann:
 
 - `title`
 - `ocr`
 - `image`
 - `hybrid`
 
-Backward compatibility is mandatory: existing imported JSON containing only `{text, enabled}` must continue to work.
+Abwärtskompatibilität ist Pflicht: Vorhandenes importiertes JSON, das nur `{text, enabled}` enthält, muss weiterhin funktionieren.
 
-Do NOT hard-code the user's 17 keywords into production.
+Die 17 Schlüsselwörter des Nutzers NICHT fest in die Produktion einprogrammieren.
 
-If no route is specified, preserve current backward-compatible behavior until the routing migration is complete.
+Ist keine Route angegeben, bleibt das aktuelle abwärtskompatible Verhalten erhalten, bis die Routing-Migration abgeschlossen ist.
 
-### 2. Keep title matching first
+### 2. Titelabgleich zuerst beibehalten
 
-Title/channel matching remains the cheapest and earliest check.
+Der Titel-/Kanalabgleich bleibt die günstigste und früheste Prüfung.
 
-Do not run the SigLIP image model when the card has already matched through the configured title/channel route.
+Das SigLIP-Bildmodell nicht ausführen, wenn die Karte bereits über die konfigurierte Titel-/Kanal-Route getroffen hat.
 
-### 3. Implement semantic image scoring as a ranking/contrastive mechanism
+### 3. Semantisches Bild-Scoring als Ranking-/Kontrastiv-Mechanismus umsetzen
 
-Do NOT use:
+NICHT verwenden:
 
 `sigmoid(logit) >= 0.15`
 
-as the semantic decision.
+als semantische Entscheidung.
 
-Expose enough raw information from the semantic worker to calculate:
+Genug Rohinformationen aus dem Semantik-Worker bereitstellen, um zu berechnen:
 
-- raw cosine / normalized text-image similarity
-- target concept score
-- competing/reference concept score
-- contrastive margin
+- roher Kosinus / normalisierte Text-Bild-Ähnlichkeit
+- Score des Zielkonzepts
+- Score konkurrierender Referenzkonzepte
+- kontrastive Margin
 
-The contrastive decision should be concept-specific:
+Die kontrastive Entscheidung soll konzeptspezifisch sein:
 
 `margin = target_score - best_reference_score`
 
-Do not assume one global universal threshold before calibration.
+Vor der Kalibrierung keinen einzigen globalen universellen Schwellenwert annehmen.
 
-The implementation must preserve the existing local SigLIP model and WASM path.
+Die Implementierung muss das lokale SigLIP-Modell und den WASM-Pfad beibehalten.
 
-### 4. User keyword set must remain the semantic target set
+### 4. Das Schlüsselwort-Set des Nutzers bleibt das semantische Ziel-Set
 
-The model must score the concepts the user actually entered, not a fixed taxonomy.
+Das Modell muss die Konzepte bewerten, die der Nutzer tatsächlich eingegeben hat — keine feste Taxonomie.
 
-For image-capable concepts, the worker may normalize prompts internally, but the UI/config must preserve the original user text.
+Für bildfähige Konzepte darf der Worker Prompts intern normalisieren, aber UI/Konfiguration müssen den ursprünglichen Nutzertext bewahren.
 
-### 5. Avoid universal visual classification
+### 5. Universelle visuelle Klassifikation vermeiden
 
-Do NOT introduce:
+NICHT einführen:
 
-- ENGINEERED/PERSON/NATURE/OTHER as a mandatory production gate
-- a fixed object ontology
-- generic image classification unrelated to the user's blacklist
+- ENGINEERED/PERSON/NATURE/OTHER als verpflichtendes Produktions-Gate
+- eine feste Objektontologie
+- generische Bildklassifikation ohne Bezug zur Blockliste des Nutzers
 
-The semantic layer answers:
+Die semantische Schicht beantwortet:
 
-"How strongly does this card visually correspond to this user's unwanted concept relative to the configured competing concepts?"
+„Wie stark entspricht diese Karte visuell diesem unerwünschten Konzept des Nutzers relativ zu den konfigurierten konkurrierenden Begriffen?“
 
-### 6. Routing guidance
+### 6. Routing-Leitfaden
 
-Initial routing hypotheses for research/validation:
+Erste Routing-Hypothesen für Recherche/Validierung:
 
 IMAGE / HYBRID:
 - Дрон / Drone / Dron
 - Робот / Robot
 - cybercab
 
-IMAGE optional, but primarily TITLE/OCR:
+IMAGE optional, aber primär TITLE/OCR:
 - Trump / Трамп
 - Putin
 - Elon Musk
@@ -131,118 +131,118 @@ IMAGE optional, but primarily TITLE/OCR:
 - Navy
 - UAV
 
-TITLE/OCR primary, no required image detector:
+TITLE/OCR primär, kein erforderlicher Bilddetektor:
 - news
 - leak
 - leaked
 - drontech
 
-These are hypotheses, not permanent hard-coded policy. The implementation must allow per-keyword route selection.
+Dies sind Hypothesen, keine dauerhaft einprogrammierte Richtlinie. Die Implementierung muss die Routenwahl pro Schlüsselwort erlauben.
 
-### 7. OCR is a separate detector
+### 7. OCR ist ein separater Detektor
 
-Keep OCR independent from semantic image scoring.
+OCR unabhängig vom semantischen Bild-Scoring halten.
 
-A keyword routed to title/OCR must not require SigLIP.
+Ein auf Titel/OCR geroutetes Schlüsselwort darf kein SigLIP erfordern.
 
-When `checkThumbOcr=false`, OCR must remain disabled globally exactly as today.
+Bei `checkThumbOcr=false` muss OCR global deaktiviert bleiben — exakt wie heute.
 
-### 8. Candidate-only expensive inference
+### 8. Teure Inferenz nur für Kandidaten
 
-Follow the xrai-style discipline:
+Der xrai-Disziplin folgen:
 
-- deterministic title/channel match first
-- only eligible cards proceed to expensive semantic image work
-- deduplicate/in-flight guard
-- cache scores by image URL + keyword-set version
-- fail open on model/worker/runtime errors
-- never block the feed because the semantic worker is unavailable
+- zuerst deterministischer Titel-/Kanalabgleich
+- nur geeignete Karten gehen in die teure semantische Bildarbeit über
+- Deduplizierung/In-Flight-Sperre
+- Scores cachen nach Bild-URL + Version des Schlüsselwort-Sets
+- fail open bei Modell-/Worker-/Laufzeitfehlern
+- den Feed niemals blockieren, nur weil der Semantik-Worker nicht verfügbar ist
 
-Do not add a remote AI service.
+Keinen Remote-KI-Dienst hinzufügen.
 
-### 9. Batch text preparation
+### 9. Textvorbereitung bündeln
 
-Prepare/calculate the user concept embeddings once per keyword-set revision, not once per card.
+Die Embeddings der Nutzerkonzepte einmal pro Revision des Schlüsselwort-Sets vorbereiten/berechnen, nicht einmal pro Karte.
 
-Do not repeatedly tokenize identical concepts for every thumbnail.
+Identische Konzepte nicht für jedes Vorschaubild erneut tokenisieren.
 
-### 10. Diagnostics
+### 10. Diagnostik
 
-Add optional debug output under the existing `logMatch` / `[YB]` mechanism.
+Optionaler Debug-Output unter dem bestehenden `logMatch`-/`[YB]`-Mechanismus.
 
-For a semantic match, log enough to reproduce the decision:
+Bei einem semantischen Treffer genug protokollieren, um die Entscheidung nachzuvollziehen:
 
-- keyword
-- target cosine
-- reference/best competitor cosine
-- margin
-- threshold/profile identifier
+- Schlüsselwort
+- Ziel-Kosinus
+- Referenz-/Bestkonkurrenz-Kosinus
+- Margin
+- Schwellenwert-/Profilkennung
 - source = semantic-image
 
-Do NOT log thumbnail binary data.
+NICHT die Binärdaten der Vorschaubilder protokollieren.
 
-### 11. Evaluation harness
+### 11. Evaluierungs-Harness
 
-Create a new research/evaluation area under `gui-test-assets/padexp/`.
+Einen neuen Recherche-/Evaluierungsbereich unter `gui-test-assets/padexp/` anlegen.
 
-Do not commit downloaded model binaries or raw copyrighted thumbnails.
+Heruntergeladene Modell-Binärdateien oder urheberrechtlich geschützte Roh-Vorschaubilder nicht committen.
 
-Add scripts that can consume an externally prepared CSV manifest and output:
+Skripte hinzufügen, die ein extern vorbereitetes CSV-Manifest einlesen und ausgeben:
 
-- per-keyword precision
-- recall
+- Präzision pro Schlüsselwort
+- Recall
 - F1
-- false-positive rate
-- target cosine distribution
-- contrastive margin distribution
-- calibration vs holdout
-- latency p50/p95 for semantic-image stage
+- Falsch-Positiv-Rate
+- Verteilung des Ziel-Kosinus
+- Verteilung der kontrastiven Margin
+- Kalibrierung vs. Holdout
+- Latenz p50/p95 für die semantische Bildstufe
 
-Use a deterministic 70/30 calibration/holdout split.
+Eine deterministische 70/30-Aufteilung in Kalibrierung/Holdout verwenden.
 
-The current 431-thumbnail experiment may be used as a historical reference, but do not silently reuse its labels as new production truth.
+Das vorhandene Experiment mit 431 Vorschaubildern darf als historische Referenz dienen, seine Labels dürfen aber nicht stillschweigend als neue Produktionswahrheit übernommen werden.
 
-### 12. Acceptance criteria before merge
+### 12. Abnahmekriterien vor dem Merge
 
-Production implementation is acceptable only when:
+Eine Produktionsimplementierung ist nur akzeptabel, wenn:
 
-1. Existing title filtering tests remain green.
-2. Existing OCR tests remain green.
-3. Existing semantic init/runtime tests remain green.
-4. No production code uses sigmoid 0.15 as the semantic acceptance rule.
-5. A per-keyword route can be configured without code changes.
-6. A semantic image failure never prevents title/OCR filtering or normal feed operation.
-7. Semantic work is cached and does not rerun for the same card unnecessarily.
-8. A holdout evaluation demonstrates that contrastive scoring is more useful than the old absolute sigmoid decision on the intended user-filter dataset.
-9. The exact production threshold/profile is recorded from calibration data rather than chosen from theory alone.
-10. The user-facing default remains conservative: false positives are preferred to aggressive over-filtering.
+1. Die bestehenden Titel-Filtertests grün bleiben.
+2. Die bestehenden OCR-Tests grün bleiben.
+3. Die bestehenden Semantik-Init-/Laufzeittests grün bleiben.
+4. Kein Produktionscode Sigmoid 0.15 als semantische Abnahmeregel verwendet.
+5. Eine Route pro Schlüsselwort ohne Codeänderungen konfigurierbar ist.
+6. Ein semantischer Bildfehler niemals die Titel-/OCR-Filterung oder den normalen Feed-Betrieb verhindert.
+7. Semantische Arbeit gecacht wird und für dieselbe Karte nicht unnötig erneut läuft.
+8. Eine Holdout-Evaluierung zeigt, dass kontrastives Scoring im vorgesehenen Nutzerfilter-Datensatz nützlicher ist als die alte absolute Sigmoid-Entscheidung.
+9. Der exakte Produktionsschwellenwert/-profil aus Kalibrierungsdaten dokumentiert wird statt allein aus der Theorie gewählt zu werden.
+10. Der nutzerseitige Standard konservativ bleibt: Falsch-Positive sind aggressivem Überfiltern vorzuziehen.
 
-## Do not do in this task
+## In dieser Aufgabe NICHT tun
 
-- Do not create a Chrome-only fork.
-- Do not migrate Firefox MV2 to MV3.
-- Do not replace SigLIP with a larger model.
-- Do not add remote AI/cloud classification.
-- Do not add speech analysis.
-- Do not enable OCR by default.
-- Do not add a universal image taxonomy.
-- Do not change the user's keyword list automatically.
-- Do not delete the old dHash/pHash code unless a separate cleanup task is created.
-- Do not merge based on calibration-set metrics only.
+- Keinen Chrome-only-Fork erstellen.
+- Firefox MV2 nicht auf MV3 migrieren.
+- SigLIP nicht durch ein größeres Modell ersetzen.
+- Keine Remote-KI-/Cloud-Klassifikation hinzufügen.
+- Keine Sprachanalyse hinzufügen.
+- OCR nicht standardmäßig aktivieren.
+- Keine universelle Bildtaxonomie hinzufügen.
+- Die Schlüsselwortliste des Nutzers nicht automatisch ändern.
+- Den alten dHash/pHash-Code nicht löschen, solange keine separate Aufräumaufgabe angelegt wird.
+- Nicht allein aufgrund von Metriken des Kalibrierungssets mergen.
 
-## Deliverables
+## Lieferergebnisse
 
-1. Implementation on branch `feature/semantic-filter-routing`.
-2. Tests for routing, contrastive scoring and caching.
-3. Evaluation script(s) and a text report.
-4. Clear migration notes for existing settings/imported JSON.
-5. No model binaries or raw copyrighted image corpus committed.
+1. Implementierung auf dem Branch `feature/semantic-filter-routing`.
+2. Tests für Routing, kontrastives Scoring und Caching.
+3. Evaluierungsskript(e) und ein Textbericht.
+4. Klare Migrationshinweise für bestehende Einstellungen/importiertes JSON.
+5. Keine Modell-Binärdateien und kein Roh-Bildkorpus mit Urheberrechtsbezug committen.
 
-## Reference implementation ideas
+## Referenz-Implementierungsideen
 
-Use these only as architecture references:
+Nur als Architekturreferenzen verwenden:
 
-- `sidntrivedi/ytff`: batching, result caching, deterministic evaluation discipline. Do not copy code because licensing was not established in the inspected repository.
-- `phuaky/xrai`: candidate-only local vision gate, golden-set regression, latency evaluation, fail-open behavior. Repository is MIT licensed.
+- `sidntrivedi/ytff`: Batching, Ergebnis-Caching, deterministische Evaluierungsdisziplin. Keinen Code kopieren, da die Lizenz im geprüften Repository nicht festgestellt wurde.
+- `phuaky/xrai`: Kandidaten-only lokales Vision-Gate, Golden-Set-Regression, Latenz-Evaluierung, Fail-Open-Verhalten. Das Repository ist MIT-lizenziert.
 
-The implementation must remain native to Youtube Blocker and preserve its current Firefox/local-first architecture.
+Die Implementierung muss nativ zu Youtube Blocker bleiben und seine aktuelle Firefox-/Local-First-Architektur bewahren.

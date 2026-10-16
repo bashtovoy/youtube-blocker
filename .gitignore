@@ -1,23 +1,25 @@
-# ОС / редакторы
+# Betriebssystem / Editoren
 .DS_Store
 *.swp
+.vscode/
+.qoder-monosnap.png
 
-# Артефакты сборки (подписанные/собранные пакеты)
+# Build-Artefakte (signierte/gebaute Pakete)
 web-ext-artifacts/
 *.xpi
 *.zip
 
-# Сторонние библиотеки и модели — скачиваются setup.sh, не храним в git
+# Fremdbibliotheken und Modelle — werden von setup.sh geladen, nicht in git aufbewahren
 extension/lib/
 extension/models/
 
-# Логи и рантайм дев-моста
+# Logs und Laufzeitdateien der Dev-Brücke
 dev.log
 web-ext-run.log
 devcommands.json
 
-# Дев-мост расширения (опрашивает localhost и выполняет удалённые команды)
-# не входит в публичный релиз
+# Dev-Brücke der Erweiterung (fragt localhost ab und führt entfernte Befehle aus)
+# nicht Teil des öffentlichen Releases
 extension/devreport.js
 
 # node

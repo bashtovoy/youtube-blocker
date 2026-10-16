@@ -1,138 +1,140 @@
 # Youtube Blocker (Firefox)
 
-Расширение Firefox, которое детектирует нежелательный контент YouTube
-**по названию и по миниатюре** и отправляет YouTube штатный сигнал
-**«Это не интересует»** для совпадений из вашего списка.
+Firefox-Erweiterung, die unerwünschte YouTube-Inhalte **anhand des Titels und
+des Vorschaubilds** erkennt und für Treffer aus deiner Liste das offizielle
+YouTube-Signal **„Kein Interesse“** sendet.
 
-## Как это работает
+## Wie es funktioniert
 
-| Канал детекта | Метод | Требует библиотеки |
+| Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
-| Название видео | Нечёткое сопоставление токенов (падéжи, опечатки, префиксы) с списком ключевых слов | нет |
-| Фото — OCR | Текст на миниатюре распознаётся Tesseract.js (ru+en) и ищется в списке слов | `lib/tesseract.min.js` |
-| Фото — образец | Быстрое перцептивное сравнение dHash+pHash | нет (встроенный canvas) |
-| Миниатюра — семантика | Локальный SigLIP: **текст из вашего списка → визуальное содержание миниатюры**; без загрузки эталонных фото | `transformers.min.js` + локальная модель SigLIP |
-| Речь в видео *(опционально)* | Аудио первые N секунд прогоняется через whisper.cpp (WASM) в отдельном воркере, расшифровка ищется в списке | `lib/whisper.js` + модель в `models/` |
+| Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Präfixe) mit der Schlüsselwortliste | nein |
+| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js (ru+en) erkannt und in der Wortliste gesucht | `lib/tesseract.min.js` |
+| Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
+| Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; kein Hochladen von Referenzfotos nötig | `transformers.min.js` + lokales SigLIP-Modell |
+| Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
 
-При совпадении выполняется действие (выбирается в попапе):
+Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
 
-- **«Не интересно»** — автоматический клик штатного меню элемента выдачи
-  (⋮ → «Это не интересует»). YouTube получает настоящий сигнал от вашего
-  аккаунта и перестаёт рекоментировать контент.
-- **«Только скрыть»** — CSS-скрытие элемента (быстрее и не зависит от вёрстки).
+- **„Kein Interesse“** — automatischer Klick auf das offizielle Menü des
+  Ergebniselements (⋮ → „Kein Interesse“). YouTube erhält ein echtes Signal
+  von deinem Konto und empfiehlt die Inhalte nicht mehr.
+- **„Nur ausblenden“** — CSS-Ausblendung des Elements (schneller und
+  unabhängig vom Layout).
 
-Все данные (список, образцы, расшифровки) хранятся только локально
-(`storage.local`), никуда не отправляясь.
+Alle Daten (Liste, Vorlagen, Transkripte) werden nur lokal gespeichert
+(`storage.local`) und nirgendwohin gesendet.
 
-## Установка библиотек
-
-```bash
-./setup.sh          # скачает tesseract.js (~2 МБ + языковые данные)
-                    # опционально — whisper.cpp и модель для речи
-```
-
-## Установка в Firefox
-
-1. `about:debugging#/runtime/this-firefox` → **Загрузить временное дополнение…**
-2. Выберите `extension/manifest.json`.
-
-Для постоянной установки: `cd extension && web-ext build` (нужен `npm i -g web-ext`).
-
-## Использование
-
-1. Откройте попап расширения (иконка в тулбаре).
-2. Впишите список — по одному ключевому слову/фразе на строку
-   (имена каналов, блогеров, темы).
-3. При необходимости добавьте **образцы фото** — картинки, чьи миниатюры
-   нужно блокировать по визуальному сходству, и/ включите **OCR**.
-4. Выберите действие («Не интересно» или «Только скрыть») и **Сохранить**.
-5. Обновите вкладки YouTube. Дальше расширение работает само: оно сканирует
-   выдачу (главная, поиск, подписки, боковая панель, рекомендации) через
-   MutationObserver.
-
-Список можно экспортировать/импортировать в JSON.
-
-## Настройки
-
-- `Порог dHash/pHash` — расстояние Хэмминга. Меньше = строже.
-- `Порог семантики` — вероятность SigLIP после sigmoid (0.05–0.95). Выше = строже. Начальный ориентир: **0.15**, затем калибруется на реальных миниатюрах.
-  Для копий тех же миниатюр хватает 4–8.
-- `OCR языки` — `eng+rus` по умолчанию.
-- `Пауза между сигналами` — защита от флуда интерфейса YouTube.
-- Речь: модель ставится в `extension/models/`, путь указывается в
-  `speechModel` (например `models/ggml-small.bin` — для русского языка
-  нужна multilingual-модель, `base.en` понимает только английский).
-
-## Отладка и проверка (dev-режим)
-
-Для энд-ту-энд проверки без ручного открытия DevTools есть dev-инфраструктура:
+## Bibliotheken installieren
 
 ```bash
-node devserver.js &        # приёмник логов на localhost:8788 + очередь команд
-npx web-ext run --source-dir extension   # Firefox с авто-перезагрузкой
-node devtest.js "запрос"   # берёт реальные заголовки из выдачи YouTube,
-                           # ставит их в блок-лист и проверяет срабатывание
+./setup.sh          # lädt tesseract.js (~2 MB + Sprachdaten)
+                    # optional — whisper.cpp und ein Modell für Sprache
 ```
 
-`extension/devreport.js` отправляет логи `[YB]` на devserver и опрашивает его
-на предмет тестовых команд (config/navigate/scroll/rescan). Если devserver
-не запущен — модуль молча отключается после 3 неудачных попыток и не влияет
-на работу расширения. Все логи дублируются в `dev.log`.
+## Installation in Firefox
 
-## Известные ограничения
+1. `about:debugging#/runtime/this-firefox` → **Temporäres Add-on laden…**
+2. Wähle `extension/manifest.json` aus.
 
-- Селекторы меню YouTube («⋮» → «Это не интересует») зависят от вёрстки
-  сайта; при редизайне режим *dismiss* может начать тихо падать — тогда
-  сработает fallback на скрытие. Расшижение ищет пункт меню по иконке
-  `thumbs-down`, а не по тексту, поэтому не зависит от языка интерфейса.
-- OCR тяжёл: включайте его при большом списке, иначе CPU тратится впустую.
-  Запросы идут последовательно через очередь и кэшируются по videoId.
-- Детект по речи — экспериментальный: качает страницу watch и аудио-поток,
-  расшифровывает только первые N секунд. Для русского — multilingual
-  модель (`small`), это ~460 МБ в воркере.
-- Shorts имеют отдельный renderer и включены в область обнаружения; доступность штатного «Не интересно» зависит от текущей разметки YouTube, поэтому при невозможности однозначно найти пункт расширение не выбирает произвольное действие и переходит к локальному скрытию.
+Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `npm i -g web-ext`).
 
-## Структура
+## Verwendung
+
+1. Öffne das Erweiterungs-Popup (Symbol in der Toolbar).
+2. Trage die Liste ein — ein Schlüsselwort/eine Phrase pro Zeile
+   (Kanalnamen, Blogger, Themen).
+3. Bei Bedarf **Fotovorlagen** hinzufügen — Bilder, deren Vorschaubilder
+   per visueller Ähnlichkeit blockiert werden sollen, und/oder **OCR** einschalten.
+4. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) und **Speichern**.
+5. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
+   scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
+   über einen MutationObserver.
+
+Die Liste lässt sich als JSON exportieren/importieren.
+
+## Einstellungen
+
+- `dHash/pHash-Schwelle` — Hamming-Distanz. Kleiner = strenger.
+  Für Kopien derselben Vorschaubilder reichen 4–8.
+- `Semantik-Schwelle` — SigLIP-Wahrscheinlichkeit nach Sigmoid (0.05–0.95). Höher = strenger. Erster Richtwert: **0.15**, danach an echten Vorschaubildern kalibrieren.
+- `OCR-Sprachen` — standardmäßig `eng+rus`.
+- `Pause zwischen Signalen` — Schutz vor Flutung der YouTube-Oberfläche.
+- Sprache: Das Modell wird in `extension/models/` abgelegt, der Pfad wird in
+  `speechModel` angegeben (z. B. `models/ggml-small.bin` — für Russisch
+  braucht man ein multilinguales Modell, `base.en` versteht nur Englisch).
+
+## Debugging und Prüfung (Dev-Modus)
+
+Für End-to-End-Prüfungen ohne manuelles Öffnen der DevTools gibt es eine Dev-Infrastruktur:
+
+```bash
+node devserver.js &        # Log-Empfänger auf localhost:8788 + Befehlswarteschlange
+npx web-ext run --source-dir extension   # Firefox mit Auto-Reload
+node devtest.js "Anfrage"  # holt echte Titel aus den YouTube-Ergebnissen,
+                           # setzt sie in die Blockliste und prüft die Auslösung
+```
+
+`extension/devreport.js` sendet `[YB]`-Logs an den devserver und fragt ihn
+nach Testbefehlen ab (config/navigate/scroll/rescan). Läuft der devserver
+nicht, deaktiviert sich das Modul nach 3 fehlgeschlagenen Versuchen still und
+beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` geschrieben.
+
+## Bekannte Einschränkungen
+
+- Die Selektoren des YouTube-Menüs („⋮“ → „Kein Interesse“) hängen vom Layout
+  der Seite ab; bei einem Redesign kann der *dismiss*-Modus still ausfallen —
+  dann greift der Fallback auf das Ausblenden. Die Erweiterung sucht den
+  Menüpunkt über das `thumbs-down`-Icon, nicht über den Text, und ist daher
+  unabhängig von der Sprache der Oberfläche.
+- OCR ist aufwendig: bei großer Liste einschalten, sonst wird CPU unnötig verbraucht.
+  Anfragen laufen sequenziell über eine Warteschlange und werden per videoId gecacht.
+- Die Spracherkennung ist experimentell: lädt die Watch-Seite und den Audio-Stream,
+  transkribiert nur die ersten N Sekunden. Für Russisch — multilinguales
+  Modell (`small`), das sind ~460 MB im Worker.
+- Shorts haben einen eigenen Renderer und sind im Erkennungsbereich enthalten; die Verfügbarkeit des offiziellen „Kein Interesse“ hängt vom aktuellen YouTube-Layout ab — wird kein eindeutiger Menüpunkt gefunden, wählt die Erweiterung keine zufällige Aktion, sondern blendet lokal aus.
+
+## Struktur
 
 ```
 extension/
-  manifest.json   — MV2, content_scripts на *.youtube.com
-  content.js      — оркестратор: скан DOM → детект → действие
-  matcher.js      — нечёткое сопоставление ключевых слов
-  image.js        — визуальные дескрипторы (legacy; эталонные фото больше не требуются)
-  semantic.js     — API text → image semantic matching
-  semantic-worker.js — SigLIP image-text logits в Worker
-  ocr.js          — Tesseract.js в blob-воркере (обход CSP)
-  speech.js       — whisper.cpp в воркере (опционально)
-  dismiss.js      — клик «Не интересно» / CSS-скрытие
-  background.js   — бейдж-счётчик, кэш конфига
-  popup/          — управление списком, образами, настройками
-  lib/ models/    — внешние библиотеки (заполняются setup.sh)
+  manifest.json   — MV2, content_scripts auf *.youtube.com
+  content.js      — Orchestrator: DOM-Scan → Erkennung → Aktion
+  matcher.js      — unscharfer Abgleich von Schlüsselwörtern
+  image.js        — visuelle Deskriptoren (legacy; Referenzfotos nicht mehr nötig)
+  semantic.js     — API für Text → Bild semantisches Matching
+  semantic-worker.js — SigLIP-Image-Text-Logits im Worker
+  ocr.js          — Tesseract.js im Blob-Worker (CSP-Umgehung)
+  speech.js       — whisper.cpp im Worker (optional)
+  dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
+  background.js   — Badge-Zähler, Konfigurations-Cache
+  popup/          — Verwaltung von Liste und Einstellungen
+  lib/ models/    — externe Bibliotheken (werden von setup.sh befüllt)
 ```
 
-## Изменения в 1.1.0
+## Änderungen in 1.1.0
 
-- Обнаружение ограничено зоной прокрутки через `IntersectionObserver` (с предзагрузкой).
-- Действия YouTube сериализуются через единую очередь — несколько карточек больше не открывают меню одновременно.
-- Убрано опасное нажатие первого попавшегося пункта меню: при отсутствии однозначного «Не интересно» используется только локальное скрытие.
-- Проверка результата учитывает только новый snackbar/Undo, появившийся после текущего действия (состояние фиксируется до клика).
-- Для миниатюр к `dHash` добавлен `pHash` — устойчивость к сжатию, цвету и лёгкому кадрированию.
-- Реальная миниатюра дожидается загрузки перед проверкой; добавлен кэш визуальных дескрипторов.
-- Текстовый матчер сопоставляет по токенам и границам слов (без слепого `includes()` и без prefix-match) — меньше ложных срабатываний; учитывается и имя канала.
-- В 1.1.1 подтверждающий dialog считается только если он появился после текущего действия; открытое меню без найденного «Не интересно» больше не принимается за успех.
-- Для dHash+pHash введён комбинированный допуск: pHash больше не может самостоятельно подтвердить совпадение.
-- Статистика разделяет сигналы YouTube (`dismissedCount`) и локальные скрытия (`hiddenCount`).
-- Whisper-модель по умолчанию приведена к multilingual `models/ggml-base.bin`; в попапе доступны язык, путь модели и длительность анализа речи.
+- Erkennung auf den Scrollbereich beschränkt über `IntersectionObserver` (mit Vorladung).
+- YouTube-Aktionen werden über eine gemeinsame Warteschlange serialisiert — mehrere Karten öffnen das Menü nicht mehr gleichzeitig.
+- Gefährliches Anklicken des erstbesten Menüpunkts entfernt: Ohne eindeutiges „Kein Interesse“ wird nur lokal ausgeblendet.
+- Die Ergebnisprüfung berücksichtigt nur einen neuen snackbar/Undo, der nach der aktuellen Aktion erschienen ist (Zustand wird vor dem Klick festgehalten).
+- Für Vorschaubilder kommt zu `dHash` jetzt `pHash` hinzu — robust gegen Kompression, Farbe und leichten Zuschnitt.
+- Das echte Vorschaubild wird vor der Prüfung geladen; ein Cache für visuelle Deskriptoren wurde ergänzt.
+- Der Text-Matcher vergleicht nach Token und Wortgrenzen (kein blindes `includes()` und kein Prefix-Matching) — weniger falsche Treffer; auch der Kanalname wird berücksichtigt.
+- In 1.1.1 zählt ein Bestätigungsdialog nur, wenn er nach der aktuellen Aktion erschienen ist; ein geöffnetes Menü ohne gefundenes „Kein Interesse“ gilt nicht mehr als Erfolg.
+- Für dHash+pHash gilt eine kombinierte Toleranz: `pHash` allein kann eine Übereinstimmung nicht mehr bestätigen.
+- Die Statistik trennt YouTube-Signale (`dismissedCount`) und lokale Ausblendungen (`hiddenCount`).
+- Das Whisper-Standardmodell ist jetzt das multilinguale `models/ggml-base.bin`; im Popup sind Sprache, Modellpfad und Dauer der Sprachanalyse verfügbar.
 
-> Главный визуальный канал теперь — **text → image**. `dHash`/`pHash` и пользовательские эталонные фото не являются частью основного сценария.
+> Der wichtigste visuelle Kanal ist jetzt **Text → Bild**. `dHash`/`pHash` und eigene Referenzfotos gehören nicht mehr zum Hauptszenario.
 
-## Разработка и тесты
+## Entwicklung und Tests
 
 ```bash
-node --check extension/*.js      # синтаксис
-node tests/test-matcher.js       # модульный тест текстового матчера
+node --check extension/*.js      # Syntax
+node tests/test-matcher.js       # Modultest des Text-Matchers
 npx web-ext lint --source-dir extension
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 ```
 
-История изменений — в [`CHANGELOG.md`](CHANGELOG.md). Лицензия — [`LICENSE`](LICENSE) (MIT).
+Die Änderungshistorie steht in [`CHANGELOG.md`](CHANGELOG.md). Lizenz: [`LICENSE`](LICENSE) (MIT).

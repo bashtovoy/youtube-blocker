@@ -1,4 +1,4 @@
-/* content.js — детект в зоне прокрутки, каскад текст → image → OCR → речь, затем штатное «Не интересно» */
+/* content.js — Erkennung im Scrollbereich, Kaskade Text → Bild → OCR → Sprache, danach offizielles „Kein Interesse“ */
 (function () {
   'use strict';
 
@@ -47,10 +47,10 @@
     return state.keywords.length > 0 || state.settings.hideMembersOnly;
   }
 
-  /* YouTube перевёл бейджи на новые view-model компоненты:
+  /* YouTube hat die Badges auf neue View-Model-Komponenten umgestellt:
      <badge-shape class="ytBadgeShapeHost ..."><div class="ytBadgeShapeText">Members only</div></badge-shape>
-     внутри yt-badge-view-model / yt-content-metadata-view-model. Старого
-     ytd-badge-supported-renderer-предка больше нет, поэтому ищем сам бейдж. */
+     innerhalb von yt-badge-view-model / yt-content-metadata-view-model. Der alte
+     ytd-badge-supported-renderer-Vorfahre existiert nicht mehr, daher suchen wir den Badge selbst. */
   const BADGE_SELECTOR = 'badge-shape, yt-badge-view-model, .ytBadgeShapeText, .yt-badge-shape__text';
   const MEMBERS_ONLY_RE = /members?\s*only|member-only|für mitglieder|для учасників|для участников|учасник|участник|член/i;
 
@@ -118,10 +118,10 @@
     return url;
   }
 
-  /* YouTube перевёл фид/shorts на view-model компоненты (yt-lockup-view-model,
-     shortsLockupViewModel): legacy-элемента #video-title во многих раскладках
-     больше нет. Ищем заголовок и по старым, и по новым *.ViewModelTitle-классам —
-     иначе extract() возвращает null на каждой карточке и ничего не блокируется. */
+  /* YouTube hat Feed/Shorts auf View-Model-Komponenten umgestellt (yt-lockup-view-model,
+     shortsLockupViewModel): Das Legacy-Element #video-title fehlt in vielen Layouts.
+     Wir suchen den Titel daher sowohl über alte als auch über neue *.ViewModelTitle-Klassen —
+     sonst liefert extract() auf jeder Karte null und es wird nichts blockiert. */
   const TITLE_SELECTOR = [
     '#video-title',
     'yt-formatted-string#video-title',
@@ -327,11 +327,11 @@
         if (!e.isIntersecting) continue;
         const v = extract(e.target);
         if (!v) {
-          /* Метаданные карточки (заголовок/videoId) ещё не отрендерены YouTube.
-             Не «сжигаем» её: отпускаем из observed и снимаем наблюдение, чтобы
-             scanNow повторил попытку, когда DOM-мутация от гидрации карточки
-             снова запустит сканирование. Иначе IO для уже видимого элемента
-             больше не выстрелит и видео останется непроверенным навсегда. */
+          /* Die Karten-Metadaten (Titel/videoId) sind von YouTube noch nicht gerendert.
+             Die Karte nicht „verbrennen“: aus observed entlassen und Beobachtung abmelden,
+             damit scanNow es erneut versucht, sobald eine DOM-Mutation durch die
+             Karten-Hydration wieder ein Scannen auslöst. Sonst feuert der IO für das
+             bereits sichtbare Element nie wieder und das Video bliebe dauerhaft ungeprüft. */
           state.observed.delete(e.target);
           state.io.unobserve(e.target);
           const tries = (state.retryCounts.get(e.target) || 0) + 1;
@@ -392,10 +392,10 @@
     }
   });
 
-  /* Диагностика для отладки в консоли контeнт-скрипта (context moz-extension://…/content.js):
-     YB.debug.state()  — что реально загружено в content (ключи, флаги);
-     YB.debug.scan()   — по каждой карточке: extract/matchTitle/hidden. Позволяет
-     за один вызов отличить битый селектор DOM от «слово не доехало» от «матчится, но не скрыто». */
+  /* Diagnose für das Debuggen in der Konsole des Content-Skripts (Kontext moz-extension://…/content.js):
+     YB.debug.state()  — was tatsächlich im Content geladen ist (Schlüssel, Flags);
+     YB.debug.scan()   — pro Karte: extract/matchTitle/hidden. Damit lässt sich
+     mit einem Aufruf unterscheiden: kaputter DOM-Selektor, „Wort nicht angekommen“ oder „matcht, aber nicht ausgeblendet“. */
   window.YB = window.YB || {};
   window.YB.debug = {
     state: () => ({

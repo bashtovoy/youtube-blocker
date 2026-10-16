@@ -1,10 +1,10 @@
-/* popup.js — управление текстовым списком семантических понятий и настройками */
+/* popup.js — Verwaltung der Begriffsliste und Einstellungen */
 'use strict';
 
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
-console.log('[popup] import via tab v3 loaded');  /* маркер: если его нет в консоли — браузер крутит старый билд */
-$('ver').textContent = 'v' + api.runtime.getManifest().version;  /* видимый номер билда в шапке */
+console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
+$('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'fuzzy'];
 const VALUE_IDS = ['mode', 'ocrLangs', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
@@ -54,12 +54,12 @@ async function load() {
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
   const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
-  $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · локально: ${hid}` : '';
+  $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · lokal: ${hid}` : '';
 }
 
 function updateCount() {
   const on = keywords.filter(k => k.enabled !== false && String(k.text).trim()).length;
-  $('kwCount').textContent = keywords.length ? `всего: ${keywords.length} · активно: ${on}` : '';
+  $('kwCount').textContent = keywords.length ? `gesamt: ${keywords.length} · aktiv: ${on}` : '';
 }
 
 function renderKeywords() {
@@ -72,7 +72,7 @@ function renderKeywords() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = kw.enabled !== false;
-    cb.title = 'Использовать это слово';
+    cb.title = 'Dieses Wort verwenden';
     cb.onchange = () => {
       kw.enabled = cb.checked;
       row.classList.toggle('off', !cb.checked);
@@ -92,14 +92,14 @@ function renderKeywords() {
     const del = document.createElement('button');
     del.className = 'del';
     del.textContent = '×';
-    del.title = 'Удалить';
+    del.title = 'Löschen';
     del.onclick = () => { keywords.splice(idx, 1); renderKeywords(); schedulePersist(0); };
 
     row.append(cb, inp, del);
     box.appendChild(row);
   });
   updateCount();
-  /* синхронизируем поле массового редактирования, когда оно свёрнуто */
+  /* Massenbearbeitungsfeld synchronisieren, wenn es eingeklappt ist */
   const bulk = $('keywordsBulk');
   if (bulk && !bulk.closest('details').open) bulk.value = keywords.map(k => k.text).join('\n');
 }
@@ -108,7 +108,7 @@ function addKeyword(text) {
   const v = String(text || '').trim();
   if (!v) return false;
   if (keywords.some(k => k.text.toLowerCase() === v.toLowerCase())) {
-    status('Такое слово уже есть', false);
+    status('Dieses Wort ist bereits vorhanden', false);
     return false;
   }
   keywords.push({ text: v, enabled: true });
@@ -122,16 +122,16 @@ let dirty = false;
 
 function markDirty() {
   dirty = true;
-  status('Сохранение…');
+  status('Speichern…');
 }
 
 function markSaved() {
   dirty = false;
-  status('Сохранено, вкладки обновлены');
+  status('Gespeichert, Tabs aktualisiert');
 }
 
-/* Отложенное сохранение: любая правка сама коммитится и будит вкладки.
-   Для ввода текста — больший debounce, чтобы не спамить broadcast на каждый символ. */
+/* Verzögertes Speichern: Jede Änderung speichert selbst und benachrichtigt die Tabs.
+   Für Texteingaben längeres Debounce, um nicht bei jedem Zeichen zu senden. */
 function schedulePersist(delay = 500) {
   markDirty();
   clearTimeout(saveTimer);
@@ -157,13 +157,13 @@ async function persist() {
     .filter(k => k.text);
   try {
     await api.storage.local.set({ settings, keywords: kws });
-    /* уведомляем все вкладки YouTube */
+    /* alle YouTube-Tabs benachrichtigen */
     const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
     await Promise.all(tabs.map(t => api.tabs.sendMessage(t.id, { type: 'config-changed' }).catch(() => {})));
     markSaved();
   } catch (e) {
     dirty = true;
-    status('Не удалось сохранить: ' + e.message, false);
+    status('Speichern fehlgeschlagen: ' + e.message, false);
   }
   return kws;
 }
@@ -181,7 +181,7 @@ document.querySelector('details.bulk').addEventListener('toggle', (e) => {
   if (e.target.open) $('keywordsBulk').value = keywords.map(k => k.text).join('\n');
 });
 
-/* Автосохранение настроек: смена чекбокса/селекта сразу применяет, текст/число — с debounce */
+/* Automatisches Speichern der Einstellungen: Häkchen/Auswahl wirken sofort, Text/Zahl mit Debounce */
 SETTING_IDS.forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => schedulePersist(0)); });
 VALUE_IDS.forEach(id => {
   const el = $(id);
@@ -190,7 +190,7 @@ VALUE_IDS.forEach(id => {
   el.addEventListener(isText ? 'input' : 'change', () => schedulePersist(isText ? 700 : 0));
 });
 
-/* Если попап закрыли с незавершённым debounce — дожимаем сохранение */
+/* Wird das Popup mit ausstehendem Debounce geschlossen, wird das Speichern nachgeholt */
 window.addEventListener('beforeunload', () => { if (dirty) persist(); });
 
 $('export').onclick = async () => {
@@ -202,9 +202,9 @@ $('export').onclick = async () => {
   a.click();
 };
 
-/* Импорт открываем в отдельной вкладке: в Firefox попап закрывается в момент
-   открытия системного диалога выбора файла, и onchange не досчитывает. В обычной
-   вкладке этой проблемы нет. */
+/* Import öffnet in einem eigenen Tab: In Firefox schließt sich das Popup, sobald
+   der Systemdatei-Dialog aufgeht, und onchange geht verloren. In einem normalen
+   Tab tritt dieses Problem nicht auf. */
 $('import').onclick = () => {
   api.tabs.create({ url: api.runtime.getURL('popup/import.html') });
 };

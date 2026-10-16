@@ -1,4 +1,4 @@
-/* dismiss.js — штатное действие YouTube «Не интересно» без опасного fallback-клика */
+/* dismiss.js — offizielle YouTube-Aktion „Kein Interesse“ ohne gefährlichen Fallback-Klick */
 (function () {
   'use strict';
 
@@ -65,8 +65,8 @@
       await sleep(50);
       const entry = findNotInterestedEntry(document);
       if (entry) return entry;
-      /* Наличие открытого меню само по себе не является успехом: ждём именно
-         однозначный пункт «Не интересно», иначе безопасно завершаем ожидание. */
+      /* Ein geöffnetes Menü ist für sich genommen kein Erfolg: Wir warten auf den
+         eindeutigen Punkt „Kein Interesse“, sonst beenden wir das Warten sicher. */
     }
     throw new Error('not-interested entry did not appear');
   }
@@ -103,7 +103,7 @@
     if (!target.matches('ytd-menu-service-item-renderer, tp-yt-paper-item, paper-item, [role="menuitem"], [role="option"]')) {
       target = findNotInterestedEntry(entry);
     }
-    /* Критически важно: не нажимаем первый пункт меню, если нужный пункт не найден. */
+    /* Kritisch: Wenn der gesuchte Menüpunkt fehlt, nicht einfach den ersten Menüpunkt anklicken. */
     if (!target) throw new Error('not-interested entry not found');
 
     const clickable = target.shadowRoot
