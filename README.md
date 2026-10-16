@@ -22,7 +22,7 @@ Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
 - **„Nur ausblenden“** — CSS-Ausblendung des Elements (schneller und
   unabhängig vom Layout).
 
-Alle Daten (Liste, Vorlagen, Transkripte) werden nur lokal gespeichert
+Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 (`storage.local`) und nirgendwohin gesendet.
 
 ## Bibliotheken installieren
@@ -42,16 +42,21 @@ Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `n
 ## Verwendung
 
 1. Öffne das Erweiterungs-Popup (Symbol in der Toolbar).
-2. Trage die Liste ein — ein Schlüsselwort/eine Phrase pro Zeile
-   (Kanalnamen, Blogger, Themen).
-3. Bei Bedarf **Fotovorlagen** hinzufügen — Bilder, deren Vorschaubilder
-   per visueller Ähnlichkeit blockiert werden sollen, und/oder **OCR** einschalten.
-4. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) und **Speichern**.
+2. Trage die Liste ein — ein Begriff pro Zeile (Themen, Namen, Kanalnamen).
+   Jeder Begriff wird im Titel und zusätzlich **semantisch im Vorschaubild**
+   gesucht (lokales SigLIP). **OCR** lässt sich für Text im Vorschaubild
+   zusätzlich einschalten.
+3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
+   Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
+4. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
+   werden automatisch gespeichert (Auto-Speichern mit kurzem Debounce) und
+   sofort auf alle YouTube-Tabs angewendet.
 5. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
    scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
    über einen MutationObserver.
 
-Die Liste lässt sich als JSON exportieren/importieren.
+Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
+(im Firefox-Popup würde der Datei-Dialog das Popup sofort schließen).
 
 ## Einstellungen
 
