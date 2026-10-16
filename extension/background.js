@@ -21,3 +21,20 @@ api.storage.local.onChanged.addListener(changes => {
   }
 });
 function updateBadge(n) { api.browserAction.setBadgeText({ text: n > 0 ? String(n) : '' }); }
+
+/* Сброс счётчика при перезагрузке/навигации страницы YouTube: бейдж показывает
+   количество сработок на текущей загрузке, а не накопительно за всё время.
+   status==='loading' срабатывает на реальный reload/переход, но не на внутренние
+   pushState-навигации YouTube-SPA. content.js инжектится позже (document_idle),
+   поэтому сброс успевает произойти до новых инкрементов. */
+function isYoutubeUrl(u) {
+  try {
+    const h = new URL(u).hostname;
+    return h === 'youtube.com' || h.endsWith('.youtube.com');
+  } catch (e) { return false; }
+}
+api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'loading' && isYoutubeUrl(tab.url || changeInfo.url || '')) {
+    api.storage.local.set({ dismissedCount: 0, hiddenCount: 0 });
+  }
+});

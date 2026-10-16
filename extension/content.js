@@ -11,6 +11,7 @@
     checkThumbOcr: false,
     checkSemanticImage: true,
     checkSpeech: false,
+    hideMembersOnly: false,
     ocrLangs: 'eng+rus',
     semanticThreshold: 0.15,
     speechLang: 'ru',
@@ -29,6 +30,7 @@
     observer: null,
     io: null,
     observed: new WeakSet(),
+    retryCounts: new WeakMap(),
     imageListeners: new WeakSet(),
     scanTimer: null,
     imageCache: new Map(),
@@ -42,7 +44,23 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0;
+    return state.keywords.length > 0 || state.settings.hideMembersOnly;
+  }
+
+  /* YouTube перевёл бейджи на новые view-model компоненты:
+     <badge-shape class="ytBadgeShapeHost ..."><div class="ytBadgeShapeText">Members only</div></badge-shape>
+     внутри yt-badge-view-model / yt-content-metadata-view-model. Старого
+     ytd-badge-supported-renderer-предка больше нет, поэтому ищем сам бейдж. */
+  const BADGE_SELECTOR = 'badge-shape, yt-badge-view-model, .ytBadgeShapeText, .yt-badge-shape__text';
+  const MEMBERS_ONLY_RE = /members?\s*only|member-only|für mitglieder|для учасників|для участников|учасник|участник|член/i;
+
+  function matchBadge(v) {
+    if (!state.settings.hideMembersOnly || !v.item) return null;
+    for (const b of v.item.querySelectorAll(BADGE_SELECTOR)) {
+      const txt = (b.textContent || '').trim();
+      if (MEMBERS_ONLY_RE.test(txt)) return 'members-only';
+    }
+    return null;
   }
 
   async function loadConfig() {
@@ -100,21 +118,38 @@
     return url;
   }
 
+  /* YouTube перевёл фид/shorts на view-model компоненты (yt-lockup-view-model,
+     shortsLockupViewModel): legacy-элемента #video-title во многих раскладках
+     больше нет. Ищем заголовок и по старым, и по новым *.ViewModelTitle-классам —
+     иначе extract() возвращает null на каждой карточке и ничего не блокируется. */
+  const TITLE_SELECTOR = [
+    '#video-title',
+    'yt-formatted-string#video-title',
+    '.ytLockupMetadataViewModelTitle',
+    '.shortsLockupViewModelHostMetadataTitle',
+    'h3.ytLockupMetadataViewModelHeadingReset',
+    '[id="video-title"]'
+  ].join(', ');
+
   function extract(item) {
-    const a = item.querySelector('a#video-title, a#thumbnail, a.yt-simple-endpoint[href*="videoId"], a[href*="/watch"], a[href*="/shorts/"]');
-    if (!a) return null;
-    const href = a.getAttribute('href') || '';
-    let videoId = a.getAttribute('data-video-id') || '';
+    let videoId = (item.getAttribute && item.getAttribute('data-video-id')) || '';
     if (!videoId) {
-      const m = href.match(/[?&]v=([\w-]{11})/) || href.match(/\/shorts\/([\w-]{11})/);
-      videoId = m ? m[1] : '';
+      for (const el of item.querySelectorAll('a[href]')) {
+        const h = el.getAttribute('href') || '';
+        const m = h.match(/[?&]v=([\w-]{11})/) || h.match(/\/shorts\/([\w-]{11})/) || h.match(/\/embed\/([\w-]{11})/);
+        if (m) { videoId = m[1]; break; }
+      }
     }
     if (!videoId) return null;
-    const titleEl = item.querySelector('#video-title, yt-formatted-string#video-title, h3.ytd-rich-item-renderer, [id="video-title"]');
-    const title = (titleEl && (titleEl.getAttribute('title') || titleEl.textContent) || '').replace(/\s+/g, ' ').trim();
+    const titleEl = item.querySelector(TITLE_SELECTOR);
+    const title = ((titleEl && (titleEl.getAttribute('title') || titleEl.textContent)) || '').replace(/\s+/g, ' ').trim();
     if (!title) return null;
-    const chanEl = item.querySelector('ytd-channel-name #text a, #channel-name a, a[href^="/@"], a[href*="/channel/"]');
-    const channel = ((chanEl && chanEl.textContent) || '').replace(/\s+/g, ' ').trim();
+    let chanEl = item.querySelector('ytd-channel-name #text a, #channel-name a, a[href^="/@"], a[href*="/channel/"]');
+    let channel = ((chanEl && chanEl.textContent) || '').replace(/\s+/g, ' ').trim();
+    if (!channel) {
+      const md = item.querySelector('.ytContentMetadataViewModelMetadataText');
+      if (md) channel = (md.textContent || '').replace(/\s+/g, ' ').trim();
+    }
     const img = item.querySelector('img');
     const thumb = bestThumbUrl(img, videoId);
     return { videoId, title, channel, thumb, item, img };
@@ -252,6 +287,12 @@
     if (state.processed.has(key) || state.inFlight.has(key)) return;
     state.inFlight.add(key);
     try {
+      const badgeHit = matchBadge(current);
+      if (badgeHit) {
+        state.processed.add(key);
+        await applyAction(current, badgeHit);
+        return;
+      }
       const titleHit = matchTitle(current);
       if (titleHit) {
         state.processed.add(key);
@@ -285,7 +326,19 @@
       for (const e of entries) {
         if (!e.isIntersecting) continue;
         const v = extract(e.target);
-        if (!v) continue;
+        if (!v) {
+          /* Метаданные карточки (заголовок/videoId) ещё не отрендерены YouTube.
+             Не «сжигаем» её: отпускаем из observed и снимаем наблюдение, чтобы
+             scanNow повторил попытку, когда DOM-мутация от гидрации карточки
+             снова запустит сканирование. Иначе IO для уже видимого элемента
+             больше не выстрелит и видео останется непроверенным навсегда. */
+          state.observed.delete(e.target);
+          state.io.unobserve(e.target);
+          const tries = (state.retryCounts.get(e.target) || 0) + 1;
+          state.retryCounts.set(e.target, tries);
+          if (tries <= 8) scheduleScan();
+          continue;
+        }
         processVideo(v);
       }
     }, { root: null, rootMargin: '600px 0px 900px 0px', threshold: 0.01 });
@@ -295,6 +348,7 @@
   function resetIO() {
     if (state.io) { state.io.disconnect(); state.io = null; }
     state.observed = new WeakSet();
+    state.retryCounts = new WeakMap();
     state.imageListeners = new WeakSet();
     state.imageCache.clear();
   }
@@ -338,7 +392,40 @@
     }
   });
 
+  /* Диагностика для отладки в консоли контeнт-скрипта (context moz-extension://…/content.js):
+     YB.debug.state()  — что реально загружено в content (ключи, флаги);
+     YB.debug.scan()   — по каждой карточке: extract/matchTitle/hidden. Позволяет
+     за один вызов отличить битый селектор DOM от «слово не доехало» от «матчится, но не скрыто». */
+  window.YB = window.YB || {};
+  window.YB.debug = {
+    state: () => ({
+      enabled: state.settings.enabled,
+      checkTitle: state.settings.checkTitle,
+      fuzzy: state.settings.fuzzy,
+      keywords: state.keywords.slice(),
+      processedCount: state.processed.size
+    }),
+    scan: () => {
+      const out = [];
+      for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
+        const hidden = item.classList.contains('yb-hidden');
+        const v = extract(item);
+        if (!v) { out.push({ status: 'extract-null', hidden }); continue; }
+        const hit = matchTitle(v);
+        out.push({
+          status: hit ? 'MATCH' : 'no-match',
+          keyword: hit ? hit.keyword : '',
+          id: v.videoId,
+          title: v.title.slice(0, 70),
+          hidden
+        });
+      }
+      console.table(out);
+      return { total: out.length, matches: out.filter(r => r.status === 'MATCH').length };
+    }
+  };
+
   loadConfig().then(() => {
-    if (state.settings.enabled && hasDetectionTargets()) startObservers();
+    if (state.settings.enabled && (state.keywords.length || state.settings.hideMembersOnly)) startObservers();
   });
 })();

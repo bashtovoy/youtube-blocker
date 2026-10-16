@@ -12,6 +12,7 @@
       box-shadow: 0 2px 10px rgba(176,107,245,.25); }
     header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .2px; }
     header h1::before { content: "\1F324\FE0F  "; }
+    #ver { font-size: 10px; font-weight: 600; opacity: .8; margin-left: 6px; vertical-align: middle; }
     #blocked { background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.4);
       padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
     main { padding: 12px 14px; }
@@ -66,7 +67,7 @@
 </head>
 <body>
   <header>
-    <h1>Youtube Blocker</h1>
+    <h1>Youtube Blocker<span id="ver"></span></h1>
     <span id="blocked"></span>
   </header>
   <main>
@@ -94,6 +95,7 @@
             <label class="row"><input type="checkbox" id="checkSemanticImage"> Семантика: список → изображение (SigLIP)</label>
       <label class="row"><input type="checkbox" id="checkThumbOcr"> OCR текста на миниатюре</label>
       <label class="row"><input type="checkbox" id="checkSpeech"> Речь в видео (Whisper, тяжело)</label>
+      <label class="row"><input type="checkbox" id="hideMembersOnly"> Скрывать «Members only» (бейдж участника)</label>
       <label class="row"><input type="checkbox" id="fuzzy"> Нечёткое сравнение (опечатки, падежи)</label>
     </fieldset>
 
@@ -137,10 +139,8 @@
     </fieldset>
 
     <div class="rowbtns">
-      <button id="save">Сохранить</button>
       <button id="export" class="secondary">Экспорт JSON</button>
       <button id="import" class="secondary">Импорт JSON</button>
-      <input type="file" id="importFile" accept="application/json" hidden>
     </div>
     <div id="status"></div>
   </main>
