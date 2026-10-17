@@ -39,6 +39,35 @@ const ROUTE_OPTIONS = [
 
 let keywords = [];   /* [{ text, enabled, route? }] */
 
+/* Status des Semantik-Hosts (semantic-host.js speichert unter „semStatus“):
+   zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft. */
+function semModelStatusText(st) {
+  if (!st) return '';
+  if (st.state === 'error') return 'Semantik-Modelle: Fehler — ' + (st.error || 'unbekannt');
+  if (st.state === 'ready') {
+    return 'Semantik-Modelle bereit (' + (st.device === 'webgpu' ? 'WebGPU' : 'WASM') + ') · lokal, kein Upload';
+  }
+  if (st.state === 'loading') {
+    const d = st.dl;
+    if (d && d.total > 0) {
+      const mb = n => (n / 1048576).toFixed(0);
+      return 'Semantik-Modelle werden geladen … ' + Math.round(d.progress) + ' % ('
+        + mb(d.loaded) + '/' + mb(d.total) + ' MB, einmalig)';
+    }
+    return 'Semantik-Modelle werden vorbereitet …';
+  }
+  return 'Semantik-Modelle: werden beim ersten Vorschaubild vorbereitet (einmaliger Download möglich, danach offline)';
+}
+
+function renderSemStatus(st) {
+  const el = $('semModelStatus');
+  if (el) el.textContent = semModelStatusText(st);
+}
+
+api.storage.local.onChanged.addListener(changes => {
+  if (changes.semStatus) renderSemStatus(changes.semStatus.newValue);
+});
+
 function normRoute(r) {
   return (r === 'title' || r === 'ocr' || r === 'image' || r === 'hybrid') ? r : '';
 }
@@ -60,13 +89,14 @@ function normalizeKeywords(list) {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0
+    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   renderKeywords();
+  renderSemStatus(data.semStatus);
   const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
   $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · lokal: ${hid}` : '';
 }

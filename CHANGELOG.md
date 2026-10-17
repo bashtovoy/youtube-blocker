@@ -3,6 +3,19 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-10-17
+
+### Hinzugefügt
+- **Modelle laden selbst nach (Remote-Fallback)**: Fehlen die SigLIP-Dateien in `extension/models/` — z. B. in der signierten AMO-Version, deren Paket wegen des 200-MB-Uploadlimits keine Modelle enthalten kann — lädt die Erweiterung sie beim ersten Bildabgleich direkt von HuggingFace (Revision fixiert) und legt sie im Browser-Cache ab (`transformers-cache`, `unlimitedStorage` im Manifest). Danach läuft alles offline; die Inferenz bleibt ausschließlich lokal.
+- Popup zeigt den Semantik-Status inklusive Downloadfortschritt („Semantik-Modelle werden geladen … X % (MB/MB, einmalig)“).
+- Stand der semantische Kanal anfangs nicht bereit (z. B. laufender Erstbezug), werden bereits geprüfte Karten automatisch neu bewertet, sobald er steht — ohne manuellen Reload.
+
+### Geändert
+- **Eigener Text-Turm statt Gesamtmodell**: Der temporäre Text-Worker nutzt jetzt `SiglipTextModel` (`text_model_q4/q4f16`) statt des 218-MB-Gesamtmodells — identische Embeddings (Diagnose: Abweichung ≤ 1e-3), kleinerer Bezug (99/155 MB) und kürzerer Lauf. Der Bild-Turm bleibt dauerhaft resident.
+- `semantic-worker.js`: `allowRemoteModels=true` mit fixierter Revision; Netz-/Downloadfehler sind wiederholbar (kein dauerhaftes Abschalten des Kanals), Fortschrittsmeldungen gehen an den Host.
+- `setup.sh` lädt nur noch die beiden Türme (`vision_model_q4/q4f16`, `text_model_q4/q4f16`).
+- README: Abschnitt zu Modellbezug, Offline-Betrieb und AMO-Uploadlimit.
+
 ## [1.3.0] — 2026-10-17
 
 ### Hinzugefügt

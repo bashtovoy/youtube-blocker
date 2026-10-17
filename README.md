@@ -11,7 +11,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Präfixe) mit der Schlüsselwortliste | nein |
 | Foto — OCR | Text im Vorschaubild wird mit Tesseract.js (ru+en) erkannt und in der Wortliste gesucht | `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
-| Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos | `transformers.min.js` + lokales SigLIP-Modell |
+| Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
 
 Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
@@ -37,7 +37,7 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 1. `about:debugging#/runtime/this-firefox` → **Temporäres Add-on laden…**
 2. Wähle `extension/manifest.json` aus.
 
-Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `npm i -g web-ext`).
+Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `npm i -g web-ext`; das ZIP enthält keine Modelle — siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
 
 ## Verwendung
 
@@ -104,6 +104,28 @@ Verteilungen, Schwellen-Sweep und Latenz (70/30 Kalibrierung/Holdout). Die
 Produktionsschwelle wird daraus konservativ abgeleitet (Falsch-Positive
 wiegen schwerer) und hier dokumentiert.
 
+## Modelle: lokaler Bezug und Offline-Betrieb (ab 1.4.0)
+
+Die SigLIP-Modelle (Bild-Turm ~55–63 MB, Text-Turm ~99–155 MB, je nach
+Gerät/Quantisierung) liegen **nicht** im ausgelieferten Paket — das
+AMO-Uploadlimit von 200 MB erlaubt das nicht. Die Erweiterung sucht sie in
+dieser Reihenfolge:
+
+1. **Lokal** — `extension/models/siglip-base-patch16-224/onnx/…`, gefüllt von
+   `setup.sh` (Dev-Builds, temporäre Installation).
+2. **Browser-Cache** — bereits geladene Dateien (`transformers-cache`;
+   `unlimitedStorage` im Manifest hebt das Quota auf).
+3. **HuggingFace** — einmaliger Download von
+   `huggingface.co/Xenova/siglip-base-patch16-224` (Revision fixiert). Das
+   sind reine Gewichtsdateien, kein Code. Fortschritt: im Popup als
+   „Semantik-Modelle werden geladen … X % (MB/MB, einmalig)“.
+
+Nach dem ersten Bezug ist keine Verbindung mehr nötig; die Inferenz bleibt
+lokal, es werden keine Daten gesendet. Der Erstbezug startet beim ersten
+Vorschaubild-Vergleich. Waren Karten währenddessen schon geprüft, werden sie
+automatisch neu bewertet, sobald der Kanal steht. Ein signierter Build
+(`web-ext build` / AMO) bleibt unverändert unter dem Uploadlimit.
+
 ## Debugging und Prüfung (Dev-Modus)
 
 Für End-to-End-Prüfungen ohne manuelles Öffnen der DevTools gibt es eine Dev-Infrastruktur:
@@ -150,7 +172,7 @@ extension/
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
   background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-Routing
   popup/          — Verwaltung von Liste und Einstellungen
-  lib/ models/    — externe Bibliotheken (werden von setup.sh befüllt)
+  lib/ models/    — externe Bibliotheken; Modelle nur lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
 ```
 
 ## Änderungen in 1.1.0

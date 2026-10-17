@@ -37,6 +37,10 @@
   let idleTimer = null;
   let queue = Promise.resolve();
   let preparePromise = null;
+  /* Erstbezug der Modell-Dateien: Fortschritt für das Popup mitführen. */
+  let dl = null;
+  let lastDlSaveAt = 0;
+  let dlStartedLogged = false;
   /* Scores pro Bild-URL + Wortlisten-Version cachen (Dedupe über Karten/Tabs/Rescans). */
   const scoreCache = new Map();
   const SCORE_CACHE_MAX = 200;
@@ -48,9 +52,32 @@
   function saveStatus() {
     try {
       api.storage.local.set({
-        [STATUS_KEY]: { state, device, error: lastError, initMs, lastScoreMs, updatedAt: Date.now() }
+        [STATUS_KEY]: { state, device, error: lastError, initMs, lastScoreMs, updatedAt: Date.now(), dl }
       });
     } catch (e) { /* Status ist optional */ }
+  }
+
+  /* Downloadfortschritt (Erstbezug): im Popup sichtbar; Speichern gedrosselt,
+     damit nicht jedes Häppchen in storage.local schreibt. */
+  function onProgress(m) {
+    const pct = Number.isFinite(Number(m.progress)) ? Math.max(0, Math.min(100, Number(m.progress))) : 0;
+    dl = {
+      phase: m.phase || '',
+      file: String(m.file || ''),
+      loaded: m.loaded || 0,
+      total: m.total || 0,
+      progress: pct,
+      status: m.status || 'progress'
+    };
+    if (!dlStartedLogged) {
+      dlStartedLogged = true;
+      dlog('sem host: modell-dateien laden (Erstbezug einmalig von HF, danach Browser-Cache)');
+    }
+    if (state !== 'loading') setState('loading');
+    if (Date.now() - lastDlSaveAt > 400) {
+      lastDlSaveAt = Date.now();
+      saveStatus();
+    }
   }
 
   function setState(next, err) {
@@ -85,6 +112,8 @@
     workerHasTexts = false;
     device = null;
     errorKey = null;
+    dl = null;
+    dlStartedLogged = false;
     if (state !== 'off') setState('off');
     dlog('sem host: worker beendet (' + reason + ')');
   }
@@ -99,6 +128,7 @@
     worker = new Worker(WORKER_URL, { type: 'module' });
     worker.onmessage = (e) => {
       const m = e.data || {};
+      if (m.type === 'progress') { onProgress(m); return; }
       const p = pending.get(m.id);
       if (!p) return;
       pending.delete(m.id);
@@ -107,7 +137,9 @@
       else if (m.type === 'image-scores') p.resolve(m.scores);
       else {
         const err = new Error(m.error || 'Semantik-Worker-Fehler');
-        if (p.type === 'init') markFatal(err);
+        if (m.retryable) err.retryable = true;
+        /* Netz-/Downloadfehler sind wiederholbar → Kanal bleibt aktiv. */
+        if (p.type === 'init' && !err.retryable) markFatal(err);
         p.reject(err);
       }
     };
@@ -147,12 +179,17 @@
       });
       device = res.device || null;
       initMs = Date.now() - t0;
-      setState('ready');
       return res;
     })().catch(err => {
       initPromise = null;
-      markFatal(err);
-      setState('error', err.message);
+      if (err && err.retryable) {
+        /* Erstbezug/Netz: nicht fatal — der nächste Versuch startet erneut. */
+        dlog('sem host: init wiederholbar fehlgeschlagen (' + err.message + ')');
+        setState('off');
+      } else {
+        markFatal(err);
+        setState('error', err.message);
+      }
       throw err;
     });
     return initPromise;
@@ -195,6 +232,10 @@
           }
         }
         await Promise.all(tasks);
+        /* Die Text-Turm-Aufgabe kann den Status nach init() wieder auf
+           „loading“ gesetzt haben (Downloadfortschritt) — hier sauber
+           abschließen, sonst bliebe das Popup bei „lädt“ hängen. */
+        if (state !== 'ready') setState('ready');
         errorKey = null;
       } catch (e) {
         if (e && e.fatal) {
@@ -246,7 +287,7 @@
   }
 
   function status() {
-    return { state, device, error: lastError, initMs, lastScoreMs, lastUsedAt };
+    return { state, device, error: lastError, initMs, lastScoreMs, lastUsedAt, dl };
   }
 
   self.YB_SEM_HOST = { ensure, score, status, reset: () => terminateWorker('reset') };

@@ -41,6 +41,7 @@
     semanticKeywordsKey: '',
     semanticReady: false,
     semanticFailed: false,
+    semanticRetryNeeded: false,
     ocrFailed: false
   };
 
@@ -84,6 +85,7 @@
     state.semanticKeywordsKey = '';
     state.semanticReady = false;
     state.semanticFailed = false;
+    state.semanticRetryNeeded = false;
     state.ocrFailed = false;
     log('config loaded', {
       keywords: state.keywords.length,
@@ -257,10 +259,24 @@
     if (!state.settings.checkSemanticImage || !state.imageKeywords.length) return false;
     const key = state.imageKeywords.join('\u0001');
     if (state.semanticReady && state.semanticKeywordsKey === key) return true;
+    const firstReady = !state.semanticReady;
     await window.YB.semantic.setTexts(state.imageKeywords);
     state.semanticKeywordsKey = key;
     state.semanticReady = true;
     log('semantic text concepts ready', state.imageKeywords.length);
+    /* Der Kanal stand anfangs nicht zur Verfügung (z. B. erster Modell-
+       Download): bereits geprüfte Karten erneut bewerten, statt auf einen
+       manuellen Reload zu warten. */
+    if (firstReady && state.semanticRetryNeeded) {
+      state.semanticRetryNeeded = false;
+      log('semantic channel ready after delay → rescan');
+      setTimeout(() => {
+        state.processed.clear();
+        resetIO();
+        startObservers();
+        scanNow();
+      }, 800);
+    }
     return true;
   }
 
@@ -292,11 +308,14 @@
         }
       } catch (e) {
         /* Fatale Fehler (Worker/Modell) einmal melden und den Kanal für diese
-           Seitensession abschalten statt pro Karte erneut zu scheitern. */
+           Seitensession abschalten statt pro Karte erneut zu scheitern.
+           Wiederholbare Fehler (Erstbezug/Netz, Timeout) nur vormerken:
+           Sobald der Kanal steht, werden die Karten erneut bewertet. */
         if (e.fatal) {
           state.semanticFailed = true;
           log('semantic channel unavailable:', e.message);
         } else {
+          state.semanticRetryNeeded = true;
           log('semantic image fail', v.videoId, e.message);
         }
       }
