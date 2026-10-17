@@ -52,8 +52,12 @@ if (env.backends?.onnx?.wasm) {
   env.backends.onnx.wasm.numThreads = 1;
 }
 
+/* WASM: q8 statt q4 — Messmatrix 10/2026 (Kontrollbilder): q8 liefert deutlich
+   größere Abstände echter Treffer (Kosinus 0.04–0.07) gegenüber Nicht-Treffern
+   (< 0.01); q4 verkleinert die Abstände auf ~0.02–0.05. WebGPU bleibt bei
+   q4f16 (dort keine eigenen Messungen, Quantisierung wie q4 funktionierte). */
 function dtypeFor(device) {
-  return device === 'webgpu' ? 'q4f16' : 'q4';
+  return device === 'webgpu' ? 'q4f16' : 'q8';
 }
 
 function deviceGuess() {
@@ -143,12 +147,24 @@ async function computeTextEmbeds(preferredDevice, labels) {
   }
   /* SigLIP wurde mit natürlichsprachigen Prompts trainiert; für den
      Bildabgleich wird die Foto-Formulierung verwendet, während die
-     Nutzertexte unverändert als Labels erhalten bleiben. */
-  const prompts = labels.map(x => (/^a photo of\b/i.test(x) ? x : 'a photo of ' + x));
-  /* padding:true füllt nur auf die längste Sequenz im Batch auf (das frühere
-     'max_length' blähte jeden Prompt auf 64 Tokens auf → Text-Turm dominierte
-     den Score). */
-  const textInputs = ctx.tokenizer(prompts, { padding: true, truncation: true });
+     Nutzertexte unverändert als Labels erhalten bleiben. Zusätzlich werden
+     die Prompts kleingeschrieben: Groß geschriebene Wörter zerlegt der
+     Gemma-Tokenizer anders („Drone“ → andere Subwörter als „drone“) und die
+     Embeddings verlieren messbar den Bildbezug (10/2026: „drone“ 0.072 vs.
+     „Drone“ −0.015 auf demselben Drohnen-Vorschaubild). */
+  const prompts = labels.map(x => {
+    const text = String(x).trim().toLowerCase();
+    return /^a photo of\b/i.test(text) ? text : 'a photo of ' + text;
+  });
+  /* padding:'max_length' (64 Tokens, EOS-Pad) ist PFLICHT, nicht Kosmetik:
+     Der Text-Turm poolt die letzte Position; SigLIP ist darauf trainiert,
+     dass die letzte Position auf dem EOS-Pad-Schwanz liegt. Ohne Pad
+     (padding:true bei gleich kurzen Prompts) kippt das Ranking messbar —
+     Kontrollbild „Katze“: mit max_length „cat“ 0.051 (Platz 1), ohne Pad
+     „cat“ −0.066 (Platz 4, unter „car“/„pizza“). 64 kurze Sequenzen sind
+     für den Text-Turm schnell; die Offizielle transformers.js-Pipeline
+     nutzt für SigLIP ebenfalls padding:'max_length'. */
+  const textInputs = ctx.tokenizer(prompts, { padding: 'max_length', truncation: true });
   const output = await ctx.model(textInputs);
   /* Der separate Text-Turm liefert das Embedding als pooler_output
      (= text_embeds des Gesamtmodells; per Diagnose verifiziert).

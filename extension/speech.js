@@ -2,6 +2,8 @@
 (function () {
   'use strict';
 
+  const api = (typeof browser !== 'undefined') ? browser : chrome;
+
   const SPEECH_WORKER_SRC = `
     let whisper = null;
     let last = '';
@@ -54,8 +56,16 @@
     }
 
     _create(opts) {
-      const blob = new Blob([SPEECH_WORKER_SRC], { type: 'text/javascript' });
-      const w = new Worker(URL.createObjectURL(blob));
+      let w;
+      try {
+        const blob = new Blob([SPEECH_WORKER_SRC], { type: 'text/javascript' });
+        w = new Worker(URL.createObjectURL(blob));
+      } catch (e) {
+        /* Auf YouTube blockiert die CSP ggf. den Blob-Worker; das ist ein
+           regulärer, abfangbarer Fehler — kein uncaught throw im Content. */
+        this.failed = true;
+        return Promise.reject(e);
+      }
       w.onmessage = (e) => {
         const msg = e.data || {};
         if (msg.type === 'ready') this.ready = true;
@@ -71,8 +81,8 @@
       this.worker = w;
       w.postMessage({
         type: 'init',
-        libUrl: browser.runtime.getURL('lib/whisper.js'),
-        modelUrl: browser.runtime.getURL(opts.modelPath || 'models/ggml-base.bin'),
+        libUrl: api.runtime.getURL('lib/whisper.js'),
+        modelUrl: api.runtime.getURL(opts.modelPath || 'models/ggml-base.bin'),
         language: opts.language || 'ru',
         threadCount: opts.threadCount || 2
       });

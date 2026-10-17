@@ -25,23 +25,23 @@ curl -fsSL -o "$SEMANTIC_MODEL/special_tokens_map.json" \
 curl -fsSL -o "$SEMANTIC_MODEL/spiece.model" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/spiece.model"
 mkdir -p "$SEMANTIC_MODEL/onnx"
-# Nur die beiden Türme (q4f16 für WebGPU, q4 für WASM); das frühere 218-MB-
-# Gesamtmodell wird seit 1.4.0 nicht mehr gebraucht.
+# Nur die beiden Türme (q4f16 für WebGPU, q8 für WASM — seit 1.5.4; das
+# frühere 218-MB-Gesamtmodell wird seit 1.4.0 nicht mehr gebraucht).
 curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_q4f16.onnx"
-curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_q4.onnx" \
-  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_q4.onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/vision_model_quantized.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/vision_model_quantized.onnx"
 curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/text_model_q4f16.onnx" \
   "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/text_model_q4f16.onnx"
-curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/text_model_q4.onnx" \
-  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/text_model_q4.onnx"
+curl -fL --progress-bar -o "$SEMANTIC_MODEL/onnx/text_model_quantized.onnx" \
+  "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/main/onnx/text_model_quantized.onnx"
 # Lokale ONNX-Runtime-WASM (Fallback für CPU/WASM) — dasselbe dist wie transformers.min.js.
 # Der Worker setzt wasmPaths=./lib/, daher müssen diese Dateien in extension/lib/ liegen.
 curl -fsSL -o "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
   "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/ort-wasm-simd-threaded.jsep.mjs"
 curl -fL --progress-bar -o "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
   "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/ort-wasm-simd-threaded.jsep.wasm"
-echo "SigLIP bereit: Bild- und Text-Turm je q4f16 (WebGPU) + q4 (WASM) + lokale ONNX-WASM-Runtime; Inferenz — lokal im Browser."
+echo "SigLIP bereit: Bild- und Text-Turm je q4f16 (WebGPU) + q8 (WASM) + lokale ONNX-WASM-Runtime; Inferenz — lokal im Browser."
 echo
 echo "==> Tesseract.js (OCR der Vorschaubilder) — v4.1.1"
 curl -fsSL -o "$LIB/tesseract.min.js" \
@@ -88,9 +88,9 @@ for F in \
   "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
   "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
   "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
-  "$SEMANTIC_MODEL/onnx/vision_model_q4.onnx" \
+  "$SEMANTIC_MODEL/onnx/vision_model_quantized.onnx" \
   "$SEMANTIC_MODEL/onnx/text_model_q4f16.onnx" \
-  "$SEMANTIC_MODEL/onnx/text_model_q4.onnx" \
+  "$SEMANTIC_MODEL/onnx/text_model_quantized.onnx" \
   "$SEMANTIC_MODEL/tokenizer.json" \
   "$SEMANTIC_MODEL/tokenizer_config.json" \
   "$SEMANTIC_MODEL/special_tokens_map.json" \

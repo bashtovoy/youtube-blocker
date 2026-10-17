@@ -3,6 +3,27 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.4] — 2026-10-18
+
+### Behoben
+- **„Members only“ wurde nicht mehr erkannt und damit nicht ausgeblendet (Sammel-Build Chrome und Firefox).** YouTube rendert die Mitgliedschafts-Markierung inzwischen über View-Model-Badges (`yt-thumbnail-badge-view-model`, `yt-thumbnail-overlay-badge-view-model`, `ytd-badge-supported-renderer` u. a.); der bisherige Selektor fand sie nicht. Der Badge-Text wird jetzt aus Textinhalt, `aria-label` und `title` zusammengesetzt und über eine mehrsprachige Erkennung im Matcher geprüft (verifiziert an @LinusTechTips in de/ru/uk/en; „Sponsored“, Uhrzeiten und „Membership“ zählen bewusst nicht). Ein erst nach dem ersten Rendern angehängter Badge wird ebenfalls erkannt: vorgemerkte Karten werden bei DOM-Mutationen und beim Re-Render erneut geprüft.
+- **„Members only“ wird lokal ausgeblendet, statt „Kein Interesse“ zu senden.** Die Markierung gehört zum Angebot, nicht zu den Interessen — im *dismiss*-Modus wird sie jetzt ohne Menü-Klick entfernt (eigener Zähler `hiddenCount`).
+- **Semantik: Bildabgleich lieferte seit 1.2.3 unbrauchbare Werte (Padding-Regression).** Die Text-Prompts werden wieder auf die volle Modelllänge gepolstert (`padding:'max_length'`): SigLIP poolt die letzte Position und ist auf den EOS-Pad-Schwanz trainiert — ohne Pad kippte das Ranking messbar (Kontrollbild Katze: „cat“ −0.066 auf Platz 4 statt 0.051 auf Platz 1). Zusätzlich werden Konzepte intern kleingeschrieben, weil der Gemma-Tokenizer Großschreibung anders zerlegt („drone“ 0.072 vs. „Drone“ −0.015 auf demselben Drohnen-Vorschaubild). Erst damit liefert der Kanal echte Treffer (Ende-zu-Ende in Chrome verifiziert).
+- **Leere Zahlenfelder aus alten Importen** (z. B. `actionDelayMs:""`) wurden über `Number('')` zu 0 und schalteten die Pausen still ab; Content, Popup und Import bereinigen Werte jetzt (Bereiche 0–60000 / 0–1 / 10–600 / 0–30, Import hebt Leerwerte auf Defaults). Die Popup-Speicherung wartet zudem auf `load()` — ein früher Klick kann keine leeren Felder mehr überschreiben.
+- **`dHash/pHash-Schwelle`** wird im Popup jetzt geladen und gespeichert (fehlte in der Werte-Liste).
+- **Sprachkanal:** War der Blob-Worker auf YouTube durch die CSP blockiert, warf `speech.js` einen unbehandelten Fehler im Content-Script; der Start fängt das jetzt ab und meldet kontrolliert „nicht verfügbar“ (mit `browser`/`chrome`-Shim).
+
+### Geändert
+- **Semantik-Standardschwelle 0.1 → 0.03** (kalibriert 10/2026 an Kontrollbildern mit q8: echte Treffer 0.04–0.08, Rauschen < 0.03; 0.1 war praktisch unerreichbar). Gilt für Content-Standard, Popup, Import-Merge und `marginDecision`-Fallback. Siehe `docs/SEMANTIC_FILTER_ROUTING.md`, Nachtrag 10/2026.
+- **WASM-Quantisierung q4 → q8** (deutlich größere Abstände echter Treffer: 0.04–0.08 statt 0.02–0.05); WebGPU bleibt q4f16. `setup.sh` lädt entsprechend q8 für WASM.
+- **`config-changed` startet die Beobachter ohne Neuladen** — wurde eine Seite mit leerer Liste geöffnet, existierte kein MutationObserver, und erst danach angelegte Einträge wurden bis zum manuellen Reload ignoriert.
+- **Importe mergen die Einstellungen**, statt sie zu ersetzen; eine reine Wortliste (Array) setzt keine Einstellungen mehr zurück.
+- `YB.debug.state()` zeigt zusätzlich `imageKeywords`, `semanticReady`, `semanticFailed`; neu `YB.debug.audit()` mit Members-Zählern für Tests und Betrieb.
+
+### Tests
+- Neue Matcher-Tests für die Badge-Erkennung (mehrsprachige Positivbeispiele, Gegenproben „Sponsored“/Uhrzeit/„Membership“); `tests/test-margin.js` an den neuen Fallback angepasst.
+- Chrome-E2E auf Chrome for Testing (separates Testprofil): Members-Badges in vier Sprachen, spät gerenderte Badges und Re-Render, Popup-Wertebereinigung, OCR-Route, Semantik-Download/Scoring/Content-Route, robuster Sprachkanal, dismiss-Modus — alle grün.
+
 ## [1.5.3] — 2026-10-17
 
 ### Hinzugefügt

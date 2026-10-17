@@ -118,6 +118,17 @@
     return out;
   }
 
+  /* ---- „Members only“-Badges: YouTube lokalisiert den Text. ----
+     Verifiziert am 17.10.2026 an @LinusTechTips/videos:
+     de „Nur für Kanalmitglieder“, ru „Только для спонсоров“,
+     uk „Лише для спонсорів“, en „Members only“. Bare „sponsor“ ist bewusst
+     nicht enthalten, damit „Sponsored“ nicht als Mitgliedschaft gilt. */
+  const MEMBERS_ONLY_RE = /members?\s*only|member[- ]only|kanalmitglied|mitglied|только\s+для\s+спонсор|для\s+спонсор|спонсор|лише\s+для\s+спонсор|для\s+учасник|учасник|участник|член|membres?\s+uniquement|r[ée]serv[ée]e?\s+aux\s+membres|solo\s+(para\s+)?miembros|apenas\s+para\s+membros|somente\s+membros|s[óo]\s+para\s+membros|solo\s+per\s+membri|tylko\s+dla\s+cz[lł]onk[óo]w|[üu]yelere\s+[öo]zel|yaln[ıi]zca\s+[üu]yeler|メンバー限定|会员专属|僅限會員|仅限会员/i;
+
+  function isMembersOnlyText(text) {
+    return MEMBERS_ONLY_RE.test(String(text || ''));
+  }
+
   window.YB = window.YB || {};
-  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein, channelKeywords, routeOf };
+  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein, channelKeywords, routeOf, isMembersOnlyText };
 })();

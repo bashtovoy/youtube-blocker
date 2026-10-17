@@ -13,7 +13,10 @@
     checkSpeech: false,
     hideMembersOnly: false,
     ocrLangs: 'eng+rus',
-    semanticMargin: 0.1,
+    /* Kalibrierung 10/2026 (Kontrollbilder, q8): echte Treffer liegen bei
+       Margin 0.037–0.079, Rauschen unter 0.03. Der alte Standard 0.1 war
+       praktisch unerreichbar (keine semantischen Treffer). */
+    semanticMargin: 0.03,
     speechLang: 'ru',
     speechModel: 'models/ggml-base.bin',
     speechMaxSeconds: 120,
@@ -31,6 +34,7 @@
     observer: null,
     io: null,
     observed: new WeakSet(),
+    badgeWatched: new WeakSet(),   /* ohne Badge geprüft: auf spätes Badge achten */
     retryCounts: new WeakMap(),
     imageListeners: new WeakSet(),
     scanTimer: null,
@@ -58,21 +62,53 @@
      <badge-shape class="ytBadgeShapeHost ..."><div class="ytBadgeShapeText">Members only</div></badge-shape>
      innerhalb von yt-badge-view-model / yt-content-metadata-view-model. Der alte
      ytd-badge-supported-renderer-Vorfahre existiert nicht mehr, daher suchen wir den Badge selbst. */
-  const BADGE_SELECTOR = 'badge-shape, yt-badge-view-model, .ytBadgeShapeText, .yt-badge-shape__text';
-  const MEMBERS_ONLY_RE = /members?\s*only|member-only|für mitglieder|для учасників|для участников|учасник|участник|член/i;
+  const BADGE_SELECTOR = [
+    'badge-shape',
+    'yt-badge-view-model',
+    'yt-thumbnail-badge-view-model',
+    'yt-thumbnail-overlay-badge-view-model',
+    'yt-thumbnail-overlay-badge-renderer',
+    'ytd-badge-supported-renderer',
+    '.ytBadgeShapeText',
+    '.yt-badge-shape__text',
+    '.badge-style-type-members-only'
+  ].join(', ');
+  function badgeText(b) {
+    return [
+      b.textContent,
+      b.getAttribute && b.getAttribute('aria-label'),
+      b.getAttribute && b.getAttribute('title')
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
 
   function matchBadge(v) {
     if (!state.settings.hideMembersOnly || !v.item) return null;
     for (const b of v.item.querySelectorAll(BADGE_SELECTOR)) {
-      const txt = (b.textContent || '').trim();
-      if (MEMBERS_ONLY_RE.test(txt)) return 'members-only';
+      if (window.YB.matcher.isMembersOnlyText(badgeText(b))) return 'members-only';
+      /* Text bzw. aria-label kann am Kindknoten des Badges hängen. */
+      for (const d of b.querySelectorAll('[aria-label], [title]')) {
+        if (window.YB.matcher.isMembersOnlyText(badgeText(d))) return 'members-only';
+      }
     }
     return null;
   }
 
+  function settingNumber(value, fallback, min, max) {
+    if (value === '' || value === null || value === undefined) return fallback;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
+  }
+
   async function loadConfig() {
     const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [] });
-    state.settings = Object.assign({}, DEFAULTS, data.settings || {});
+    const s = Object.assign({}, DEFAULTS, data.settings || {});
+    /* Alte Importe können Zahlfelder als leere Strings enthalten; sonst würde
+       z. B. actionDelayMs die Pause zwischen Signalen stillschweigend abschalten. */
+    s.actionDelayMs = settingNumber(s.actionDelayMs, DEFAULTS.actionDelayMs, 0, 60000);
+    s.semanticMargin = settingNumber(s.semanticMargin, DEFAULTS.semanticMargin, 0, 1);
+    s.speechMaxSeconds = settingNumber(s.speechMaxSeconds, DEFAULTS.speechMaxSeconds, 10, 600);
+    s.hashThreshold = settingNumber(s.hashThreshold, 8, 0, 30);
+    state.settings = s;
     const kwObjects = (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && k.text && k.enabled !== false);
@@ -214,6 +250,13 @@
 
   const actionQueue = { tail: Promise.resolve(), push(fn) { const p = this.tail.then(fn, fn); this.tail = p.catch(() => {}); return p; } };
 
+  function hideLocally(v, reason) {
+    window.YB.dismiss.hideItem(v.item);
+    if (v.videoId) state.hiddenIds.add(v.videoId);
+    log('hidden locally', v.videoId, '←', reason);
+    api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
+  }
+
   async function applyAction(v, reason) {
     return actionQueue.push(async () => {
       await throttleAction();
@@ -231,10 +274,7 @@
           log('dismiss unavailable, local hide:', v.videoId, e.message);
         }
       }
-      window.YB.dismiss.hideItem(v.item);
-      state.hiddenIds.add(v.videoId);
-      log('hidden locally', v.videoId, '←', reason);
-      api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
+      hideLocally(v, reason);
       return false;
     });
   }
@@ -360,7 +400,20 @@
       /* YouTube rendert Karten neu (Shelf-/Feed-Recycling) und verliert dabei unsere Klasse.
          Bereits getroffene Karten lokal erneut ausblenden — ohne zweites offizielles Signal
          und ohne den Zähler erneut zu erhöhen. */
-      const reason = state.processed.get(key);
+      let reason = state.processed.get(key);
+      /* Neu gerenderter Knoten ohne Treffer: Badge kann jetzt — oder später —
+         vorhanden sein. Prüfen und ggf. vormerken, sonst bleibt genau diese
+         Karte dauerhaft sichtbar (früher `return` ohne Badge-Test). */
+      if (!reason && state.settings.hideMembersOnly) {
+        const lateHit = matchBadge(current);
+        if (lateHit) {
+          state.processed.set(key, lateHit);
+          hideLocally(current, lateHit);
+          if (state.io && current.item) state.io.unobserve(current.item);
+          return;
+        }
+        state.badgeWatched.add(current.item);
+      }
       if (reason && !current.item.classList.contains('yb-hidden')) {
         window.YB.dismiss.hideItem(current.item);
         log('re-hidden (re-render)', current.videoId, '←', reason);
@@ -373,7 +426,9 @@
       const badgeHit = matchBadge(current);
       if (badgeHit) {
         state.processed.set(key, badgeHit);
-        await applyAction(current, badgeHit);
+        /* „Members only“ ist eine Eigenschaft des Angebots, kein Interessen-
+           signal: lokal ausblenden, kein „Kein Interesse“-Klick. */
+        hideLocally(current, badgeHit);
         return;
       }
       const titleHit = matchTitle(current);
@@ -400,6 +455,9 @@
         }
       }
       state.processed.set(key, null);
+      /* YouTube hängt den „Members only“-Badge teils erst nach dem ersten
+         Rendern an. Karte vormerken und in scanNow erneut auf den Badge prüfen. */
+      if (state.settings.hideMembersOnly && current.item) state.badgeWatched.add(current.item);
     } finally {
       state.inFlight.delete(key);
       if (state.io && current.item) state.io.unobserve(current.item);
@@ -434,6 +492,7 @@
   function resetIO() {
     if (state.io) { state.io.disconnect(); state.io = null; }
     state.observed = new WeakSet();
+    state.badgeWatched = new WeakSet();
     state.retryCounts = new WeakMap();
     state.imageListeners = new WeakSet();
     state.imageCache.clear();
@@ -464,7 +523,19 @@
           continue;
         }
       }
-      if (state.observed.has(item)) continue;
+      if (state.observed.has(item)) {
+        /* Spät gerenderter Badge: Die Karte wurde bereits als „kein Treffer“
+           verbucht, YouTube liefert den Badge aber erst danach nach. Nur
+           vorgemerkte Karten erneut prüfen — billig, kein zweites OCR/Semantik. */
+        if (state.settings.hideMembersOnly && state.badgeWatched.has(item)) {
+          const hit = matchBadge({ item });
+          if (hit) {
+            state.badgeWatched.delete(item);
+            hideLocally({ item, videoId: quickVideoId(item) }, hit);
+          }
+        }
+        continue;
+      }
       state.observed.add(item);
       obs.observe(item);
     }
@@ -495,7 +566,13 @@
       state.processed.clear();
       speechInitTried = false;
       resetIO();
-      loadConfig().then(scheduleScan);
+      loadConfig().then(() => {
+        /* Wurde die Seite mit leerer Liste geöffnet, existiert noch kein
+           MutationObserver. Ohne startObservers würden nur die bereits
+           sichtbaren Karten geprüft und neue beim Scrollen nie erreicht. */
+        if (state.settings.enabled && hasDetectionTargets()) startObservers();
+        else scheduleScan();
+      });
     } else if (msg.type === 'rescan' || msg.type === 'dev-rescan') {
       state.processed.clear();
       resetIO();
@@ -512,10 +589,20 @@
   window.YB.debug = {
     state: () => ({
       enabled: state.settings.enabled,
+      mode: state.settings.mode,
+      hideMembersOnly: state.settings.hideMembersOnly,
+      actionDelayMs: state.settings.actionDelayMs,
       checkTitle: state.settings.checkTitle,
+      checkThumbOcr: state.settings.checkThumbOcr,
+      checkSemanticImage: state.settings.checkSemanticImage,
+      checkSpeech: state.settings.checkSpeech,
       fuzzy: state.settings.fuzzy,
       keywords: state.keywords.slice(),
-      processedCount: state.processed.size
+      imageKeywords: state.imageKeywords.slice(),
+      semanticReady: state.semanticReady,
+      semanticFailed: state.semanticFailed,
+      processedCount: state.processed.size,
+      hiddenIds: state.hiddenIds.size
     }),
     scan: () => {
       const out = [];
@@ -524,9 +611,13 @@
         const v = extract(item);
         if (!v) { out.push({ status: 'extract-null', hidden }); continue; }
         const hit = matchTitle(v);
+        const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
         out.push({
           status: hit ? 'MATCH' : 'no-match',
           keyword: hit ? hit.keyword : '',
+          badge: matchBadge({ item }),
+          processed: state.processed.has(key),
+          reason: state.processed.get(key) || null,
           id: v.videoId,
           title: v.title.slice(0, 70),
           hidden
@@ -534,10 +625,29 @@
       }
       console.table(out);
       return { total: out.length, matches: out.filter(r => r.status === 'MATCH').length, items: out };
+    },
+    /* Aggregat für Tests: nutzt exakt extract/matchBadge/processed des Contents. */
+    audit: () => {
+      const res = { members: 0, membersHidden: 0, membersProcessedUnhidden: [], nonMembersHidden: [] };
+      for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
+        const v = extract(item);
+        if (!v) continue;
+        const badge = matchBadge({ item });
+        const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
+        const hidden = item.classList.contains('yb-hidden');
+        if (badge) {
+          res.members++;
+          if (hidden) res.membersHidden++;
+          else if (state.processed.has(key)) res.membersProcessedUnhidden.push(v.title.slice(0, 60));
+        } else if (hidden) {
+          res.nonMembersHidden.push(v.title.slice(0, 60));
+        }
+      }
+      return res;
     }
   };
 
   loadConfig().then(() => {
-    if (state.settings.enabled && (state.keywords.length || state.settings.hideMembersOnly)) startObservers();
+    if (state.settings.enabled && hasDetectionTargets()) startObservers();
   });
 })();

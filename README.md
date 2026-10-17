@@ -79,8 +79,11 @@ Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
   Für Kopien derselben Vorschaubilder reichen 4–8.
 - `Margin-Schwelle (Semantik)` — kontrastive Margin im Kosinus-Raum
   (Ziel-Kosinus − bester Kosinus der übrigen Konzepte), 0–1. Höher = strenger.
-  Default **0.1** ist bewusst streng und **unkalibriert**; mit
-  `gui-test-assets/padexp/` an echten Vorschaubildern kalibrieren.
+  Default **0.03**, kalibriert 10/2026 an Kontrollbildern (q8): echte Treffer
+  liegen bei 0.04–0.08, Rauschen unter 0.03. Hinweis: Schreibweisen desselben
+  Begriffs (Drone/Dron/UAV) sind füreinander Konkurrenten und drücken die
+  Margin — pro Konzept möglichst eine Schreibweise verwenden. Weitere
+  Kalibrierung: `gui-test-assets/padexp/`.
 - `OCR-Sprachen` — standardmäßig `eng+rus`.
 - `Pause zwischen Signalen` — Schutz vor Flutung der YouTube-Oberfläche.
 - Sprache: Das Modell wird in `extension/models/` abgelegt, der Pfad wird in
@@ -128,8 +131,9 @@ wiegen schwerer) und hier dokumentiert.
 
 ## Modelle: lokaler Bezug und Offline-Betrieb (ab 1.4.0)
 
-Die SigLIP-Modelle (Bild-Turm ~55–63 MB, Text-Turm ~99–155 MB, je nach
-Gerät/Quantisierung) liegen **nicht** im ausgelieferten Paket — das
+Die SigLIP-Modelle (Bild-Turm ~52–95 MB, Text-Turm ~94–106 MB, je nach
+Gerät/Quantisierung: WebGPU q4f16, WASM q8) liegen **nicht** im ausgelieferten
+Paket — das
 AMO-Uploadlimit von 200 MB erlaubt das nicht. Die Erweiterung sucht sie in
 dieser Reihenfolge:
 

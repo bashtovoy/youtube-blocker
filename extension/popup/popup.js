@@ -11,7 +11,7 @@ $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Bu
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'fuzzy'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
-const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -24,12 +24,20 @@ const DEFAULT_SETTINGS = {
   mode: 'dismiss',
   ocrLangs: 'eng+rus',
   hashThreshold: 8,
-  semanticMargin: 0.1,
+  semanticMargin: 0.03,
   actionDelayMs: 2500,
   speechLang: 'ru',
   speechModel: 'models/ggml-base.bin',
   speechMaxSeconds: 120
 };
+
+/* Importe aus älteren Versionen können Zahlfelder als leeren String enthalten.
+   Number('') ist 0 — das würde z. B. die Pause zwischen Signalen abschalten. */
+function numberOr(value, fallback) {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 /* Erkennungskanäle je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1):
    '' = Auto (alle Kanäle, bisheriges Verhalten). Zweiter Wert = i18n-Schlüssel. */
@@ -193,6 +201,10 @@ async function load() {
     settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
+  s.actionDelayMs = numberOr(s.actionDelayMs, DEFAULT_SETTINGS.actionDelayMs);
+  s.speechMaxSeconds = numberOr(s.speechMaxSeconds, DEFAULT_SETTINGS.speechMaxSeconds);
+  s.semanticMargin = numberOr(s.semanticMargin, DEFAULT_SETTINGS.semanticMargin);
+  s.hashThreshold = numberOr(s.hashThreshold, DEFAULT_SETTINGS.hashThreshold);
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
@@ -287,6 +299,7 @@ function addKeyword(text) {
 
 let saveTimer = null;
 let dirty = false;
+let loadReady = null;   /* läuft load() noch, warten wir vor dem ersten Speichern */
 
 function markDirty() {
   dirty = true;
@@ -308,6 +321,9 @@ function schedulePersist(delay = 500) {
 
 async function persist() {
   clearTimeout(saveTimer);
+  /* Erst speichern, wenn load() die Felder gefüllt hat — sonst überschreibt
+     ein früher Klick leere Strings (genau so entstand actionDelayMs:""). */
+  if (loadReady) await loadReady;
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
@@ -316,9 +332,17 @@ async function persist() {
     ? marginRaw
     : DEFAULT_SETTINGS.semanticMargin;
   const hashRaw = Number(settings.hashThreshold);
-  settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0
+  settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0 && hashRaw <= 30
     ? hashRaw
     : DEFAULT_SETTINGS.hashThreshold;
+  const delayRaw = numberOr(settings.actionDelayMs, DEFAULT_SETTINGS.actionDelayMs);
+  settings.actionDelayMs = delayRaw >= 0 && delayRaw <= 60000
+    ? delayRaw
+    : DEFAULT_SETTINGS.actionDelayMs;
+  const secsRaw = numberOr(settings.speechMaxSeconds, DEFAULT_SETTINGS.speechMaxSeconds);
+  settings.speechMaxSeconds = secsRaw >= 10 && secsRaw <= 600
+    ? secsRaw
+    : DEFAULT_SETTINGS.speechMaxSeconds;
   settings.logMatch = true;
   const kws = keywords
     .map(k => {
@@ -398,4 +422,4 @@ $('import').onclick = () => {
 /* Statusspans liegen in den labels — ein Klick darauf darf die Einstellung nicht umschalten */
 document.querySelectorAll('.stat').forEach(el => el.addEventListener('click', e => e.preventDefault()));
 
-load();
+loadReady = load();

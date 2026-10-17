@@ -58,7 +58,7 @@
   function marginDecision(scores, threshold) {
     const list = (scores || []).filter(s => s && s.text && Number.isFinite(s.cos));
     if (!list.length) return null;
-    const min = Number.isFinite(Number(threshold)) ? Number(threshold) : 0.1;
+    const min = Number.isFinite(Number(threshold)) ? Number(threshold) : 0.03;
     let best = null;
     for (const item of list) {
       let refCos = -Infinity, refText = null;

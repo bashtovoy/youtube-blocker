@@ -59,8 +59,23 @@ $('file').onchange = async (e) => {
     if (!Array.isArray(raw)) throw new Error(t('import_no_list'));
     const kws = normalizeKeywords(raw);
     if (!kws.length) throw new Error(t('import_empty_list'));
-    const settings = (data && typeof data === 'object' && data.settings) ? data.settings : {};
+    /* Nur die im Import enthaltenen Einstellungen überschreiben; der Rest
+       bleibt erhalten. Eine reine Wortliste (Array) darf keine Einstellungen
+       zurücksetzen. */
+    const existing = await api.storage.local.get({ settings: {} });
+    const settings = Object.assign({}, existing.settings || {},
+      (data && typeof data === 'object' && data.settings) ? data.settings : {});
     if (!i18n.normalize(settings.uiLang)) settings.uiLang = i18n.current;   /* gewählte Oberflächensprache behalten */
+    /* Leere Zahlfelder aus alten Exporten auf gültige Defaults heben. */
+    for (const [key, fallback] of Object.entries({
+      actionDelayMs: 2500, semanticMargin: 0.03, hashThreshold: 8, speechMaxSeconds: 120
+    })) {
+      const raw = settings[key];
+      const n = Number(raw);
+      settings[key] = (raw === '' || raw === null || raw === undefined || !Number.isFinite(n))
+        ? fallback
+        : n;
+    }
     await api.storage.local.set({ settings, keywords: kws });
     await applyToTabs();
     status(t('import_ok', { n: kws.length }));

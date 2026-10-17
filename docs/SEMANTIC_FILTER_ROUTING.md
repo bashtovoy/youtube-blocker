@@ -246,3 +246,32 @@ Nur als Architekturreferenzen verwenden:
 - `phuaky/xrai`: Kandidaten-only lokales Vision-Gate, Golden-Set-Regression, Latenz-Evaluierung, Fail-Open-Verhalten. Das Repository ist MIT-lizenziert.
 
 Die Implementierung muss nativ zu Youtube Blocker bleiben und seine aktuelle Firefox-/Local-First-Architektur bewahren.
+
+## Nachtrag 10/2026 — Padding-Befund, Kalibrierung und neue Defaults
+
+Der Befund in Punkt 2 („Padding ist nicht die Ursache“) ist überholt. Der
+Wechsel von `padding:'max_length'` auf `padding:true` (Commit 23a7618,
+„schnellere WASM-Batches“) hat die Pooling-Position des Text-Turms verschoben
+und den Bildabgleich dauerhaft in Rauschen verwandelt.
+
+Reproduzierte Messungen (Kontroll-Vorschaubilder, q8, WASM, 10/2026):
+
+- `padding:true` (kein Pad, alle Prompts gleich lang): „cat“ erreicht auf dem
+  Katzenbild nur −0.066 (Platz 4, unter „car“ und „pizza“).
+- `padding:'max_length'` (64 Tokens, EOS-Pad): „cat“ 0.051 (Platz 1) — SigLIP
+  poolt die letzte Position und ist auf den EOS-Pad-Schwanz trainiert; die
+  offizielle transformers.js-Pipeline nutzt für SigLIP dasselbe Padding.
+- Groß-/Kleinschreibung normalisieren: Der Gemma-Tokenizer zerlegt „Drone“
+  anders als „drone“ — auf demselben Drohnen-Vorschaubild: „drone“ 0.072 vs.
+  „Drone“ −0.015, „uav“ 0.046 vs. „UAV“ −0.003. Darum werden Nutzertexte nur
+  intern für die Prompts kleingeschrieben; UI und Konfiguration behalten den
+  Originaltext.
+
+Kalibrierung (9 Kontrollbilder, 17er-Nutzerliste, q8): echte Treffer
+(Ziel-Kosinus) 0.038–0.089, Rauschen auf Kontrollbildern (Katze/Auto) ≤ 0.032;
+kontrastive Margin bei kurzen, disjunkten Listen 0.03–0.08. Bei Synonymen in
+der Liste (Drone/Dron/Дрон/UAV) kollabiert die Margin (~0.002), weil die
+Schreibweisen füreinander Konkurrenten sind — Migration: pro Konzept möglichst
+eine Schreibweise. Daraus abgeleitet und umgesetzt: Standard-Margin **0.03**
+(Content, Popup, Import, Fallback) und WASM-Quantisierung **q8** statt q4
+(größere Trefferabstände; WebGPU bleibt q4f16).

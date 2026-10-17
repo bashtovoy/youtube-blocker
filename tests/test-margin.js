@@ -41,7 +41,7 @@ assert.strictEqual(r.text, 'Drone');
 assert.strictEqual(r.refText, 'Dron');
 assert.ok(Math.abs(r.margin - 0.01) < 1e-9);
 
-/* Ungültige Schwelle → konservativer Default 0.1 */
+/* Ungültige Schwelle → Default 0.03 */
 assert.strictEqual(sem.marginDecision([S('Drone', 0.30), S('Navy', 0.29)], NaN), null);   /* margin 0.01 < 0.1 */
 assert.notStrictEqual(sem.marginDecision([S('Drone', 0.30), S('Navy', 0.10)], 'x'), null); /* margin 0.20 >= 0.1 */
 
