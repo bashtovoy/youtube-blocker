@@ -1,4 +1,4 @@
-/* background.js — Zähler für offizielle Signale und lokale Ausblendungen; Routing zum Semantik-Host */
+/* background.js — Zähler für offizielle Signale und lokale Ausblendungen; Routing zu Semantik- und OCR-Host */
 'use strict';
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 let cfgCache = { keywords: [], settings: {} };
@@ -20,6 +20,8 @@ api.runtime.onMessage.addListener((msg, sender) => {
       .catch(() => {});
   } else if (msg.type === 'ybsem') {
     return handleSemRequest(msg);
+  } else if (msg.type === 'ybocr') {
+    return handleOcrRequest(msg);
   }
 });
 
@@ -41,6 +43,26 @@ async function handleSemRequest(msg) {
       return { ok: true, status: host.status() };
     }
     throw new Error('Unbekannte Semantik-Operation');
+  } catch (e) {
+    const err = e || {};
+    return { ok: false, error: String(err.message || err), fatal: !!err.fatal };
+  }
+}
+
+/* OCR-Anfragen aus Content-Scripts an den Tesseract-Host dieser Seite weiterreichen
+   (gleiche Begründung wie beim Semantik-Host, siehe ocr-host.js). */
+async function handleOcrRequest(msg) {
+  const host = self.YB_OCR_HOST;
+  try {
+    if (!host) throw new Error('OCR-Host nicht geladen');
+    if (msg.op === 'recognize') {
+      const res = await host.recognize(msg.url, msg.langs);
+      return { ok: true, text: res.text, ms: res.ms, cached: !!res.cached };
+    }
+    if (msg.op === 'status') {
+      return { ok: true, status: host.status() };
+    }
+    throw new Error('Unbekannte OCR-Operation');
   } catch (e) {
     const err = e || {};
     return { ok: false, error: String(err.message || err), fatal: !!err.fatal };

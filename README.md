@@ -9,7 +9,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
 | Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Präfixe) mit der Schlüsselwortliste | nein |
-| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js (ru+en) erkannt und in der Wortliste gesucht | `lib/tesseract.min.js` |
+| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js (ru+en) erkannt und in der Wortliste gesucht | `ocr-host.js` + `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
@@ -28,7 +28,8 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 ## Bibliotheken installieren
 
 ```bash
-./setup.sh          # lädt tesseract.js (~2 MB + Sprachdaten)
+./setup.sh          # lädt tesseract.js (OCR: Bibliothek, Worker, Kern, eng/rus-Sprachdaten)
+                    # außerdem die SigLIP-Modelle für die Semantik (siehe unten)
                     # optional — whisper.cpp und ein Modell für Sprache
 ```
 
@@ -158,7 +159,9 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   Menüpunkt über das `thumbs-down`-Icon, nicht über den Text, und ist daher
   unabhängig von der Sprache der Oberfläche.
 - OCR ist aufwendig: bei großer Liste einschalten, sonst wird CPU unnötig verbraucht.
-  Anfragen laufen sequenziell über eine Warteschlange und werden per videoId gecacht.
+  Anfragen laufen sequenziell über eine Warteschlange; Ergebnisse werden je
+  Bild-URL im Hintergrund-Host gecacht, der Tesseract-Worker wird nach zehn
+  Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet.
 - Die Spracherkennung ist experimentell: lädt die Watch-Seite und den Audio-Stream,
   transkribiert nur die ersten N Sekunden. Für Russisch — multilinguales
   Modell (`small`), das sind ~460 MB im Worker.
@@ -175,10 +178,11 @@ extension/
   semantic.js     — Content-Client: Text → Bild semantisches Matching (Messaging)
   semantic-host.js — SigLIP-Worker-Host in der Background-Seite (umgeht CSP/Trusted Types)
   semantic-worker.js — Text-/Bild-Embeddings + roher Kosinus (Bild-Turm resident, Text einmal je Liste)
-  ocr.js          — Tesseract.js im Blob-Worker (CSP-Umgehung)
+  ocr.js          — Content-Client: Vorschaubild-OCR (Messaging)
+  ocr-host.js     — Tesseract-Host in der Background-Seite (umgeht CSP/Trusted Types)
   speech.js       — whisper.cpp im Worker (optional)
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
-  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-Routing
+  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik- und OCR-Routing
   popup/          — Verwaltung von Liste und Einstellungen
   lib/ models/    — externe Bibliotheken; Modelle nur lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
 ```
@@ -204,6 +208,9 @@ extension/
 ```bash
 node --check extension/*.js      # Syntax
 node tests/test-matcher.js       # Modultest des Text-Matchers
+node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
+node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
+node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 npx web-ext lint --source-dir extension
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/

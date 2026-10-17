@@ -3,6 +3,17 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] — 2026-10-17
+
+### Behoben
+- **OCR der Vorschaubilder funktioniert jetzt auf YouTube.** Der Tesseract-Worker wurde — wie zuvor schon der SigLIP-Worker (1.3.0) — aus dem Content-Script in die Background-Seite verlegt (`ocr-host.js`): YouTube (Trusted Types + CSP) blockiert das Erzeugen von Workern aus Content-Scripts, dadurch startete der Kanal dort überhaupt nicht (`Worker constructor: … blocked by CSP`). Zusätzlich fehlten der Sprach-/API-Initialisierungsschritt (tesseract.js 4.1.1 lädt Sprache und API nicht automatisch) und die richtige Optionsübergabe (4.1.1 akzeptiert `createWorker`-Optionen nur als einzelnes Objekt — die v5-artige Aufrufform ließ Worker-, Kern- und Sprachpfade wirkungslos, sodass alles über CDN-Standardpfade lief). Jetzt laufen Bibliothek, Worker-Skript, SIMD-Kern (4.0.4, selbstenthalten) und eng/rus-Sprachdaten vollständig lokal aus `lib/`; zur Laufzeit gibt es keinen CDN-Bezug.
+- Nur echte Kanal-Fehler (Bibliothek/Kern/Sprachdaten defekt) schalten den OCR-Kanal für die Seitensession ab; einzelne Bildfehler werden übersprungen. Erkennungstexte werden im Hintergrund-Host je Bild-URL gecacht.
+
+### Geändert
+- Die Tesseract-Bibliothek wird nicht mehr in jede YouTube-Seite injiziert; im Content-Script bleibt nur der schlanke Messaging-Client (`ocr.js`). Der Hintergrund-Host beendet den Worker nach zehn Minuten Leerlauf und startet ihn beim nächsten Bedarf neu.
+- `web_accessible_resources` von den OCR-Dateien befreit (die Seite braucht sie nicht mehr), `setup.sh` lädt das Worker-Skript mit, die tote Kern-URL (404) ist ersetzt, der separate `.wasm`-Bezug entfällt — das 4.0.4-Abbild bringt die wasm-Binärdatei bereits mit.
+- Test `tests/test-ocr-client.js`: Nachrichtenformat, Serialisierung, Fehler- und Timeoutpfade des OCR-Clients.
+
 ## [1.5.1] — 2026-10-17
 
 ### Behoben

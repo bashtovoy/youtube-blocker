@@ -46,18 +46,18 @@ echo
 echo "==> Tesseract.js (OCR der Vorschaubilder) — v4.1.1"
 curl -fsSL -o "$LIB/tesseract.min.js" \
   "https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"
-# WASM-Kern (SIMD) — wird automatisch aus lib/ übernommen
+# Worker-Skript: läuft im Background-Host (ocr-host.js), nicht mehr im Content-Script
+curl -fsSL -o "$LIB/worker-tesseract.min.js" \
+  "https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/worker.min.js"
+# WASM-Kern (SIMD, selbstenthalten inklusive wasm-Binärdatei) — passend zu
+# tesseract.js 4.1.1; ocr-host.js setzt corePath/langPath auf lib/ (kein CDN)
 curl -fsSL -o "$LIB/tesseract-core-simd.wasm.js" \
-  "https://cdn.jsdelivr.net/npm/tesseract-core-simd-wasm@1.0.2/tesseract-core-simd.wasm.js" || \
-curl -fsSL -o "$LIB/tesseract-core-simd.wasm.js" \
-  "https://cdn.jsdelivr.net/gh/naptha/tesseract.js-core@v5.1.1/tesseract-core-simd.wasm.js"
-curl -fsSL -o "$LIB/tesseract-core-simd.wasm" \
-  "https://cdn.jsdelivr.net/gh/naptha/tesseract.js-core@v5.1.1/tesseract-core-simd.wasm" || true
-# Sprachdaten (um während der Nutzung nicht vom CDN abhängig zu sein)
+  "https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.4/tesseract-core-simd.wasm.js"
+# Sprachdaten — müssen im Paket liegen; ocr-host.js lädt zur Laufzeit nichts vom CDN
 for L in eng rus; do
   curl -fsSL -o "$LIB/${L}.traineddata.gz" \
     "https://tessdata.projectnaptha.com/4.0.0/${L}.traineddata.gz" || \
-  echo "!! ${L}.traineddata.gz konnte nicht geladen werden — OCR lädt es beim ersten Start vom CDN"
+  echo "!! ${L}.traineddata.gz fehlt — OCR für diese Sprache ist dann nicht verfügbar"
 done
 
 echo

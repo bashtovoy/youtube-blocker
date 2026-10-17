@@ -192,10 +192,6 @@
     });
   }
 
-  function thumbKey(v) {
-    return v.videoId + '|' + v.thumb;
-  }
-
   function descriptorCached(url) {
     if (state.imageCache.has(url)) return state.imageCache.get(url);
     const p = window.YB.image.descriptorFromUrl(url).then(desc => {
@@ -323,12 +319,22 @@
 
     if (ocrNeeded) {
       try {
-        const text = await window.YB.ocr.recognizeUrl(v.thumb, thumbKey(v) + ':' + state.settings.ocrLangs, state.settings.ocrLangs);
+        const t0 = Date.now();
+        const text = await window.YB.ocr.recognizeUrl(v.thumb, state.settings.ocrLangs);
+        const trimmed = String(text || '').trim();
+        log('ocr', v.videoId, trimmed.length + ' chars', (Date.now() - t0) + 'ms',
+          trimmed ? '« ' + trimmed.slice(0, 60) + ' »' : '(kein Text)');
         const kw = window.YB.matcher.matchKeywords(text, state.ocrKeywords, { fuzzy: false });
         if (kw) return { source: 'ocr', keyword: kw };
       } catch (e) {
-        state.ocrFailed = true;
-        log('ocr channel unavailable:', e.message);
+        /* Nur fatale Fehler (Bibliothek/Worker/Sprachdaten defekt) schalten den
+           Kanal für diese Seitensession ab; einzelne Bildfehler nicht. */
+        if (e && e.fatal) {
+          state.ocrFailed = true;
+          log('ocr channel unavailable:', e.message);
+        } else {
+          log('ocr image fail', v.videoId, e.message);
+        }
       }
     }
     return null;
