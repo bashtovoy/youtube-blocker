@@ -1,6 +1,6 @@
-# Youtube Blocker (Firefox)
+# Youtube Blocker (Firefox & Chrome)
 
-Firefox-Erweiterung, die unerwünschte YouTube-Inhalte **anhand des Titels und
+Browser-Erweiterung für Firefox und Chrome, die unerwünschte YouTube-Inhalte **anhand des Titels und
 des Vorschaubilds** erkennt und für Treffer aus deiner Liste das offizielle
 YouTube-Signal **„Kein Interesse“** sendet.
 
@@ -39,6 +39,19 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 2. Wähle `extension/manifest.json` aus.
 
 Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `npm i -g web-ext`; das ZIP enthält keine Modelle — siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
+
+## Installation in Chrome
+
+1. `node build-chrome.js` — baut `dist-chrome/` und `web-ext-artifacts/youtube_blocker-<version>-chrome.zip`.
+2. `chrome://extensions` → **Entwicklermodus** einschalten → **Entpackte Erweiterung laden** → den Ordner `dist-chrome/` wählen.
+3. Für den Chrome Web Store das erzeugte ZIP hochladen.
+
+Hinweis: Chrome verlangt Manifest V3, und MV3-Service-Worker können keine Worker
+erzeugen — deshalb laufen die Rechen-Hosts (SigLIP, Tesseract) in einem unsichtbaren
+Offscreen-Dokument (`offscreen.html`), für Nutzer funktional identisch zu Firefox.
+Der Firefox-Weg (Hintergrundseite) bleibt unverändert; `build-chrome.js` erzeugt das
+MV3-Manifest aus dem Firefox-Manifest, damit beide Pakete aus einem Quellbaum kommen.
+Mindestversion: Chrome 116.
 
 ## Verwendung
 
@@ -211,7 +224,10 @@ node tests/test-matcher.js       # Modultest des Text-Matchers
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
+node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen)
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
+node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
+node build-chrome.js             # Chrome-MV3-Sammlung → dist-chrome/ + web-ext-artifacts/*-chrome.zip
 npx web-ext lint --source-dir extension
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 ```

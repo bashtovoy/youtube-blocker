@@ -1,12 +1,12 @@
-/* ocr-host.js — Tesseract-OCR-Host im privilegierten Kontext (Background-Seite).
+/* ocr-host.js — Tesseract-OCR-Host im privilegierten Kontext
+   (Firefox: Background-Seite; Chrome MV3: Offscreen-Dokument, siehe offscreen.js).
    Warum nicht im Content-Script: YouTube erzwingt Trusted Types + CSP
    (`require-trusted-types-for 'script'`), dadurch schlägt `new Worker(...)` aus
    Content-Scripts synchron fehl ("Worker constructor: Sink type mismatch ... blocked by CSP").
-   Die Background-Seite unterliegt den Seitenrichtlinien nicht. Content-Scripts sprechen
+   Der privilegierte Kontext unterliegt den Seitenrichtlinien nicht. Content-Scripts sprechen
    nur noch per runtime.sendMessage mit diesem Host.
    Alle Dateien liegen lokal im Paket (lib/): Tesseract-Bibliothek, Worker-Skript,
-   SIMD-WASM-Kern und Sprachdaten — kein CDN, kein Fernbezug zur Laufzeit.
-   Für Chrome MV3 später unverändert in ein Offscreen-Dokument übernehmbar. */
+   SIMD-WASM-Kern und Sprachdaten — kein CDN, kein Fernbezug zur Laufzeit. */
 (function () {
   'use strict';
 

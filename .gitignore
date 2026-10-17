@@ -25,3 +25,6 @@ extension/devreport.js
 # node
 node_modules/
 npm-debug.log*
+
+# Chrome-Sammlung (build-chrome.js)
+dist-chrome/

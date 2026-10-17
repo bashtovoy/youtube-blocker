@@ -149,7 +149,7 @@ function checkWhisper() {
     .catch(() => { whisperState = 'missing'; renderStats(); });
 }
 
-api.storage.local.onChanged.addListener(changes => {
+api.storage.onChanged.addListener(changes => {
   if (changes.semStatus) renderSemStatus(changes.semStatus.newValue);
 });
 

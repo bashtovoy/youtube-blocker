@@ -20,6 +20,7 @@
     "scripts": [
       "semantic-host.js",
       "ocr-host.js",
+      "host-routes.js",
       "background.js"
     ]
   },

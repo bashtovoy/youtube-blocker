@@ -132,11 +132,14 @@ async function computeTextEmbeds(preferredDevice, labels) {
   } catch (firstError) {
     /* Netzproblem: Gerätewechsel hilft nicht — Fehler unverändert weiterreichen. */
     if (isNetworkishError(firstError)) throw markRetryable(firstError);
-    if (preferredDevice !== 'wasm') {
-      ctx = await tryDevice('wasm').catch(e => { throw markRetryable(e); });
-    } else {
-      throw firstError;
+    /* Gerätewechsel meldet der Aufrufer an (er startet dafür einen frischen
+       Worker): Ein gescheiterter WebGPU-Versuch hinterlässt den Zustand der
+       ONNX-Laufzeit beschädigt — ein Wasm-Versuch im selben Worker scheitert
+       reproduzierbar mit derselben Adapter-Meldung. */
+    if (preferredDevice !== 'wasm' && firstError && typeof firstError === 'object') {
+      firstError.deviceFallback = 'wasm';
     }
+    throw firstError;
   }
   /* SigLIP wurde mit natürlichsprachigen Prompts trainiert; für den
      Bildabgleich wird die Foto-Formulierung verwendet, während die
@@ -208,13 +211,14 @@ async function init(preferredDevice) {
     } catch (firstError) {
       /* Netzproblem: Gerätewechsel hilft nicht — Fehler unverändert weiterreichen. */
       if (isNetworkishError(firstError)) throw markRetryable(firstError);
-      if (preferred !== 'wasm') {
-        processor = null;
-        vision = null;
-        await tryDevice('wasm').catch(e => { throw markRetryable(e); });
-      } else {
-        throw firstError;
+      /* Gerätewechsel meldet der Host an (er verwirft diesen Worker und startet
+         einen frischen): Ein gescheiterter WebGPU-Versuch hinterlässt den
+         Zustand der ONNX-Laufzeit beschädigt — ein Wasm-Versuch im selben
+         Worker scheitert reproduzierbar mit derselben Adapter-Meldung. */
+      if (preferred !== 'wasm' && firstError && typeof firstError === 'object') {
+        firstError.deviceFallback = 'wasm';
       }
+      throw firstError;
     }
     return { device, modelId: MODEL_ID, tower: 'vision' };
   })().catch(err => {
@@ -249,6 +253,7 @@ function spawnTextWorker(preferredDevice, labels) {
         cleanup();
         const err = new Error(msg.error || 'Text-Embeddings fehlgeschlagen');
         if (msg.retryable) err.retryable = true;
+        if (msg.deviceFallback) err.deviceFallback = msg.deviceFallback;
         reject(err);
       }
     };
@@ -268,9 +273,20 @@ async function setTexts(labels) {
     textLabels = [];
     return [];
   }
-  /* Läuft bewusst parallel zu init() (der Host startet beide): Die
-     Gerätewahl ist in beiden Pfaden identisch (gleiche Fallback-Logik). */
-  const res = await spawnTextWorker(device || deviceGuess(), list);
+  /* Läuft bewusst parallel zu init() (der Host startet beide). Der Text-Turm
+     bekommt je Versuch einen frischen temporären Worker — der Gerätewechsel
+     ist hier deshalb direkt möglich (kein beschädigter Laufzeit-Zustand). */
+  const preferred = device || deviceGuess();
+  let res;
+  try {
+    res = await spawnTextWorker(preferred, list);
+  } catch (err) {
+    if (err && err.deviceFallback && preferred !== err.deviceFallback) {
+      res = await spawnTextWorker(err.deviceFallback, list);
+    } else {
+      throw err;
+    }
+  }
   textEmbeds = res.embeds instanceof Float32Array ? res.embeds : new Float32Array(res.embeds || []);
   textDim = res.dim || 0;
   textLabels = Array.isArray(res.labels) ? res.labels : list;
@@ -359,7 +375,8 @@ self.onmessage = async (event) => {
       type: 'error',
       id: msg.id,
       error: String(error?.message || error),
-      retryable: !!error?.retryable
+      retryable: !!error?.retryable,
+      deviceFallback: (error && error.deviceFallback) || null
     });
   }
 };

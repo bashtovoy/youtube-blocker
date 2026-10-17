@@ -1,10 +1,10 @@
-/* semantic-host.js — SigLIP-Worker-Host im privilegierten Kontext (Background-Seite).
+/* semantic-host.js — SigLIP-Worker-Host im privilegierten Kontext
+   (Firefox: Background-Seite; Chrome MV3: Offscreen-Dokument, siehe offscreen.js).
    Warum nicht im Content-Script: YouTube erzwingt Trusted Types + CSP
    (`require-trusted-types-for 'script'`), dadurch schlägt `new Worker(...)` aus
    Content-Scripts synchron fehl ("Worker constructor: Sink type mismatch ... blocked by CSP").
-   Die Background-Seite unterliegt den Seitenrichtlinien nicht. Content-Scripts sprechen
-   nur noch per runtime.sendMessage mit diesem Host.
-   Für Chrome MV3 später unverändert in ein Offscreen-Dokument übernehmbar. */
+   Der privilegierte Kontext unterliegt den Seitenrichtlinien nicht. Content-Scripts sprechen
+   nur noch per runtime.sendMessage mit diesem Host. */
 (function () {
   'use strict';
 
@@ -50,10 +50,11 @@
   }
 
   function saveStatus() {
+    const payload = { state, device, error: lastError, initMs, lastScoreMs, updatedAt: Date.now(), dl };
     try {
-      api.storage.local.set({
-        [STATUS_KEY]: { state, device, error: lastError, initMs, lastScoreMs, updatedAt: Date.now(), dl }
-      });
+      /* Chrome-Offscreen hat keinen storage-Zugriff → Dienstweg über den Service Worker. */
+      if (typeof self.YB_STATUS_SINK === 'function') self.YB_STATUS_SINK(STATUS_KEY, payload);
+      else api.storage.local.set({ [STATUS_KEY]: payload });
     } catch (e) { /* Status ist optional */ }
   }
 
@@ -104,10 +105,10 @@
     }, IDLE_MS);
   }
 
-  function terminateWorker(reason) {
+  function terminateWorker(reason, keepInit) {
     if (worker) { try { worker.terminate(); } catch (e) { /* schon tot */ } }
     worker = null;
-    initPromise = null;
+    if (!keepInit) initPromise = null;
     textsKey = null;
     workerHasTexts = false;
     device = null;
@@ -138,8 +139,9 @@
       else {
         const err = new Error(m.error || 'Semantik-Worker-Fehler');
         if (m.retryable) err.retryable = true;
+        if (m.deviceFallback) err.deviceFallback = m.deviceFallback;
         /* Netz-/Downloadfehler sind wiederholbar → Kanal bleibt aktiv. */
-        if (p.type === 'init' && !err.retryable) markFatal(err);
+        if (p.type === 'init' && !err.retryable && !err.deviceFallback) markFatal(err);
         p.reject(err);
       }
     };
@@ -174,9 +176,27 @@
     setState('loading');
     const t0 = Date.now();
     initPromise = (async () => {
-      const res = await request('init', {
-        device: self.navigator && self.navigator.gpu ? 'webgpu' : 'wasm'
-      });
+      const guess = (self.navigator && self.navigator.gpu) ? 'webgpu' : 'wasm';
+      let res;
+      try {
+        res = await request('init', { device: guess });
+      } catch (err) {
+        /* Meldet der Worker einen nötigen Gerätewechsel (etwa kein GPU-Adapter),
+           braucht der Wasm-Versuch einen frischen Worker: Der gescheiterte
+           WebGPU-Versuch beschädigt den ONNX-Zustand dauerhaft. Laufende
+           Anfragen (der parallele Text-Turm) werden als workerLost gemeldet
+           und nach dem Wechsel wiederholt. */
+        if (!err || !err.deviceFallback || guess === err.deviceFallback) throw err;
+        dlog('sem host: Gerätewechsel ' + guess + '→' + err.deviceFallback + ' (frischer Worker)');
+        for (const [id, p] of pending) {
+          pending.delete(id);
+          const lost = new Error('Worker während Gerätewechsel ersetzt');
+          lost.workerLost = true;
+          p.reject(lost);
+        }
+        terminateWorker('Gerätewechsel', true);
+        res = await request('init', { device: err.deviceFallback });
+      }
       device = res.device || null;
       initMs = Date.now() - t0;
       return res;
@@ -218,7 +238,7 @@
               textsKey = lastKey;
             }));
           } else {
-            tasks.push(request('set-texts', { texts: lastTexts }).then(res => {
+            const runSetTexts = () => request('set-texts', { texts: lastTexts }).then(res => {
               textCache = {
                 key: lastKey,
                 embeds: res.embeds,
@@ -228,6 +248,12 @@
               workerHasTexts = true;
               textsKey = lastKey;
               scoreCache.clear();
+            });
+            tasks.push(runSetTexts().catch(err => {
+              /* Der parallele init() hat bei einem Gerätewechsel den Worker
+                 ersetzt — auf dem frischen Worker einmal wiederholen. */
+              if (err && err.workerLost) return runSetTexts();
+              throw err;
             }));
           }
         }
