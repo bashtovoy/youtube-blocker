@@ -3,6 +3,15 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.3] — 2026-10-17
+
+### Hinzugefügt
+- **Fortschrittsbalken für den Modellbezug im Popup:** Der einmalige SigLIP-Download wird jetzt als horizontaler Balken mit Prozent- und MB-Angabe angezeigt; ohne exakte Byte-Werte läuft eine unbestimmte Animation. Sind die Modelle bereit, wird die Zeile grün mit Haken.
+- **Statusanzeige je Erkennungskanal unter „Was geprüft wird“:** Ein Symbol rechts neben jedem Eintrag zeigt den echten Zustand — grüner Haken = aktiv und einsatzbereit (Semantik-Modelle bereit, OCR-Host erreichbar, lokale Kanäle ohne Abhängigkeiten), grauer Ring = ausgeschaltet oder noch nicht vorbereitet, blaue Punkte = lädt gerade, rotes Ausrufezeichen = Fehler. Für die Spracherkennung wird geprüft, ob die Whisper-Bibliothek wirklich installiert ist (die Platzhalterdatei aus dem Paket zählt nicht). Erklärungen erscheinen als Tooltip in der eingestellten Oberflächensprache. Gibt die Semantik nach Leerlauf ihren Arbeitsspeicher frei, bleibt die Anzeige grün — die Modelle laden bei Bedarf automatisch in Sekunden nach.
+
+### Behoben
+- **Manifest bereinigt:** Der versehentlich unter `content_scripts` abgelegte Block `web_accessible_resources` wurde entfernt. In Manifest V2 ist das ein Schlüssel auf oberster Ebene; an der falschen Stelle wurde er ignoriert und Firefox zeigte beim Laden eine Manifest-Warnung. Die aktuellen Worker (Semantik, OCR) laufen im Hintergrund und brauchen keine für Webseiten freigegebenen Ressourcen.
+
 ## [1.5.2] — 2026-10-17
 
 ### Behoben

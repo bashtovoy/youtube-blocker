@@ -46,28 +46,107 @@ let lastSemStatus = null;   /* für Neu-Beschriftung beim Sprachwechsel */
 let counts = { dis: 0, hid: 0 };   /* Kopfzeile: YouTube-Signale / lokale Ausblendungen */
 
 /* Status des Semantik-Hosts (semantic-host.js speichert unter „semStatus“):
-   zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft. */
-function semModelStatusText(st) {
-  if (!st) return t('sem_idle');   /* noch nie gelaufen → Hinweistext statt leerer Zeile */
-  if (st.state === 'error') return t('sem_error', { msg: st.error || t('unknown') });
+   zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft.
+   Liefert Text, Farbklasse und Balkenmodus (none | det | indet). */
+function semStatusView(st) {
+  if (!st) return { text: t('sem_idle'), cls: '', bar: 'none', pct: 0 };   /* noch nie gelaufen → Hinweistext statt leerer Zeile */
+  if (st.state === 'error') {
+    return { text: t('sem_error', { msg: st.error || t('unknown') }), cls: 'err', bar: 'none', pct: 0 };
+  }
   if (st.state === 'ready') {
-    return t('sem_ready', { device: st.device === 'webgpu' ? 'WebGPU' : 'WASM' });
+    return { text: '✓ ' + t('sem_ready', { device: st.device === 'webgpu' ? 'WebGPU' : 'WASM' }), cls: 'ok', bar: 'none', pct: 0 };
   }
   if (st.state === 'loading') {
     const d = st.dl;
     if (d && d.total > 0) {
       const mb = n => (n / 1048576).toFixed(0);
-      return t('sem_loading', { p: Math.round(d.progress), loaded: mb(d.loaded), total: mb(d.total) });
+      const pct = Math.max(2, Math.min(100, Number(d.progress) || 0));
+      return { text: t('sem_loading', { p: Math.round(d.progress), loaded: mb(d.loaded), total: mb(d.total) }), cls: '', bar: 'det', pct };
     }
-    return t('sem_preparing');
+    return { text: t('sem_preparing'), cls: '', bar: 'indet', pct: 0 };
   }
-  return t('sem_idle');
+  return { text: t('sem_idle'), cls: '', bar: 'none', pct: 0 };
 }
 
 function renderSemStatus(st) {
   lastSemStatus = st;
   const el = $('semModelStatus');
-  if (el) el.textContent = semModelStatusText(st);
+  if (el) {
+    const v = semStatusView(st);
+    el.textContent = v.text;
+    el.classList.toggle('ok', v.cls === 'ok');
+    el.classList.toggle('err', v.cls === 'err');
+    const bar = $('semProgress');
+    const fill = $('semProgressFill');
+    if (bar && fill) {
+      bar.hidden = v.bar === 'none';
+      bar.classList.toggle('indeterminate', v.bar === 'indet');
+      fill.style.width = v.bar === 'det' ? v.pct + '%' : '';
+    }
+  }
+  renderStats();
+}
+
+/* ---- Statusindikatoren der Kanäle im Bereich „Was geprüft wird“ ----
+   grüner Haken = aktiv und einsatzbereit; grauer Ring = aus oder noch nicht
+   vorbereitet; blaue Punkte = lädt gerade; rotes „!“ = Fehler.
+   Die Checkboxen bleiben reine Einstellungen. */
+let ocrState = 'pending';      /* pending | ok | err — Antwort des OCR-Hosts */
+let whisperState = 'pending';  /* pending | ok | missing — siehe checkWhisper() */
+let whisperChecked = false;    /* Bibliothek nur einmal je Popup-Öffnung prüfen */
+
+const STAT_GLYPH = { ok: '✓', wait: '…', err: '!', off: '○', pending: '○' };
+
+function setStat(id, cls, titleKey) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = STAT_GLYPH[cls] || '○';
+  el.className = 'stat ' + cls;
+  el.title = t(titleKey);
+}
+
+function renderStats() {
+  const on = id => $(id).checked;
+  /* Kanäle ohne Modell/Netzabhängigkeit: laufen, sobald aktiviert */
+  setStat('statTitle', on('checkTitle') ? 'ok' : 'off', on('checkTitle') ? 'stat_ok' : 'stat_off');
+  setStat('statMembersOnly', on('hideMembersOnly') ? 'ok' : 'off', on('hideMembersOnly') ? 'stat_ok' : 'stat_off');
+  setStat('statFuzzy', on('fuzzy') ? 'ok' : 'off', on('fuzzy') ? 'stat_ok' : 'stat_off');
+
+  /* Semantik: Live-Status des Hosts (Modelle bereit / laden / Fehler).
+     „off“ mit lastUsedAt = Worker wurde nach Leerlauf bewusst beendet und
+     startet bei Bedarf in Sekunden neu → gilt als einsatzbereit (grün). */
+  let sem = ['pending', 'stat_pending'];
+  if (!on('checkSemanticImage')) sem = ['off', 'stat_off'];
+  else if (lastSemStatus && lastSemStatus.state === 'ready') sem = ['ok', 'stat_ok'];
+  else if (lastSemStatus && lastSemStatus.state === 'off' && lastSemStatus.lastUsedAt) sem = ['ok', 'stat_ok_idle'];
+  else if (lastSemStatus && lastSemStatus.state === 'loading') sem = ['wait', 'stat_wait'];
+  else if (lastSemStatus && lastSemStatus.state === 'error') sem = ['err', 'stat_err'];
+  setStat('statSemanticImage', sem[0], sem[1]);
+
+  /* OCR: der Hintergrund-Host beantwortet die Statusabfrage */
+  let ocr = ['pending', 'stat_pending'];
+  if (!on('checkThumbOcr')) ocr = ['off', 'stat_off'];
+  else if (ocrState === 'ok') ocr = ['ok', 'stat_ok'];
+  else if (ocrState === 'err') ocr = ['err', 'stat_err'];
+  setStat('statOcr', ocr[0], ocr[1]);
+
+  /* Sprache: Whisper-Bibliothek installiert? (Modelldatei wird nicht geprüft) */
+  let sp = ['pending', 'stat_pending'];
+  if (!on('checkSpeech')) sp = ['off', 'stat_off'];
+  else if (whisperState === 'ok') sp = ['ok', 'stat_ok'];
+  else if (whisperState === 'missing') sp = ['pending', 'stat_speech_missing'];
+  setStat('statSpeech', sp[0], sp[1]);
+}
+
+/* Whisper-Bibliothek einmalig prüfen: setup.sh setzt ohne Download nur eine
+   Platzhalterdatei mit wenigen Zeilen ab; eine echte Bibliothek ist viel größer. */
+function checkWhisper() {
+  if (whisperChecked) return;
+  whisperChecked = true;
+  fetch(api.runtime.getURL('lib/whisper.js'))
+    .then(r => (r && r.ok ? r.text() : ''))
+    .then(txt => { whisperState = (txt && txt.length > 500) ? 'ok' : 'missing'; renderStats(); })
+    .catch(() => { whisperState = 'missing'; renderStats(); });
 }
 
 api.storage.local.onChanged.addListener(changes => {
@@ -126,6 +205,12 @@ async function load() {
   api.runtime.sendMessage({ type: 'ybsem', op: 'status' })
     .then(res => { if (res && res.ok && res.status) renderSemStatus(res.status); })
     .catch(() => { /* Host nicht erreichbar → gespeicherter Stand bleibt stehen */ });
+  /* OCR-Host-Status für den Kanal-Indikator abfragen */
+  api.runtime.sendMessage({ type: 'ybocr', op: 'status' })
+    .then(res => { ocrState = (res && res.ok) ? 'ok' : 'err'; renderStats(); })
+    .catch(() => { ocrState = 'err'; renderStats(); });
+  /* Whisper-Bibliothek nur prüfen, wenn die Spracherkennung eingeschaltet ist */
+  if ($('checkSpeech').checked) checkWhisper();
 }
 
 function updateCount() {
@@ -270,7 +355,14 @@ document.querySelector('details.bulk').addEventListener('toggle', (e) => {
 });
 
 /* Automatisches Speichern der Einstellungen: Häkchen/Auswahl wirken sofort, Text/Zahl mit Debounce */
-SETTING_IDS.forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => schedulePersist(0)); });
+SETTING_IDS.forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('change', () => {
+    if (id === 'checkSpeech' && el.checked) checkWhisper();
+    renderStats();
+    schedulePersist(0);
+  });
+});
 VALUE_IDS.forEach(id => {
   const el = $(id);
   if (!el || id === 'uiLang') return;   /* uiLang: eigener Listener unten (Sprache sofort anwenden) */
@@ -302,5 +394,8 @@ $('export').onclick = async () => {
 $('import').onclick = () => {
   api.tabs.create({ url: api.runtime.getURL('popup/import.html') });
 };
+
+/* Statusspans liegen in den labels — ein Klick darauf darf die Einstellung nicht umschalten */
+document.querySelectorAll('.stat').forEach(el => el.addEventListener('click', e => e.preventDefault()));
 
 load();
