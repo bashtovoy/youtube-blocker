@@ -11,12 +11,22 @@ function status(msg, ok = true) {
   el.className = ok ? '' : 'err';
 }
 
-/* Einträge auf { text, enabled } normalisieren — Strings oder Objekte, wie im Popup */
+/* Einträge auf { text, enabled, route? } normalisieren — Strings oder Objekte, wie im Popup.
+   route ∈ title|ocr|image|hybrid (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1);
+   fehlende/ungültige Route = Auto (alle Kanäle). */
+function normRoute(r) {
+  return (r === 'title' || r === 'ocr' || r === 'image' || r === 'hybrid') ? r : '';
+}
+
 function normalizeKeywords(list) {
   return (list || [])
-    .map(k => typeof k === 'string'
-      ? { text: k.trim(), enabled: true }
-      : { text: String((k && k.text) || '').trim(), enabled: !k || k.enabled !== false })
+    .map(k => {
+      if (typeof k === 'string') return { text: k.trim(), enabled: true };
+      const o = { text: String((k && k.text) || '').trim(), enabled: !k || k.enabled !== false };
+      const r = normRoute(k && k.route);
+      if (r) o.route = r;
+      return o;
+    })
     .filter(k => k.text);
 }
 

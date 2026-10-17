@@ -11,7 +11,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Präfixe) mit der Schlüsselwortliste | nein |
 | Foto — OCR | Text im Vorschaubild wird mit Tesseract.js (ru+en) erkannt und in der Wortliste gesucht | `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
-| Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; kein Hochladen von Referenzfotos nötig | `transformers.min.js` + lokales SigLIP-Modell |
+| Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos | `transformers.min.js` + lokales SigLIP-Modell |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
 
 Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
@@ -44,8 +44,9 @@ Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `n
 1. Öffne das Erweiterungs-Popup (Symbol in der Toolbar).
 2. Trage die Liste ein — ein Begriff pro Zeile (Themen, Namen, Kanalnamen).
    Jeder Begriff wird im Titel und zusätzlich **semantisch im Vorschaubild**
-   gesucht (lokales SigLIP). **OCR** lässt sich für Text im Vorschaubild
-   zusätzlich einschalten.
+   gesucht (lokales SigLIP). Über die Route je Begriff (Auto/Titel/OCR/Bild/
+   Hybrid, siehe unten) lässt sich der Kanal einschränken. **OCR** lässt sich
+   für Text im Vorschaubild zusätzlich einschalten.
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
 4. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
@@ -62,12 +63,46 @@ Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 
 - `dHash/pHash-Schwelle` — Hamming-Distanz. Kleiner = strenger.
   Für Kopien derselben Vorschaubilder reichen 4–8.
-- `Semantik-Schwelle` — SigLIP-Wahrscheinlichkeit nach Sigmoid (0.05–0.95). Höher = strenger. Erster Richtwert: **0.15**, danach an echten Vorschaubildern kalibrieren.
+- `Margin-Schwelle (Semantik)` — kontrastive Margin im Kosinus-Raum
+  (Ziel-Kosinus − bester Kosinus der übrigen Konzepte), 0–1. Höher = strenger.
+  Default **0.1** ist bewusst streng und **unkalibriert**; mit
+  `gui-test-assets/padexp/` an echten Vorschaubildern kalibrieren.
 - `OCR-Sprachen` — standardmäßig `eng+rus`.
 - `Pause zwischen Signalen` — Schutz vor Flutung der YouTube-Oberfläche.
 - Sprache: Das Modell wird in `extension/models/` abgelegt, der Pfad wird in
   `speechModel` angegeben (z. B. `models/ggml-small.bin` — für Russisch
   braucht man ein multilinguales Modell, `base.en` versteht nur Englisch).
+
+## Routen je Begriff und Kalibrierung (ab 1.3.0)
+
+Jeder Begriff im Popup trägt optional eine **Route** — den Erkennungskanal:
+
+| Route | Bedeutung |
+|---|---|
+| Auto | bisheriges Verhalten: Titel/Kanal + semantisches Bild (+ OCR, wenn aktiviert) |
+| Titel | nur Titel-/Kanalabgleich |
+| OCR | nur Texterkennung im Vorschaubild |
+| Bild | nur semantisches Bild-Scoring |
+| Hybrid | kontrollierte Kombination: Titel + OCR + Bild |
+
+Die Route wird im Popup je Zeile gewählt, im JSON-Export/Import (`"route"`)
+mitgeführt und ist ohne Codeänderungen konfigurierbar. Fehlt die Route
+(z. B. in alten Exporten), gilt weiterhin „Auto“ — bestehende Listen
+funktionieren unverändert.
+
+Migration aus älteren Versionen:
+
+- Der alte Wert `semanticThreshold` (Sigmoid 0.15) wird **nicht mehr
+  verwendet**; die semantische Entscheidung basiert ausschließlich auf der
+  kontrastiven Margin (`semanticMargin`). Alte Speicherwerte sind harmlos
+  und können ignoriert werden.
+- Schlüsselwörter ohne `route` verhalten sich wie bisher (alle Kanäle).
+
+Kalibrierung: `gui-test-assets/padexp/` (siehe dortiges README) wertet ein
+CSV-Manifest mit Vorschaubildern aus und liefert Precision/Recall/F1/FPR,
+Verteilungen, Schwellen-Sweep und Latenz (70/30 Kalibrierung/Holdout). Die
+Produktionsschwelle wird daraus konservativ abgeleitet (Falsch-Positive
+wiegen schwerer) und hier dokumentiert.
 
 ## Debugging und Prüfung (Dev-Modus)
 
@@ -107,12 +142,13 @@ extension/
   content.js      — Orchestrator: DOM-Scan → Erkennung → Aktion
   matcher.js      — unscharfer Abgleich von Schlüsselwörtern
   image.js        — visuelle Deskriptoren (legacy; Referenzfotos nicht mehr nötig)
-  semantic.js     — API für Text → Bild semantisches Matching
-  semantic-worker.js — SigLIP-Image-Text-Logits im Worker
+  semantic.js     — Content-Client: Text → Bild semantisches Matching (Messaging)
+  semantic-host.js — SigLIP-Worker-Host in der Background-Seite (umgeht CSP/Trusted Types)
+  semantic-worker.js — Text-/Bild-Embeddings + roher Kosinus (Bild-Turm resident, Text einmal je Liste)
   ocr.js          — Tesseract.js im Blob-Worker (CSP-Umgehung)
   speech.js       — whisper.cpp im Worker (optional)
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
-  background.js   — Badge-Zähler, Konfigurations-Cache
+  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-Routing
   popup/          — Verwaltung von Liste und Einstellungen
   lib/ models/    — externe Bibliotheken (werden von setup.sh befüllt)
 ```

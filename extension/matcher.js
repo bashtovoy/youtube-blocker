@@ -93,6 +93,31 @@
     return null;
   }
 
+  /* ---- Routen je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1) ----
+     route ∈ 'title' | 'ocr' | 'image' | 'hybrid'. Eine fehlende Route bedeutet
+     das bisherige Verhalten (alle Kanäle); 'hybrid' ist die kontrollierte
+     Kombination (Titel + OCR + Bild). Eingabe: {text, enabled, route?}[] oder
+     reine Strings (dann gelten sie für alle Kanäle). */
+  const ROUTES = ['title', 'ocr', 'image', 'hybrid'];
+
+  function routeOf(keyword) {
+    const r = keyword && typeof keyword === 'object' ? keyword.route : null;
+    return ROUTES.indexOf(r) >= 0 ? r : null;
+  }
+
+  function channelKeywords(keywords, channel) {
+    const out = [];
+    for (const kw of keywords || []) {
+      const isObj = kw !== null && typeof kw === 'object';
+      const text = String((isObj ? kw.text : kw) || '').trim();
+      if (!text) continue;
+      if (isObj && kw.enabled === false) continue;
+      const route = isObj ? routeOf(kw) : null;
+      if (route === null || route === 'hybrid' || route === channel) out.push(text);
+    }
+    return out;
+  }
+
   window.YB = window.YB || {};
-  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein };
+  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein, channelKeywords, routeOf };
 })();

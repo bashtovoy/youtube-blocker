@@ -54,6 +54,7 @@
     .kwrow.off { opacity: .5; }
     .kwrow.off input[type=text] { text-decoration: line-through; color: #a49bb5; }
     .kwrow .cnt { color: #38bdf8; font-size: 11px; font-weight: 700; min-width: 18px; text-align: right; }
+    .kwrow .route { background: transparent; border: 1px solid #ece4f6; border-radius: 6px; color: #8b84a6; font-size: 11px; padding: 1px 2px; }
     .kwrow .del { background: transparent; color: #ff9db0; border: 0; font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
     .kwrow .del:hover { color: #ff5c5c; }
     .kwadd { display: flex; gap: 6px; }
@@ -117,8 +118,8 @@
       <label class="row">dHash/pHash-Schwelle:
         <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(kleiner = strenger, von 64)</span>
       </label>
-      <label class="row">Semantik-Schwelle:
-        <input type="number" id="semanticThreshold" min="0.05" max="0.95" step="0.01" style="width:58px"> <span class="hint">(höher = strenger)</span>
+      <label class="row">Margin-Schwelle (Semantik):
+        <input type="number" id="semanticMargin" min="0" max="1" step="0.01" style="width:58px"> <span class="hint">(Kosinus-Abstand zum besten Konkurrenten; höher = strenger)</span>
       </label>
       <label class="row">Pause zwischen Signalen, ms:
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">

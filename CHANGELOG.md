@@ -3,6 +3,30 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-10-17
+
+### Hinzugefügt
+- **Routen je Schlüsselwort** (`title`/`ocr`/`image`/`hybrid`, Auswahl im Popup, im JSON-Export/-Import mitgeführt): Jeder Begriff lässt sich auf einen Erkennungskanal beschränken — z. B. nur Titel oder nur semantisches Bild. Fehlende Route = bisheriges Verhalten (alle Kanäle); bestehende Listen und Exporte funktionieren unverändert.
+- **Kontrastive Margin statt Sigmoid**: Die semantische Entscheidung nutzt den rohen Kosinus der SigLIP-Embeddings und die Margin „Ziel-Kosinus − bester Konkurrent“ (`semanticMargin`, Popup-Feld „Margin-Schwelle“, Default 0.1 — bewusst streng und unkalibriert). Bei einem Treffer protokolliert die Konsole die Entscheidung (Konzept, Ziel-Kosinus, Konkurrenz, Margin, Schwelle, Profil `margin-v1`).
+- **Kalibrierungswerkzeuge** in `gui-test-assets/padexp/`: Offline-Auswertung eines CSV-Manifests mit Precision/Recall/F1/FPR je Konzept, Verteilungen von Kosinus und Margin, Schwellen-Sweep, deterministischer 70/30-Split (Kalibrierung/Holdout) und Latenz p50/p95 — nur Skripte, keine Bilder oder Modelle im Repo.
+
+### Geändert
+- **Schneller und sparsamer**: Der SigLIP-Text-Turm läuft nur noch einmal je Wortlisten-Revision (temporärer Worker, danach beendet — garantiertes Freigeben der 218 MB); dauerhaft bleibt nur der Bild-Turm im Speicher (**63 MB statt 218 MB**). Die Text-Embeddings überleben den Idle-Abbau im Host und werden zurückgespielt (Wiedereinstieg nur mit Bild-Turm statt erneutem Text-Lauf).
+- Worker-Protokoll: `image-scores` liefert Kosinus-Werte statt Sigmoid-Wahrscheinlichkeiten; `semanticThreshold` ist ersetzt durch `semanticMargin` (alte gespeicherte Werte werden ignoriert).
+
+### Tests
+- Neu: `tests/test-margin.js` (Margin-Entscheidung, Grenzwerte, Synonym-Kannibalisierung) und `tests/test-routes.js` (Routen-Matrix, Altformat-Kompatibilität).
+
+## [1.2.3] — 2026-10-16
+
+### Behoben
+- Semantischer Bildabgleich auf YouTube funktioniert wieder: YouTube verbietet Content-Scripts per Trusted Types/CSP das Erzeugen von Workern (`Worker constructor: Sink type mismatch … blocked by CSP`), wodurch der Kanal bisher still ausfiel. Der SigLIP-Worker läuft jetzt in der Background-Seite (`semantic-host.js`); Content-Scripts sprechen nur noch per Messaging mit ihm.
+- Der SigLIP-Score läuft auf WASM rund 3× schneller (≈15 s → ≈5 s pro Vorschaubild): Batch-Padding nur auf die längste Sequenz statt 64 Tokens pro Prompt. Ergebnisse werden pro Bild-URL und Wortlisten-Version gecacht.
+- Ein Worker für alle Tabs statt einem pro Tab; Lazy-Init beim ersten Bildvergleich, Abbau nach 10 Minuten Leerlauf, Modell-/Worker-Fehler werden einmal gemeldet statt pro Karte.
+- Shorts-Regale im neuen Layout (`ytm-shorts-lockup-view-model-v2`) werden wieder erkannt.
+- Von YouTube neu gerenderte Karten (Shelf-/Feed-Recycling) oder Karten, deren Klassen YouTube zurücksetzt, verlieren den Ausblendstatus nicht mehr dauerhaft: bereits getroffene Videos werden lokal erneut ausgeblendet (Re-Hide-Sweep in `scanNow` + Beobachtung von `class`-Änderungen) — ohne zweites offizielles Signal und ohne den Zähler erneut zu erhöhen.
+- Badge-Zähler verlor Inkremente bei parallelen Treffern (nicht serialisiertes Lesen/Schreiben im Background).
+
 ## [1.2.2] — 2026-10-16
 
 ### Hinzugefügt

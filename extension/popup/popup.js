@@ -7,7 +7,7 @@ console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in de
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -20,14 +20,28 @@ const DEFAULT_SETTINGS = {
   mode: 'dismiss',
   ocrLangs: 'eng+rus',
   hashThreshold: 8,
-  semanticThreshold: 0.15,
+  semanticMargin: 0.1,
   actionDelayMs: 2500,
   speechLang: 'ru',
   speechModel: 'models/ggml-base.bin',
   speechMaxSeconds: 120
 };
 
-let keywords = [];   /* [{ text, enabled }] */
+/* Erkennungskanäle je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1):
+   '' = Auto (alle Kanäle, bisheriges Verhalten). */
+const ROUTE_OPTIONS = [
+  ['', 'Auto'],
+  ['title', 'Titel'],
+  ['ocr', 'OCR'],
+  ['image', 'Bild'],
+  ['hybrid', 'Hybrid']
+];
+
+let keywords = [];   /* [{ text, enabled, route? }] */
+
+function normRoute(r) {
+  return (r === 'title' || r === 'ocr' || r === 'image' || r === 'hybrid') ? r : '';
+}
 
 function status(msg, ok = true) {
   const el = $('status');
@@ -39,8 +53,8 @@ function status(msg, ok = true) {
 function normalizeKeywords(list) {
   return (list || [])
     .map(k => typeof k === 'string'
-      ? { text: k.trim(), enabled: true }
-      : { text: String(k.text || '').trim(), enabled: k.enabled !== false })
+      ? { text: k.trim(), enabled: true, route: '' }
+      : { text: String(k.text || '').trim(), enabled: k.enabled !== false, route: normRoute(k.route) })
     .filter(k => k.text);
 }
 
@@ -89,13 +103,25 @@ function renderKeywords() {
       schedulePersist(700);
     };
 
+    const route = document.createElement('select');
+    route.className = 'route';
+    ROUTE_OPTIONS.forEach(([val, label]) => {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      route.appendChild(opt);
+    });
+    route.value = kw.route || '';
+    route.title = 'Erkennungskanal (Auto = alle)';
+    route.onchange = () => { kw.route = route.value; schedulePersist(0); };
+
     const del = document.createElement('button');
     del.className = 'del';
     del.textContent = '×';
     del.title = 'Löschen';
     del.onclick = () => { keywords.splice(idx, 1); renderKeywords(); schedulePersist(0); };
 
-    row.append(cb, inp, del);
+    row.append(cb, inp, route, del);
     box.appendChild(row);
   });
   updateCount();
@@ -111,7 +137,7 @@ function addKeyword(text) {
     status('Dieses Wort ist bereits vorhanden', false);
     return false;
   }
-  keywords.push({ text: v, enabled: true });
+  keywords.push({ text: v, enabled: true, route: '' });
   renderKeywords();
   schedulePersist(0);
   return true;
@@ -143,17 +169,22 @@ async function persist() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
-  const semanticRaw = Number(settings.semanticThreshold);
-  settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.05 && semanticRaw <= 0.95
-    ? semanticRaw
-    : DEFAULT_SETTINGS.semanticThreshold;
+  const marginRaw = Number(settings.semanticMargin);
+  settings.semanticMargin = Number.isFinite(marginRaw) && marginRaw >= 0 && marginRaw <= 1
+    ? marginRaw
+    : DEFAULT_SETTINGS.semanticMargin;
   const hashRaw = Number(settings.hashThreshold);
   settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0
     ? hashRaw
     : DEFAULT_SETTINGS.hashThreshold;
   settings.logMatch = true;
   const kws = keywords
-    .map(k => ({ text: String(k.text || '').trim(), enabled: k.enabled !== false }))
+    .map(k => {
+      const o = { text: String(k.text || '').trim(), enabled: k.enabled !== false };
+      const r = normRoute(k.route);
+      if (r) o.route = r;   /* '' = Auto → Feld weglassen (Altformat-kompatibel) */
+      return o;
+    })
     .filter(k => k.text);
   try {
     await api.storage.local.set({ settings, keywords: kws });

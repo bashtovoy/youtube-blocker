@@ -13,7 +13,7 @@
     checkSpeech: false,
     hideMembersOnly: false,
     ocrLangs: 'eng+rus',
-    semanticThreshold: 0.15,
+    semanticMargin: 0.1,
     speechLang: 'ru',
     speechModel: 'models/ggml-base.bin',
     speechMaxSeconds: 120,
@@ -24,7 +24,8 @@
   const state = {
     settings: Object.assign({}, DEFAULTS),
     keywords: [],
-    processed: new Set(),
+    processed: new Map(),   /* key → Grund (null = kein Treffer); erlaubt Re-Hide nach YouTube-Re-Render */
+    hiddenIds: new Set(),   /* videoIds, die wir lokal ausgeblendet haben (für Re-Hide-Sweep) */
     inFlight: new Set(),
     lastActionAt: 0,
     observer: null,
@@ -34,8 +35,13 @@
     imageListeners: new WeakSet(),
     scanTimer: null,
     imageCache: new Map(),
+    titleKeywords: [],
+    imageKeywords: [],
+    ocrKeywords: [],
     semanticKeywordsKey: '',
-    semanticReady: false
+    semanticReady: false,
+    semanticFailed: false,
+    ocrFailed: false
   };
 
   const log = (...a) => {
@@ -66,13 +72,25 @@
   async function loadConfig() {
     const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [] });
     state.settings = Object.assign({}, DEFAULTS, data.settings || {});
-    state.keywords = (data.keywords || [])
+    const kwObjects = (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
-      .filter(k => k && k.text && k.enabled !== false)
-      .map(k => k.text);
+      .filter(k => k && k.text && k.enabled !== false);
+    state.keywords = kwObjects.map(k => String(k.text));
+    /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelKeywords):
+       ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. */
+    state.titleKeywords = window.YB.matcher.channelKeywords(kwObjects, 'title');
+    state.imageKeywords = window.YB.matcher.channelKeywords(kwObjects, 'image');
+    state.ocrKeywords = window.YB.matcher.channelKeywords(kwObjects, 'ocr');
     state.semanticKeywordsKey = '';
     state.semanticReady = false;
-    log('config loaded', { keywords: state.keywords.length });
+    state.semanticFailed = false;
+    state.ocrFailed = false;
+    log('config loaded', {
+      keywords: state.keywords.length,
+      title: state.titleKeywords.length,
+      image: state.imageKeywords.length,
+      ocr: state.ocrKeywords.length
+    });
     if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
       api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }).catch(() => {});
       initSpeechSoon();
@@ -99,7 +117,11 @@
     'ytd-rich-item-renderer',
     'ytd-compact-video-renderer',
     'ytd-playlist-panel-video-renderer',
-    'ytd-reel-item-renderer'
+    'ytd-reel-item-renderer',
+    /* Shorts-Regale im neuen View-Model-Layout (grid-shelf-view-model):
+       ytm-shorts-lockup-view-model-v2 umschließt ytm-shorts-lockup-view-model. */
+    'ytm-shorts-lockup-view-model-v2',
+    'ytm-shorts-lockup-view-model'
   ].join(', ');
 
   function bestThumbUrl(img, videoId) {
@@ -212,6 +234,7 @@
         }
       }
       window.YB.dismiss.hideItem(v.item);
+      state.hiddenIds.add(v.videoId);
       log('hidden locally', v.videoId, '←', reason);
       api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
       return false;
@@ -221,50 +244,73 @@
   function matchTitle(v) {
     if (!state.settings.checkTitle) return null;
     const opt = { fuzzy: state.settings.fuzzy };
-    const t = window.YB.matcher.matchKeywords(v.title, state.keywords, opt);
+    const t = window.YB.matcher.matchKeywords(v.title, state.titleKeywords, opt);
     if (t) return { source: 'title', keyword: t };
     if (v.channel) {
-      const c = window.YB.matcher.matchKeywords(v.channel, state.keywords, opt);
+      const c = window.YB.matcher.matchKeywords(v.channel, state.titleKeywords, opt);
       if (c) return { source: 'channel', keyword: c };
     }
     return null;
   }
 
   async function ensureSemanticTexts() {
-    if (!state.settings.checkSemanticImage || !state.keywords.length) return false;
-    const key = state.keywords.join('\u0001');
+    if (!state.settings.checkSemanticImage || !state.imageKeywords.length) return false;
+    const key = state.imageKeywords.join('\u0001');
     if (state.semanticReady && state.semanticKeywordsKey === key) return true;
-    await window.YB.semantic.setTexts(state.keywords);
+    await window.YB.semantic.setTexts(state.imageKeywords);
     state.semanticKeywordsKey = key;
     state.semanticReady = true;
-    log('semantic text concepts ready', state.keywords.length);
+    log('semantic text concepts ready', state.imageKeywords.length);
     return true;
   }
 
   async function matchThumbnail(v) {
-    const semanticNeeded = state.settings.checkSemanticImage && state.keywords.length > 0;
-    const ocrNeeded = state.settings.checkThumbOcr && state.keywords.length > 0;
+    const semanticNeeded = state.settings.checkSemanticImage && state.imageKeywords.length > 0 && !state.semanticFailed;
+    const ocrNeeded = state.settings.checkThumbOcr && state.ocrKeywords.length > 0 && !state.ocrFailed;
     if (!semanticNeeded && !ocrNeeded) return null;
 
     if (semanticNeeded) {
       try {
         await ensureSemanticTexts();
         const scores = await window.YB.semantic.scoreImage(v.thumb);
-        const m = window.YB.semantic.bestTextMatch(scores, state.settings.semanticThreshold);
-        if (m) return {
-          source: 'semantic-image',
-          keyword: m.text,
-          score: Number(m.score.toFixed(4))
-        };
-      } catch (e) { log('semantic image fail', v.videoId, e.message); }
+        const m = window.YB.semantic.marginDecision(scores, state.settings.semanticMargin);
+        if (m) {
+          /* Diagnose (Punkt 10 des Routing-Dokuments): Ziel-Kosinus, beste
+             Konkurrenz, kontrastive Margin, Schwelle und Profilkennung. */
+          log('semantic hit', m.text,
+            'cos=' + m.cos.toFixed(4),
+            'ref=' + (m.refText || '-') + ' ' + (Number.isFinite(m.refCos) ? m.refCos.toFixed(4) : '-'),
+            'margin=' + m.margin.toFixed(4),
+            'thr=' + Number(state.settings.semanticMargin).toFixed(3),
+            'profile=margin-v1');
+          return {
+            source: 'semantic-image',
+            keyword: m.text,
+            score: Number(m.cos.toFixed(4)),
+            margin: Number(m.margin.toFixed(4))
+          };
+        }
+      } catch (e) {
+        /* Fatale Fehler (Worker/Modell) einmal melden und den Kanal für diese
+           Seitensession abschalten statt pro Karte erneut zu scheitern. */
+        if (e.fatal) {
+          state.semanticFailed = true;
+          log('semantic channel unavailable:', e.message);
+        } else {
+          log('semantic image fail', v.videoId, e.message);
+        }
+      }
     }
 
     if (ocrNeeded) {
       try {
         const text = await window.YB.ocr.recognizeUrl(v.thumb, thumbKey(v) + ':' + state.settings.ocrLangs, state.settings.ocrLangs);
-        const kw = window.YB.matcher.matchKeywords(text, state.keywords, { fuzzy: false });
+        const kw = window.YB.matcher.matchKeywords(text, state.ocrKeywords, { fuzzy: false });
         if (kw) return { source: 'ocr', keyword: kw };
-      } catch (e) { log('ocr fail', v.videoId, e.message); }
+      } catch (e) {
+        state.ocrFailed = true;
+        log('ocr channel unavailable:', e.message);
+      }
     }
     return null;
   }
@@ -284,36 +330,51 @@
     await waitForImage(v.img).catch(() => false);
     const current = extract(v.item) || v;
     const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
-    if (state.processed.has(key) || state.inFlight.has(key)) return;
+    if (state.inFlight.has(key)) return;
+    if (state.processed.has(key)) {
+      /* YouTube rendert Karten neu (Shelf-/Feed-Recycling) und verliert dabei unsere Klasse.
+         Bereits getroffene Karten lokal erneut ausblenden — ohne zweites offizielles Signal
+         und ohne den Zähler erneut zu erhöhen. */
+      const reason = state.processed.get(key);
+      if (reason && !current.item.classList.contains('yb-hidden')) {
+        window.YB.dismiss.hideItem(current.item);
+        log('re-hidden (re-render)', current.videoId, '←', reason);
+      }
+      if (state.io && current.item) state.io.unobserve(current.item);
+      return;
+    }
     state.inFlight.add(key);
     try {
       const badgeHit = matchBadge(current);
       if (badgeHit) {
-        state.processed.add(key);
+        state.processed.set(key, badgeHit);
         await applyAction(current, badgeHit);
         return;
       }
       const titleHit = matchTitle(current);
       if (titleHit) {
-        state.processed.add(key);
-        await applyAction(current, titleHit.source + ':' + titleHit.keyword);
+        const reason = titleHit.source + ':' + titleHit.keyword;
+        state.processed.set(key, reason);
+        await applyAction(current, reason);
         return;
       }
       const thumbHit = await matchThumbnail(current);
       if (thumbHit) {
-        state.processed.add(key);
-        await applyAction(current, thumbHit.source + ':' + thumbHit.keyword);
+        const reason = thumbHit.source + ':' + thumbHit.keyword;
+        state.processed.set(key, reason);
+        await applyAction(current, reason);
         return;
       }
       if (state.settings.checkSpeech) {
         const speechHit = await matchSpeech(current);
         if (speechHit) {
-          state.processed.add(key);
-          await applyAction(current, speechHit.source + ':' + speechHit.keyword);
+          const reason = speechHit.source + ':' + speechHit.keyword;
+          state.processed.set(key, reason);
+          await applyAction(current, reason);
           return;
         }
       }
-      state.processed.add(key);
+      state.processed.set(key, null);
     } finally {
       state.inFlight.delete(key);
       if (state.io && current.item) state.io.unobserve(current.item);
@@ -353,11 +414,32 @@
     state.imageCache.clear();
   }
 
+  /* Nur die videoId — deutlich billiger als extract(); für den Re-Hide-Sweep. */
+  function quickVideoId(item) {
+    const a = item.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
+    if (!a) return null;
+    const href = a.getAttribute('href') || '';
+    const m = href.match(/[?&]v=([\w-]{11})/) || href.match(/\/shorts\/([\w-]{11})/);
+    return m ? m[1] : null;
+  }
+
   function scanNow() {
     if (!state.settings.enabled || !hasDetectionTargets()) return;
     const obs = ensureIO();
     for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
-      if (item.classList.contains('yb-hidden') || state.observed.has(item)) continue;
+      if (item.classList.contains('yb-hidden')) continue;
+      /* Bereits getroffene Videos: YouTube kann Karten neu rendern oder Klassen zurücksetzen
+         (Attribute-Mutation, kein childList) — dann fehlt yb-hidden, obwohl das Video schon
+         ausgeblendet war. Lokal erneut ausblenden: ohne Signal, ohne Zähler. */
+      if (state.hiddenIds.size) {
+        const vid = quickVideoId(item);
+        if (vid && state.hiddenIds.has(vid)) {
+          window.YB.dismiss.hideItem(item);
+          log('re-hidden (re-render)', vid, '← hidden');
+          continue;
+        }
+      }
+      if (state.observed.has(item)) continue;
       state.observed.add(item);
       obs.observe(item);
     }
@@ -371,9 +453,14 @@
   function startObservers() {
     if (state.observer) { scanNow(); return; }
     state.observer = new MutationObserver(muts => {
-      for (const m of muts) if (m.addedNodes && m.addedNodes.length) { scheduleScan(); return; }
+      for (const m of muts) {
+        if (m.type === 'childList' && m.addedNodes && m.addedNodes.length) { scheduleScan(); return; }
+        /* class-Attribut einer Karte geändert (z. B. YouTube setzt Klassen neu) */
+        if (m.type === 'attributes' && m.target && m.target.matches && m.target.matches(ITEM_SELECTOR)
+            && !m.target.classList.contains('yb-hidden')) { scheduleScan(); return; }
+      }
     });
-    state.observer.observe(document.documentElement, { childList: true, subtree: true });
+    state.observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     scanNow();
   }
 
@@ -421,7 +508,7 @@
         });
       }
       console.table(out);
-      return { total: out.length, matches: out.filter(r => r.status === 'MATCH').length };
+      return { total: out.length, matches: out.filter(r => r.status === 'MATCH').length, items: out };
     }
   };
 
