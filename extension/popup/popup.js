@@ -48,7 +48,7 @@ let counts = { dis: 0, hid: 0 };   /* Kopfzeile: YouTube-Signale / lokale Ausble
 /* Status des Semantik-Hosts (semantic-host.js speichert unter „semStatus“):
    zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft. */
 function semModelStatusText(st) {
-  if (!st) return '';
+  if (!st) return t('sem_idle');   /* noch nie gelaufen → Hinweistext statt leerer Zeile */
   if (st.state === 'error') return t('sem_error', { msg: st.error || t('unknown') });
   if (st.state === 'ready') {
     return t('sem_ready', { device: st.device === 'webgpu' ? 'WebGPU' : 'WASM' });
@@ -121,6 +121,11 @@ async function load() {
   lastSemStatus = data.semStatus;
   /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
   applyLanguage(i18n.normalize(s.uiLang) || i18n.detect(api));
+  /* Live-Status beim Host erfragen: der gespeicherte semStatus kann fehlen oder
+     veraltet sein (z. B. direkt nach dem Browserstart, bevor etwas lief). */
+  api.runtime.sendMessage({ type: 'ybsem', op: 'status' })
+    .then(res => { if (res && res.ok && res.status) renderSemStatus(res.status); })
+    .catch(() => { /* Host nicht erreichbar → gespeicherter Stand bleibt stehen */ });
 }
 
 function updateCount() {

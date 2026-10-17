@@ -3,6 +3,11 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] — 2026-10-17
+
+### Behoben
+- **Semantik-Status im Popup ist jetzt immer sichtbar.** Vorher blieb die Statuszeile nach einem frischen Start leer, bis die erste Bildprüfung lief — der Hintergrundprozess veröffentlicht den Status jetzt schon beim Start, das Popup zeigt ohne gespeicherten Status den Hinweistext statt einer leeren Zeile und fragt beim Öffnen zusätzlich den Live-Status beim Hintergrundprozess ab.
+
 ## [1.5.0] — 2026-10-17
 
 ### Hinzugefügt

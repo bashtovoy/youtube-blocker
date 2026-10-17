@@ -291,4 +291,9 @@
   }
 
   self.YB_SEM_HOST = { ensure, score, status, reset: () => terminateWorker('reset') };
+
+  /* Status sofort beim Start veröffentlichen: Vor der ersten Bildprüfung gibt es
+     sonst gar keinen semStatus-Eintrag und die Statuszeile im Popup bliebe leer
+     (state „off“ → Hinweistext statt leerer Zeile, siehe popup.js). */
+  saveStatus();
 })();
