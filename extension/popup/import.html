@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Wortlisten-Import — Youtube Blocker</title>
+  <title data-i18n="import_doc_title">Wortlisten-Import — Youtube Blocker</title>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -27,19 +27,20 @@
   </style>
 </head>
 <body>
-  <h1>Wortliste importieren</h1>
-  <p class="hint">Wähle eine JSON-Datei — die Liste ersetzt die aktuelle und wird sofort in allen YouTube-Tabs übernommen.</p>
+  <h1 data-i18n="import_h1">Wortliste importieren</h1>
+  <p class="hint" data-i18n="import_hint">Wähle eine JSON-Datei — die Liste ersetzt die aktuelle und wird sofort in allen YouTube-Tabs übernommen.</p>
 
   <div class="card">
-    <label class="filebtn">JSON-Datei wählen…<input type="file" id="file" accept="application/json,.json"></label>
+    <label class="filebtn"><span data-i18n="import_pick">JSON-Datei wählen…</span><input type="file" id="file" accept="application/json,.json"></label>
     <div id="status"></div>
     <ul class="tips">
-      <li>Geeignet ist die Datei „JSON exportieren“ aus dieser Erweiterung.</li>
-      <li>Format <code>{ "keywords": ["krieg", …] }</code> oder einfach ein Array <code>["krieg", …]</code>.</li>
-      <li>Einträge dürfen Strings oder Objekte sein: <code>{ "text": "…", "enabled": true }</code>.</li>
+      <li data-i18n="import_tip1">Geeignet ist die Datei „JSON exportieren“ aus dieser Erweiterung.</li>
+      <li><span data-i18n="import_tip2_a">Format</span> <code data-i18n="import_fmt_arr1">{ "keywords": ["krieg", …] }</code> <span data-i18n="import_tip2_b">oder einfach ein Array</span> <code data-i18n="import_fmt_arr2">["krieg", …]</code>.</li>
+      <li><span data-i18n="import_tip3_a">Einträge dürfen Strings oder Objekte sein:</span> <code data-i18n="import_fmt_obj">{ "text": "…", "enabled": true }</code>.</li>
     </ul>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="import.js"></script>
 </body>
 </html>

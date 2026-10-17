@@ -4,6 +4,16 @@
 
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
+const i18n = YB.i18n;
+const t = (key, vars) => i18n.t(key, vars);
+
+/* Oberflächensprache aus den Einstellungen übernehmen (Erstlauf: Browsersprache) */
+async function initLanguage() {
+  try {
+    const { settings } = await api.storage.local.get({ settings: {} });
+    i18n.set(i18n.normalize(settings && settings.uiLang) || i18n.detect(api));
+  } catch (_) { /* storage nicht lesbar → deutsche Defaults */ }
+}
 
 function status(msg, ok = true) {
   const el = $('status');
@@ -46,15 +56,18 @@ $('file').onchange = async (e) => {
     const raw = Array.isArray(data)
       ? data
       : (data && typeof data === 'object' ? data.keywords : null);
-    if (!Array.isArray(raw)) throw new Error('Die Datei enthält keine Wortliste (erwartet wird ein Array oder { "keywords": [...] })');
+    if (!Array.isArray(raw)) throw new Error(t('import_no_list'));
     const kws = normalizeKeywords(raw);
-    if (!kws.length) throw new Error('Die Liste ist leer — die Datei enthält keine nicht-leeren Wörter');
+    if (!kws.length) throw new Error(t('import_empty_list'));
     const settings = (data && typeof data === 'object' && data.settings) ? data.settings : {};
+    if (!i18n.normalize(settings.uiLang)) settings.uiLang = i18n.current;   /* gewählte Oberflächensprache behalten */
     await api.storage.local.set({ settings, keywords: kws });
     await applyToTabs();
-    status(`Importierte Wörter: ${kws.length}. Dieser Tab kann geschlossen werden.`);
+    status(t('import_ok', { n: kws.length }));
   } catch (err) {
-    status('Importfehler: ' + err.message, false);
+    status(t('import_error', { msg: err.message }), false);
   }
   e.target.value = '';
 };
+
+initLanguage();

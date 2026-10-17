@@ -3,11 +3,15 @@
 
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 const $ = id => document.getElementById(id);
+const i18n = YB.i18n;
+const t = (key, vars) => i18n.t(key, vars);
 console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+/* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
+   (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
+const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -28,38 +32,40 @@ const DEFAULT_SETTINGS = {
 };
 
 /* Erkennungskanäle je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1):
-   '' = Auto (alle Kanäle, bisheriges Verhalten). */
+   '' = Auto (alle Kanäle, bisheriges Verhalten). Zweiter Wert = i18n-Schlüssel. */
 const ROUTE_OPTIONS = [
-  ['', 'Auto'],
-  ['title', 'Titel'],
-  ['ocr', 'OCR'],
-  ['image', 'Bild'],
-  ['hybrid', 'Hybrid']
+  ['', 'route_auto'],
+  ['title', 'route_title_lbl'],
+  ['ocr', 'route_ocr'],
+  ['image', 'route_image'],
+  ['hybrid', 'route_hybrid']
 ];
 
 let keywords = [];   /* [{ text, enabled, route? }] */
+let lastSemStatus = null;   /* für Neu-Beschriftung beim Sprachwechsel */
+let counts = { dis: 0, hid: 0 };   /* Kopfzeile: YouTube-Signale / lokale Ausblendungen */
 
 /* Status des Semantik-Hosts (semantic-host.js speichert unter „semStatus“):
    zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft. */
 function semModelStatusText(st) {
   if (!st) return '';
-  if (st.state === 'error') return 'Semantik-Modelle: Fehler — ' + (st.error || 'unbekannt');
+  if (st.state === 'error') return t('sem_error', { msg: st.error || t('unknown') });
   if (st.state === 'ready') {
-    return 'Semantik-Modelle bereit (' + (st.device === 'webgpu' ? 'WebGPU' : 'WASM') + ') · lokal, kein Upload';
+    return t('sem_ready', { device: st.device === 'webgpu' ? 'WebGPU' : 'WASM' });
   }
   if (st.state === 'loading') {
     const d = st.dl;
     if (d && d.total > 0) {
       const mb = n => (n / 1048576).toFixed(0);
-      return 'Semantik-Modelle werden geladen … ' + Math.round(d.progress) + ' % ('
-        + mb(d.loaded) + '/' + mb(d.total) + ' MB, einmalig)';
+      return t('sem_loading', { p: Math.round(d.progress), loaded: mb(d.loaded), total: mb(d.total) });
     }
-    return 'Semantik-Modelle werden vorbereitet …';
+    return t('sem_preparing');
   }
-  return 'Semantik-Modelle: werden beim ersten Vorschaubild vorbereitet (einmaliger Download möglich, danach offline)';
+  return t('sem_idle');
 }
 
 function renderSemStatus(st) {
+  lastSemStatus = st;
   const el = $('semModelStatus');
   if (el) el.textContent = semModelStatusText(st);
 }
@@ -67,6 +73,22 @@ function renderSemStatus(st) {
 api.storage.local.onChanged.addListener(changes => {
   if (changes.semStatus) renderSemStatus(changes.semStatus.newValue);
 });
+
+function renderCounts() {
+  $('blocked').textContent = (counts.dis || counts.hid)
+    ? t('counter_yt_local', { dis: counts.dis, hid: counts.hid })
+    : '';
+}
+
+/* Sprache anwenden: Wörterbuch aufs DOM plus alle dynamischen Teile neu beschriften */
+function applyLanguage(lang) {
+  i18n.set(lang);
+  $('uiLang').value = i18n.current;
+  $('kwList').dataset.empty = t('kw_empty');
+  renderKeywords();
+  renderSemStatus(lastSemStatus);
+  renderCounts();
+}
 
 function normRoute(r) {
   return (r === 'title' || r === 'ocr' || r === 'image' || r === 'hybrid') ? r : '';
@@ -93,17 +115,17 @@ async function load() {
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
-  VALUE_IDS.forEach(id => { $(id).value = s[id]; });
+  VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
-  renderKeywords();
-  renderSemStatus(data.semStatus);
-  const dis = data.dismissedCount || 0, hid = data.hiddenCount || 0;
-  $('blocked').textContent = (dis || hid) ? `YouTube: ${dis} · lokal: ${hid}` : '';
+  counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
+  lastSemStatus = data.semStatus;
+  /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
+  applyLanguage(i18n.normalize(s.uiLang) || i18n.detect(api));
 }
 
 function updateCount() {
   const on = keywords.filter(k => k.enabled !== false && String(k.text).trim()).length;
-  $('kwCount').textContent = keywords.length ? `gesamt: ${keywords.length} · aktiv: ${on}` : '';
+  $('kwCount').textContent = keywords.length ? t('kw_count', { n: keywords.length, on }) : '';
 }
 
 function renderKeywords() {
@@ -116,7 +138,7 @@ function renderKeywords() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = kw.enabled !== false;
-    cb.title = 'Dieses Wort verwenden';
+    cb.title = t('kw_use_title');
     cb.onchange = () => {
       kw.enabled = cb.checked;
       row.classList.toggle('off', !cb.checked);
@@ -135,20 +157,20 @@ function renderKeywords() {
 
     const route = document.createElement('select');
     route.className = 'route';
-    ROUTE_OPTIONS.forEach(([val, label]) => {
+    ROUTE_OPTIONS.forEach(([val, lblKey]) => {
       const opt = document.createElement('option');
       opt.value = val;
-      opt.textContent = label;
+      opt.textContent = t(lblKey);
       route.appendChild(opt);
     });
     route.value = kw.route || '';
-    route.title = 'Erkennungskanal (Auto = alle)';
+    route.title = t('route_title');
     route.onchange = () => { kw.route = route.value; schedulePersist(0); };
 
     const del = document.createElement('button');
     del.className = 'del';
     del.textContent = '×';
-    del.title = 'Löschen';
+    del.title = t('del_title');
     del.onclick = () => { keywords.splice(idx, 1); renderKeywords(); schedulePersist(0); };
 
     row.append(cb, inp, route, del);
@@ -164,7 +186,7 @@ function addKeyword(text) {
   const v = String(text || '').trim();
   if (!v) return false;
   if (keywords.some(k => k.text.toLowerCase() === v.toLowerCase())) {
-    status('Dieses Wort ist bereits vorhanden', false);
+    status(t('kw_dup'), false);
     return false;
   }
   keywords.push({ text: v, enabled: true, route: '' });
@@ -178,12 +200,12 @@ let dirty = false;
 
 function markDirty() {
   dirty = true;
-  status('Speichern…');
+  status(t('save_saving'));
 }
 
 function markSaved() {
   dirty = false;
-  status('Gespeichert, Tabs aktualisiert');
+  status(t('save_saved'));
 }
 
 /* Verzögertes Speichern: Jede Änderung speichert selbst und benachrichtigt die Tabs.
@@ -224,7 +246,7 @@ async function persist() {
     markSaved();
   } catch (e) {
     dirty = true;
-    status('Speichern fehlgeschlagen: ' + e.message, false);
+    status(t('save_error', { msg: e.message }), false);
   }
   return kws;
 }
@@ -246,9 +268,15 @@ document.querySelector('details.bulk').addEventListener('toggle', (e) => {
 SETTING_IDS.forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => schedulePersist(0)); });
 VALUE_IDS.forEach(id => {
   const el = $(id);
-  if (!el) return;
+  if (!el || id === 'uiLang') return;   /* uiLang: eigener Listener unten (Sprache sofort anwenden) */
   const isText = el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number');
   el.addEventListener(isText ? 'input' : 'change', () => schedulePersist(isText ? 700 : 0));
+});
+
+/* Sprachwechsel: Oberfläche sofort umstellen und die Wahl speichern */
+$('uiLang').addEventListener('change', () => {
+  applyLanguage(i18n.normalize($('uiLang').value) || 'de');
+  schedulePersist(0);
 });
 
 /* Wird das Popup mit ausstehendem Debounce geschlossen, wird das Speichern nachgeholt */

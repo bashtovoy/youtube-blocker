@@ -3,6 +3,17 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-10-17
+
+### Hinzugefügt
+- **Wählbare Oberflächensprache (DE/EN/RU/UK)**: Im Popup lässt sich die Sprache der Oberfläche umschalten — auch die Import-Seite folgt ihr. Ohne gespeicherte Wahl wird beim ersten Öffnen die Browsersprache übernommen (Fallback Deutsch); danach gilt die Auswahl. Sie wird mit den Einstellungen gespeichert (`settings.uiLang`) und im JSON-Export/-Import mitgeführt.
+- Eigene Übersetzungsschicht `popup/i18n.js` statt `browser.i18n`: nötig, weil Firefox-`i18n` an die Browsersprache gebunden ist und nicht zur Laufzeit umschaltet.
+- Test `tests/test-i18n.js`: prüft Schlüssel- und Platzhalter-Parität der vier Wörterbücher sowie die Abdeckung aller im HTML/JS verwendeten Schlüssel.
+
+### Geändert
+- Popup- und Import-Texte sind mit `data-i18n`-Attributen markiert; die deutschen Texte bleiben unverändert.
+- JSON-Import ohne `uiLang` (alte Exporte) behält die aktuell gewählte Oberflächensprache.
+
 ## [1.4.0] — 2026-10-17
 
 ### Hinzugefügt

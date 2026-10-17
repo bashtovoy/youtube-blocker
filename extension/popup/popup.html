@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
+  <title>Youtube Blocker</title>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -44,7 +45,7 @@
     #status { color: #12a150; min-height: 16px; font-size: 12px; font-weight: 600; }
     .hint { color: #8a839c; font-size: 11px; }
     .kwlist { max-height: 200px; overflow-y: auto; border: 1px solid #eadfe9; border-radius: 10px; background: #fff; margin-bottom: 6px; }
-    .kwlist:empty::after { content: "Liste ist leer — Wörter unten hinzufügen \1F331"; color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
+    .kwlist:empty::after { content: attr(data-empty); color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
     .kwrow { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #f2ecf6; }
     .kwrow:last-child { border-bottom: 0; }
     .kwrow:hover { background: #faf6ff; }
@@ -72,83 +73,92 @@
     <span id="blocked"></span>
   </header>
   <main>
-    <label class="row"><input type="checkbox" id="enabled"> Erweiterung aktiviert</label>
+    <label class="row"><input type="checkbox" id="enabled"> <span data-i18n="enabled">Erweiterung aktiviert</span></label>
+    <label class="row"><span data-i18n="ui_lang_label">Sprache der Oberfläche:</span>
+      <select id="uiLang">
+        <option value="de">Deutsch</option>
+        <option value="en">English</option>
+        <option value="ru">Русский</option>
+        <option value="uk">Українська</option>
+      </select>
+    </label>
 
     <fieldset>
-      <legend>Wortliste zum Blockieren</legend>
-      <div id="kwList" class="kwlist"></div>
+      <legend data-i18n="kw_legend">Wortliste zum Blockieren</legend>
+      <div id="kwList" class="kwlist" data-empty="Liste ist leer — Wörter unten hinzufügen 🌱"></div>
       <div class="kwadd">
-        <input type="text" id="kwInput" placeholder="neues Wort oder Satz, Enter — hinzufügen">
-        <button id="kwAdd" class="secondary">Hinzufügen</button>
+        <input type="text" id="kwInput" data-i18n-placeholder="kw_input_ph" placeholder="neues Wort oder Satz, Enter — hinzufügen">
+        <button id="kwAdd" class="secondary" data-i18n="kw_add">Hinzufügen</button>
       </div>
       <div class="kwcount" id="kwCount"></div>
       <details class="bulk">
-        <summary>Massenbearbeitung</summary>
-        <textarea id="keywordsBulk" placeholder="ein Wort/Satz pro Zeile"></textarea>
-        <div class="rowbtns"><button id="kwApplyBulk" class="secondary">Aus Text übernehmen</button></div>
+        <summary data-i18n="kw_bulk_summary">Massenbearbeitung</summary>
+        <textarea id="keywordsBulk" data-i18n-placeholder="kw_bulk_ph" placeholder="ein Wort/Satz pro Zeile"></textarea>
+        <div class="rowbtns"><button id="kwApplyBulk" class="secondary" data-i18n="kw_bulk_apply">Aus Text übernehmen</button></div>
       </details>
-      <div class="hint">Jeder Eintrag ist ein Begriff, den die Erweiterung im Titel und semantisch im Vorschaubild sucht. Zum Beispiel: „Fußball“, „Elektroautos“, „Trump“. OCR kann zusätzlich für Text im Vorschaubild aktiviert werden.</div>
+      <div class="hint" data-i18n="kw_hint">Jeder Eintrag ist ein Begriff, den die Erweiterung im Titel und semantisch im Vorschaubild sucht. Zum Beispiel: „Fußball“, „Elektroautos“, „Trump“. OCR kann zusätzlich für Text im Vorschaubild aktiviert werden.</div>
     </fieldset>
 
     <fieldset>
-      <legend>Was geprüft wird</legend>
-      <label class="row"><input type="checkbox" id="checkTitle"> Videotitel</label>
-      <label class="row"><input type="checkbox" id="checkSemanticImage"> Semantik: Liste → Bild (SigLIP)</label>
+      <legend data-i18n="checks_legend">Was geprüft wird</legend>
+      <label class="row"><input type="checkbox" id="checkTitle"> <span data-i18n="check_title">Videotitel</span></label>
+      <label class="row"><input type="checkbox" id="checkSemanticImage"> <span data-i18n="check_semantic">Semantik: Liste → Bild (SigLIP)</span></label>
       <div class="hint" id="semModelStatus"></div>
-      <label class="row"><input type="checkbox" id="checkThumbOcr"> OCR: Text im Vorschaubild</label>
-      <label class="row"><input type="checkbox" id="checkSpeech"> Sprache im Video (Whisper, aufwendig)</label>
-      <label class="row"><input type="checkbox" id="hideMembersOnly"> „Members only“ ausblenden (Mitglieder-Badge)</label>
-      <label class="row"><input type="checkbox" id="fuzzy"> Unscharfer Vergleich (Tippfehler, Fälle)</label>
+      <label class="row"><input type="checkbox" id="checkThumbOcr"> <span data-i18n="check_ocr">OCR: Text im Vorschaubild</span></label>
+      <label class="row"><input type="checkbox" id="checkSpeech"> <span data-i18n="check_speech">Sprache im Video (Whisper, aufwendig)</span></label>
+      <label class="row"><input type="checkbox" id="hideMembersOnly"> <span data-i18n="check_members">„Members only“ ausblenden (Mitglieder-Badge)</span></label>
+      <label class="row"><input type="checkbox" id="fuzzy"> <span data-i18n="check_fuzzy">Unscharfer Vergleich (Tippfehler, Fälle)</span></label>
     </fieldset>
 
     <fieldset>
-      <legend>Aktion und Feinabstimmung</legend>
-      <label class="row">Aktion:
+      <legend data-i18n="action_legend">Aktion und Feinabstimmung</legend>
+      <label class="row"><span data-i18n="action_label">Aktion:</span>
         <select id="mode">
-          <option value="dismiss">„Kein Interesse“ (YouTube-Signal)</option>
-          <option value="hide">Nur ausblenden</option>
+          <option value="dismiss" data-i18n="mode_dismiss">„Kein Interesse“ (YouTube-Signal)</option>
+          <option value="hide" data-i18n="mode_hide">Nur ausblenden</option>
         </select>
       </label>
-      <label class="row">OCR-Sprachen:
+      <label class="row"><span data-i18n="ocr_langs_label">OCR-Sprachen:</span>
         <select id="ocrLangs">
           <option value="eng+rus">eng+rus</option>
           <option value="rus">rus</option>
           <option value="eng">eng</option>
         </select>
       </label>
-      <label class="row">dHash/pHash-Schwelle:
-        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint">(kleiner = strenger, von 64)</span>
+      <label class="row"><span data-i18n="hash_label">dHash/pHash-Schwelle:</span>
+        <input type="number" id="hashThreshold" min="0" max="30" style="width:52px"> <span class="hint" data-i18n="hash_hint">(kleiner = strenger, von 64)</span>
       </label>
-      <label class="row">Margin-Schwelle (Semantik):
-        <input type="number" id="semanticMargin" min="0" max="1" step="0.01" style="width:58px"> <span class="hint">(Kosinus-Abstand zum besten Konkurrenten; höher = strenger)</span>
+      <label class="row"><span data-i18n="margin_label">Margin-Schwelle (Semantik):</span>
+        <input type="number" id="semanticMargin" min="0" max="1" step="0.01" style="width:58px"> <span class="hint" data-i18n="margin_hint">(Kosinus-Abstand zum besten Konkurrenten; höher = strenger)</span>
       </label>
-      <label class="row">Pause zwischen Signalen, ms:
+      <label class="row"><span data-i18n="delay_label">Pause zwischen Signalen, ms:</span>
         <input type="number" id="actionDelayMs" min="500" step="250" style="width:70px">
       </label>
-      <label class="row">Sprache der Spracherkennung:
+      <label class="row"><span data-i18n="speech_lang_label">Sprache der Spracherkennung:</span>
         <select id="speechLang">
           <option value="ru" selected>ru</option>
           <option value="en">en</option>
           <option value="auto">auto</option>
         </select>
       </label>
-      <label class="row">Whisper-Modell:
+      <label class="row"><span data-i18n="speech_model_label">Whisper-Modell:</span>
         <input type="text" id="speechModel" value="models/ggml-base.bin" style="flex:1">
       </label>
-      <label class="row">Sprache analysieren, Sek.:
+      <label class="row"><span data-i18n="speech_secs_label">Sprache analysieren, Sek.:</span>
         <input type="number" id="speechMaxSeconds" min="10" max="600" step="10" value="120" style="width:70px">
       </label>
     </fieldset>
 
     <div class="rowbtns">
-      <button id="export" class="secondary">JSON exportieren</button>
-      <button id="import" class="secondary">JSON importieren</button>
+      <button id="export" class="secondary" data-i18n="export">JSON exportieren</button>
+      <button id="import" class="secondary" data-i18n="import">JSON importieren</button>
     </div>
     <div id="status"></div>
   </main>
   <script src="../matcher.js"></script>
   <script src="../image.js"></script>
   <script src="../semantic.js"></script>
+  <script src="i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

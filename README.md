@@ -73,6 +73,14 @@ Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
   `speechModel` angegeben (z. B. `models/ggml-small.bin` — für Russisch
   braucht man ein multilinguales Modell, `base.en` versteht nur Englisch).
 
+## Oberflächensprache (ab 1.5.0)
+
+Popup und Import-Seite sprechen Deutsch, Englisch, Russisch und Ukrainisch.
+Die Auswahl steht oben im Popup; ohne gespeicherte Wahl wird beim ersten
+Öffnen die Browsersprache übernommen (Fallback Deutsch). Die Wahl wird mit den
+Einstellungen gespeichert (`settings.uiLang`) und reist im JSON-Export mit —
+alte Exporte ohne `uiLang` behalten beim Import die aktuelle Sprache.
+
 ## Routen je Begriff und Kalibrierung (ab 1.3.0)
 
 Jeder Begriff im Popup trägt optional eine **Route** — den Erkennungskanal:
@@ -196,6 +204,7 @@ extension/
 ```bash
 node --check extension/*.js      # Syntax
 node tests/test-matcher.js       # Modultest des Text-Matchers
+node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 npx web-ext lint --source-dir extension
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 ```
