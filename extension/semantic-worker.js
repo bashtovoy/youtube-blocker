@@ -26,6 +26,10 @@
    deutlich speicherärmer. Siehe docs/SEMANTIC_FILTER_ROUTING.md
    (Punkte 3: roher Kosinus/kontrastive Margin, 9: Text-Embeddings einmal
    pro Revision statt pro Karte). */
+/* Zuerst einbinden: unterdrückt die kosmetische „content-length“-Warnung von
+   transformers.js (siehe quiet-warn.js) — gilt für beide Betriebsarten,
+   da auch der temporäre Text-Worker diese Datei lädt. */
+import './quiet-warn.js';
 import {
   env,
   AutoProcessor,

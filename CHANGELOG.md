@@ -3,6 +3,14 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.8] — 2026-10-18
+
+### Behoben
+- **Kosmetische „content-length“-Warnung aus dem Erweiterungsprotokoll entfernt.** transformers.js liest die Modell-Dateien als Antworten ohne Content-Length-Header und meldet das bei jedem Modellbezug per `console.warn` („Unable to determine content-length from response headers. Will expand buffer when needed.“); in chrome://extensions erschien das als Warnung der Erweiterung und wurde für einen Fehler gehalten. Der Semantik-Worker blendet jetzt genau diese eine Meldung aus (`quiet-warn.js`) — jede andere Warnung, auch von transformers.js selbst, bleibt sichtbar. Unverändert bleibt: Nach einem Erweiterungs-Update wird der WebGPU-Fehlschlag einmal neu geprüft (versionsgebundenes Merkmal), danach ist das Protokoll ruhig.
+
+### Tests
+- Neuer Unit-Test `test-quiet-warn`: nur die exakte content-length-Meldung wird verworfen, andere Warnungen passieren unverändert. Das Live-Szenario `t-sem-gpu-flag` prüft zusätzlich, dass im gesamten Ablauf keine content-length-Zeile mehr auftaucht (vorher im Baseline-Lauf als vorhanden belegt).
+
 ## [1.5.7] — 2026-10-18
 
 ### Behoben

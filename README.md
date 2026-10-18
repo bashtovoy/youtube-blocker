@@ -38,7 +38,7 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 1. `about:debugging#/runtime/this-firefox` → **Temporäres Add-on laden…**
 2. Wähle `extension/manifest.json` aus.
 
-Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `npm i -g web-ext`; das ZIP enthält keine Modelle — siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
+Für eine dauerhafte Installation (aus dem Projektwurzelverzeichnis): `web-ext build --source-dir extension --artifacts-dir web-ext-artifacts --ignore-files "models" "devreport.js"` (benötigt `web-ext`, z. B. via `npx web-ext`; Models und Dev-Brücke bleiben außen vor — das ZIP enthält keine Modelle, siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
 
 ## Installation in Chrome
 
@@ -231,6 +231,7 @@ node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler,
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen)
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
+node tests/test-quiet-warn.js    # Log-Filter: nur die content-length-Warnung wird verworfen
 node build-chrome.js             # Chrome-MV3-Sammlung → dist-chrome/ + web-ext-artifacts/*-chrome.zip
 npx web-ext lint --source-dir extension
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
