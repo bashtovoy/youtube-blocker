@@ -281,7 +281,7 @@ function spawnTextWorker(preferredDevice, labels) {
   });
 }
 
-async function setTexts(labels) {
+async function setTexts(labels, noWebgpu) {
   const list = (labels || []).map(x => String(x || '').trim()).filter(Boolean);
   if (!list.length) {
     textEmbeds = null;
@@ -291,8 +291,11 @@ async function setTexts(labels) {
   }
   /* Läuft bewusst parallel zu init() (der Host startet beide). Der Text-Turm
      bekommt je Versuch einen frischen temporären Worker — der Gerätewechsel
-     ist hier deshalb direkt möglich (kein beschädigter Laufzeit-Zustand). */
-  const preferred = device || deviceGuess();
+     ist hier deshalb direkt möglich (kein beschädigter Laufzeit-Zustand).
+     noWebgpu: Der Host hat gemerkt, dass das System keinen GPU-Adapter liefert
+     — dann sofort Wasm, statt die WebGPU-Probe samt Protokollwarnung zu
+     wiederholen. */
+  const preferred = noWebgpu ? 'wasm' : (device || deviceGuess());
   let res;
   try {
     res = await spawnTextWorker(preferred, list);
@@ -375,7 +378,7 @@ self.onmessage = async (event) => {
       const ready = await init(msg.device);
       self.postMessage({ type: 'ready', id: msg.id, ...ready });
     } else if (msg.type === 'set-texts') {
-      const labels = await setTexts(msg.texts);
+      const labels = await setTexts(msg.texts, !!msg.noWebgpu);
       self.postMessage({ type: 'texts-ready', id: msg.id, labels, embeds: textEmbeds, dim: textDim });
     } else if (msg.type === 'set-text-embeds') {
       const labels = setTextEmbeds(msg.embeds, msg.dim, msg.labels);

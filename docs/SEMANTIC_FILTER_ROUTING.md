@@ -275,3 +275,23 @@ Schreibweisen füreinander Konkurrenten sind — Migration: pro Konzept möglich
 eine Schreibweise. Daraus abgeleitet und umgesetzt: Standard-Margin **0.03**
 (Content, Popup, Import, Fallback) und WASM-Quantisierung **q8** statt q4
 (größere Trefferabstände; WebGPU bleibt q4f16).
+
+## Nachtrag 10/2026 — WebGPU-Probe ohne Adapter
+
+Stellt das System keinen GPU-Adapter bereit (etwa deaktivierte
+Grafikbeschleunigung), protokolliert Chrome jede WebGPU-Anfrage als Warnung
+„Failed to create WebGPU Context Provider“ ins Fehlerprotokoll der
+Erweiterung — auch die kurze Geräteprobe des Hosts, und nach jedem Neustart
+erneut. Der Semantik-Host merkt sich deshalb den ersten Fehlschlag
+(`semGpuFallback` in `storage.local`; das Chrome-Offscreen-Dokument erreicht
+den Storage nur über den Service Worker) und startet danach direkt in Wasm,
+ohne eine erneute GPU-Anfrage. Der gemerkte Wert trägt die Erweiterungsversion
+(etwa `wasm@1.5.7`): Nach einem Update gilt das Merkmal als veraltet und
+WebGPU wird einmal neu probiert, damit Umgebungsänderungen (etwa aktivierte
+Grafikbeschleunigung) berücksichtigt werden. Normale Browser-Neustarts
+behalten das Merkmal — bewusst ohne `onInstalled`, das in Testprofilen mit
+temporär geladener Erweiterung bei jedem Start feuert.
+
+Funktional ändert das nichts: Inferenz bleibt lokal; Wasm/q8 ist der erprobte
+Zweig, WebGPU/q4f16 bleibt der schnelle Zweig — überall dort, wo ein Adapter
+existiert.

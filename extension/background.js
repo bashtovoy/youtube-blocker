@@ -84,6 +84,10 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   /* Meldungen aus dem Offscreen-Dokument (dort gibt es keinen storage-Zugriff). */
   if (msg.target === 'sw') {
     if (msg.op === 'yb-sw-storage-set' && msg.key) api.storage.local.set({ [msg.key]: msg.payload });
+    if (msg.op === 'yb-sw-storage-get' && msg.key) {
+      api.storage.local.get(msg.key).then(d => sendResponse({ value: d[msg.key] }));
+      return true;   /* asynchroner Abschluss: Kanal offen halten */
+    }
     return;
   }
   if (msg.type === 'ybcfg') {
@@ -189,7 +193,9 @@ async function doReinjectStaleTabs(force) {
 
 /* Auslöser:
    - onInstalled: Update/Installation — immer erzwingen (deckt auch das Neuladen
-     des temporären Add-ons in Firefox ab, bei dem die Version gleich bleibt);
+     des temporären Add-ons in Firefox ab, bei dem die Version gleich bleibt).
+     Das gemerkte „kein GPU-Adapter“-Merkmal verfällt beim Update von selbst:
+     sein Wert trägt die Erweiterungsversion (semantic-host.js).
    - onStartup und Skriptstart (auch jeder MV3-Service-Worker-Start): gestempelt,
      kostet danach nur eine storage-Lesung. */
 reinjectStaleTabs();

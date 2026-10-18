@@ -81,6 +81,78 @@
     };
   }
 
+  /* ---------- Bildbeschaffung ----------
+     Tesseracts Kern (Leptonica) liest JPEG, PNG, BMP, WebP und TIFF — aber
+     kein AVIF. ytimg.com liefert Vorschaubilder inzwischen aber als AVIF
+     (auch mit „Accept: image/jpeg“), sogar unter .jpg-URLs. Bis 1.5.6 lud
+     Tesseract das Bild selbst; am AVIF scheiterte es mit „pixRead: Unknown
+     format“ („Error attempting to read image“) — die Karte blieb ohne Text
+     und chrome://extensions sammelte Fehler ein. Jetzt laden wir die Bytes
+     selbst und wandeln alles, was der Kern nicht direkt liest, über den
+     Browser (createImageBitmap → Canvas → PNG) um. Liefert eine URL kein
+     Bild (404/HTML), wird sie stillschweigend übersprungen. */
+
+  /* Liest der Tesseract-Kern dieses Format? (Signaturprüfung statt
+     Content-Type — die Serverangabe kann vom Inhalt abweichen.) */
+  function coreReadable(b) {
+    if (b.length < 12) return false;
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return true;              /* JPEG */
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return true; /* PNG */
+    if (b[0] === 0x42 && b[1] === 0x4D) return true;                                /* BMP */
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+        b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return true; /* WebP */
+    if ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2A) ||
+        (b[0] === 0x4D && b[1] === 0x4D && b[2] === 0x00)) return true;             /* TIFF */
+    return false;
+  }
+
+  async function imageBytesFor(url) {
+    let res;
+    try {
+      res = await fetch(url, { credentials: 'omit' });
+    } catch (e) {
+      dlog('ocr host: Bildabruf fehlgeschlagen (' + ((e && e.message) || e) + ')');
+      return null;
+    }
+    if (!res || !res.ok) {
+      dlog('ocr host: Bild HTTP ' + ((res && res.status) || '?'));
+      return null;
+    }
+    const type = String(res.headers.get('content-type') || '').split(';')[0].trim();
+    if (type && !/^image\//i.test(type)) {
+      dlog('ocr host: kein Bild (' + type + ')');
+      return null;
+    }
+    let bytes;
+    try {
+      bytes = new Uint8Array(await res.arrayBuffer());
+    } catch (e) {
+      return null;
+    }
+    if (!bytes.length) return null;
+    if (coreReadable(bytes)) return bytes;
+    /* Fremdformat (AVIF & Co.): der Browser dekodiert es zuverlässig,
+       Tesseract bekommt ein verlustfreies PNG. */
+    try {
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: type || 'image/png' }));
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Canvas-Export fehlgeschlagen'))), 'image/png');
+        });
+        return new Uint8Array(await blob.arrayBuffer());
+      } finally {
+        if (typeof bitmap.close === 'function') bitmap.close();
+      }
+    } catch (e) {
+      dlog('ocr host: Bild nicht dekodierbar (' + ((e && e.message) || e) + ')');
+      return null;
+    }
+  }
+
   /* Erstellen/Erneuern des Tesseract-Workers. Alles lokal: Worker-Skript,
      SIMD-Kern und .traineddata.gz kommen aus lib/ im Erweiterungspaket. */
   function ensureWorker(langs) {
@@ -132,7 +204,14 @@
       try {
         const w = await ensureWorker(lang);
         const t0 = Date.now();
-        const res = await w.recognize(url);
+        const bytes = await imageBytesFor(url);
+        if (!bytes) {
+          /* Kein verwertbares Bild: Karte gilt als „ohne Text“. Bewusst
+             NICHT cachen — ein späterer Rescan darf die URL erneut versuchen. */
+          dlog('ocr host: Bild übersprungen ' + String(url).slice(0, 90));
+          return { text: '', skipped: true };
+        }
+        const res = await w.recognize(bytes);
         const text = String((res && res.data && res.data.text) || '');
         failChain = 0;
         textCache.set(cacheKey, text);

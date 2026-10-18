@@ -3,6 +3,15 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.7] — 2026-10-18
+
+### Behoben
+- **Vorschaubild-OCR scheiterte an AVIF-Miniaturen und hinterließ Fehler im Erweiterungsprotokoll.** ytimg.com liefert hq720-Vorschaubilder inzwischen als AVIF — auch unter .jpg-URLs und unabhängig vom Accept-Header. Der Tesseract-Kern (Leptonica) kann AVIF nicht lesen; pro Bild entstanden dadurch „Error in pixReadStream: Unknown format“, „Image file /input cannot be read!“ und „Error attempting to read image“ in chrome://extensions, und die Karte blieb ohne OCR-Text. Der OCR-Host lädt die Bytes jetzt selbst (`fetch`), prüft, dass es sich um ein Bild handelt, und wandelt alles, was der Kern nicht direkt liest (AVIF & Co.), über den Browser in PNG um (`createImageBitmap` → Canvas). JPEG/PNG/WebP/BMP/TIFF gehen unverändert an den Kern. 404/HTML und nicht dekodierbare Bilder werden still übersprungen (Karte gilt als „ohne Text“), bewusst ohne Cache — ein späterer Rescan darf die URL erneut versuchen.
+- **WebGPU-Fehlschlag füllte ohne GPU-Adapter das Fehlerprotokoll.** Ohne GPU-Adapter (etwa ohne Grafikbeschleunigung) protokolliert Chrome jede WebGPU-Anfrage als Warnung „Failed to create WebGPU Context Provider“ — auch die kurze Geräte-Probe der Semantik, und bei jedem Neustart wieder. Ein gescheiterter Versuch wird jetzt gemerkt (`semGpuFallback` in `storage.local`; im Chrome-Offscreen über den Service Worker, der dort als einziger Storage-Zugriff hat). Danach startet die Semantik direkt in Wasm, ohne erneute WebGPU-Anfrage. Der gemerkte Wert trägt die Erweiterungsversion (etwa `wasm@1.5.7`): Nach einem Update zählt das Merkmal als veraltet und WebGPU wird einmal neu probiert, sodass Umgebungsänderungen (etwa aktivierte Grafikbeschleunigung) berücksichtigt werden. Normale Browser-Neustarts behalten das Merkmal.
+
+### Tests
+- Neuer Unit-Test `test-ocr-host-image` (AVIF → PNG über Canvas, JPEG/WebP direkt, 404/HTML/kaputte Bilder als stiller Skip, kein Negativ-Cache) und `test-sem-gpu-fallback` (genau eine WebGPU-Probe, Merkmal in beiden Speicherwegen — Offscreen über den Service Worker, Firefox direkt —, keine erneute Probe im frischen Host). Live-Szenarien `t-ocr-urls` (echte AVIF-URLs aus einem Feed) und `t-sem-gpu-flag` (Merkmal überlebt den Browser-Neustart, keine neue Protokollzeile).
+
 ## [1.5.6] — 2026-10-18
 
 ### Behoben

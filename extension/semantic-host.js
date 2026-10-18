@@ -11,6 +11,16 @@
   const api = (typeof browser !== 'undefined') ? browser : chrome;
   const WORKER_URL = api.runtime.getURL('semantic-worker.js');
   const STATUS_KEY = 'semStatus';
+  /* Merkmal „kein GPU-Adapter“: Chrome protokolliert jede WebGPU-Anfrage als
+     Warnung („Failed to create WebGPU Context Provider“) ins Fehlerprotokoll
+     der Erweiterung, wenn das System keinen Adapter bereitstellt (etwa ohne
+     Grafikbeschleunigung). Einmal versucht, dann gemerkt: Danach startet die
+     Semantik direkt in Wasm, ohne das Protokoll erneut zu füllen. Der Wert
+     trägt die Erweiterungsversion („wasm@1.5.7“): Nach einem Update gilt das
+     Merkmal als verfallen und WebGPU wird einmal neu probiert — ohne auf
+     onInstalled angewiesen zu sein, das Merkmal übersteht also auch normale
+     Browser-Neustarts. */
+  const GPU_FALLBACK_KEY = 'semGpuFallback';
   /* Worker nach Leerlauf beenden → Speicher der wasm-Inferenz wird freigegeben.
      Nächster Treffer initialisiert lazy neu (Modell liegt lokal, ~1–3 s). */
   const IDLE_MS = 10 * 60 * 1000;
@@ -29,6 +39,8 @@
   let workerHasTexts = false;
   let state = 'off';
   let device = null;
+  let gpuFallback = false;     /* WebGPU einmal gescheitert → direkt Wasm */
+  let gpuFallbackLoaded = false;
   let lastError = null;
   let errorKey = null;
   let initMs = 0;
@@ -59,6 +71,69 @@
       if (typeof self.YB_STATUS_SINK === 'function') self.YB_STATUS_SINK(STATUS_KEY, payload);
       else api.storage.local.set({ [STATUS_KEY]: payload });
     } catch (e) { /* Status ist optional */ }
+  }
+
+  /* Merkmal lesen/schreiben. Chrome-Offscreen hat keinen storage-Zugriff →
+     Dienstweg über den Service Worker; Firefox (Background-Seite) direkt.
+     Die Version der Erweiterung bestimmt die Gültigkeit des Merkmals: Im
+     Chrome-Offscreen-Dokument fehlt runtime.getManifest; dort wird ersatzweise
+     das manifest.json der Erweiterung gelesen (eigene Herkunft, kein Netz).
+     Einmal ermitteln, dann merken. */
+  let manifestVersion = null;
+  async function extensionVersion() {
+    if (manifestVersion !== null) return manifestVersion;
+    let v = '';
+    try { v = (api.runtime.getManifest && api.runtime.getManifest().version) || ''; } catch (e) { v = ''; }
+    if (!v) {
+      try {
+        const res = await fetch(api.runtime.getURL('manifest.json'));
+        const m = await res.json();
+        v = (m && m.version) || '';
+      } catch (e) { v = ''; }
+    }
+    manifestVersion = v;
+    return v;
+  }
+
+  async function gpuFallbackMark() {
+    return 'wasm@' + await extensionVersion();
+  }
+
+  async function readGpuFallback() {
+    const mark = await gpuFallbackMark();
+    return new Promise(resolve => {
+      try {
+        if (typeof self.YB_STATUS_SINK === 'function') {
+          api.runtime.sendMessage({ target: 'sw', op: 'yb-sw-storage-get', key: GPU_FALLBACK_KEY })
+            .then(r => resolve(!!r && r.value === mark))
+            .catch(() => resolve(false));
+        } else {
+          api.storage.local.get(GPU_FALLBACK_KEY)
+            .then(d => resolve(d[GPU_FALLBACK_KEY] === mark), () => resolve(false));
+        }
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  /* Genau einmal je Host lesen — vor init() UND vor dem parallelen Text-Lauf,
+     sonst geht der Text-Turm noch mit der WebGPU-Default-Annahme los. */
+  async function loadGpuFallback() {
+    if (gpuFallbackLoaded) return gpuFallback;
+    gpuFallbackLoaded = true;
+    gpuFallback = await readGpuFallback();
+    return gpuFallback;
+  }
+
+  async function rememberGpuFallback() {
+    gpuFallback = true;
+    const mark = await gpuFallbackMark();
+    try {
+      if (typeof self.YB_STATUS_SINK === 'function') {
+        api.runtime.sendMessage({ target: 'sw', op: 'yb-sw-storage-set', key: GPU_FALLBACK_KEY, payload: mark }).catch(() => {});
+      } else {
+        api.storage.local.set({ [GPU_FALLBACK_KEY]: mark });
+      }
+    } catch (e) { /* Merkmal ist optional */ }
   }
 
   /* Downloadfortschritt (Erstbezug): im Popup sichtbar; Speichern gedrosselt,
@@ -179,7 +254,8 @@
     setState('loading');
     const t0 = Date.now();
     initPromise = (async () => {
-      const guess = (self.navigator && self.navigator.gpu) ? 'webgpu' : 'wasm';
+      await loadGpuFallback();
+      const guess = (!gpuFallback && self.navigator && self.navigator.gpu) ? 'webgpu' : 'wasm';
       let res;
       try {
         res = await request('init', { device: guess });
@@ -190,6 +266,7 @@
            Anfragen (der parallele Text-Turm) werden als workerLost gemeldet
            und nach dem Wechsel wiederholt. */
         if (!err || !err.deviceFallback || guess === err.deviceFallback) throw err;
+        if (err.deviceFallback === 'wasm') await rememberGpuFallback();
         dlog('sem host: Gerätewechsel ' + guess + '→' + err.deviceFallback + ' (frischer Worker)');
         for (const [id, p] of pending) {
           pending.delete(id);
@@ -232,6 +309,8 @@
     if (preparePromise) return preparePromise;
     preparePromise = (async () => {
       try {
+        /* Merkmal vor beiden Türmen laden (siehe loadGpuFallback). */
+        await loadGpuFallback();
         const tasks = [init()];
         if (!workerHasTexts || textsKey !== lastKey) {
           if (textCache && textCache.key === lastKey) {
@@ -244,7 +323,7 @@
               textsKey = lastKey;
             }));
           } else {
-            const runSetTexts = () => request('set-texts', { texts: lastTexts }).then(res => {
+            const runSetTexts = () => request('set-texts', { texts: lastTexts, noWebgpu: gpuFallback }).then(res => {
               textCache = {
                 key: lastKey,
                 embeds: res.embeds,
