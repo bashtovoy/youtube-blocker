@@ -3,6 +3,16 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.9] — 2026-10-18
+
+### Hinzugefügt
+- **Filter für KI-gekennzeichnete Inhalte („KI“-Badge).** YouTube versieht Videos, bei denen der Uploader den KI-Einsatz angegeben hat, mit einem kurzen Hinweis-Badge. Es ist lokalisiert (en „AI“, de „KI“, ru „ИИ“, uk „ШІ“) und trägt die Langfassung im `aria-label` (verifiziert am 18.10.2026: „AI: Content was made with AI“, „KI-Hinweis: Inhalt wurde mit KI erstellt“, „ИИ: контент создан с помощью ИИ“, „ШІ: контент створено за допомогою штучного інтелекту“). Die neue Einstellung **„KI-Inhalte ausblenden („KI“-Badge)“** unter „Was geprüft wird“ blendet solche Karten lokal aus — wie „Members only“ ohne „Kein Interesse“-Signal, mit eigenem Zähler und Nachprüfung für Badges, die YouTube erst nach dem ersten Rendern nachliefert. Der kurze Token zählt nur als ganzes Feld (ein Titel wie „AI news“ nie), geprüft werden nur Badge-Knoten; die Einstellung arbeitet unabhängig von der Wortliste. Standard: **aktiv**.
+- `YB.debug.state()` zeigt zusätzlich `hideAiGenerated`; `YB.debug.audit()` zählt KI-Treffer getrennt (`ai`, `aiHidden`, `aiProcessedUnhidden`).
+
+### Tests
+- Neue Matcher-Tests für das KI-Badge: vier lokalisierte Token, beide Langfassungen, Gegenproben („AI news“, „Sora AI“, „AI music mix“, „KI-News“, „MAI“, „Auto-dubbed“, „Members only“, leer/`null`).
+- Neues Live-Szenario `t-ai-badge` (Chrome for Testing, separates Profil, 25 Prüfungen): Gespeicherte Einstellungen ohne den Schlüssel → Standard in Content und Popup aktiv, Beobachter läuft auch mit leerer Wortliste; KI-Karten werden ausgeblendet (Meta-Badge „AI“, Overlay-Variante „ШІ“, aria-Langtext), Kontrollkarten („Auto-dubbed“, Titel „AI news“, „Members only“ bei ausgeschaltetem Members-Filter) bleiben sichtbar; `audit.ai`/`aiHidden` stimmen, der sichtbare Zähler wächst; mit beiden Schaltern wird die Members-Karte nachgezogen ausgeblendet; Re-Render blendet erneut aus; bei abgeschaltetem Schalter bleibt eine neue KI-Karte sichtbar und das Popup zeigt den Schalter aus; keine Konsolenfehler. Bestehende Badge-/Titel-Szenarien (`t-synthetic`) laufen unverändert grün.
+
 ## [1.5.8] — 2026-10-18
 
 ### Behoben

@@ -129,6 +129,24 @@
     return MEMBERS_ONLY_RE.test(String(text || ''));
   }
 
+  /* ---- KI-Hinweis-Badge („AI disclosure“): YouTube lokalisiert den kurzen
+     Text und die Langfassung. Verifiziert am 18.10.2026 an
+     watch?v=wFAvZSefhnE in vier Sprachen:
+     en „AI“ / „AI: Content was made with AI“,
+     de „KI“ / „KI-Hinweis: Inhalt wurde mit KI erstellt“,
+     ru „ИИ“ / „ИИ: контент создан с помощью ИИ“,
+     uk „ШІ“ / „ШІ: контент створено за допомогою штучного інтелекту“.
+     Der kurze Token zählt nur als ganzes Feld („AI news“ im Titel nie);
+     geprüft werden ohnehin nur Badge-Knoten, nie Titel oder Fließtext. */
+  const AI_BADGE_TOKEN_RE = /^(ai|ki|ии|ші)$/i;
+  const AI_BADGE_PHRASE_RE = /made with ai|mit ki erstellt|создан\w*\s+с\s+помощью\s+ии|створено за допомогою штучного інтелекту/i;
+
+  function isAiBadgeText(text) {
+    const s = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!s) return false;
+    return AI_BADGE_TOKEN_RE.test(s) || AI_BADGE_PHRASE_RE.test(s);
+  }
+
   window.YB = window.YB || {};
-  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein, channelKeywords, routeOf, isMembersOnlyText };
+  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein, channelKeywords, routeOf, isMembersOnlyText, isAiBadgeText };
 })();

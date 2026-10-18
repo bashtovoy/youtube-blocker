@@ -22,6 +22,7 @@
     checkSemanticImage: true,
     checkSpeech: false,
     hideMembersOnly: false,
+    hideAiGenerated: true,
     ocrLangs: 'eng+rus',
     /* Kalibrierung 10/2026 (Kontrollbilder, q8): echte Treffer liegen bei
        Margin 0.037–0.079, Rauschen unter 0.03. Der alte Standard 0.1 war
@@ -66,7 +67,7 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.settings.hideMembersOnly;
+    return state.keywords.length > 0 || state.settings.hideMembersOnly || state.settings.hideAiGenerated;
   }
 
   /* YouTube hat die Badges auf neue View-Model-Komponenten umgestellt:
@@ -84,21 +85,32 @@
     '.yt-badge-shape__text',
     '.badge-style-type-members-only'
   ].join(', ');
-  function badgeText(b) {
-    return [
+  /* Badge-Felder einzeln prüfen: „Members“ ist ein Teilstring-Muster, der
+     KI-Token zählt dagegen nur als ganzes Feld — zusammengeklebt wäre
+     „AI AI: Content was made with AI“ kein Token mehr. */
+  function badgeFieldHit(b) {
+    const fields = [
       b.textContent,
       b.getAttribute && b.getAttribute('aria-label'),
       b.getAttribute && b.getAttribute('title')
-    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    ];
+    for (const f of fields) {
+      if (!f) continue;
+      if (state.settings.hideMembersOnly && window.YB.matcher.isMembersOnlyText(f)) return 'members-only';
+      if (state.settings.hideAiGenerated && window.YB.matcher.isAiBadgeText(f)) return 'ai-generated';
+    }
+    return null;
   }
 
   function matchBadge(v) {
-    if (!state.settings.hideMembersOnly || !v.item) return null;
+    if ((!state.settings.hideMembersOnly && !state.settings.hideAiGenerated) || !v.item) return null;
     for (const b of v.item.querySelectorAll(BADGE_SELECTOR)) {
-      if (window.YB.matcher.isMembersOnlyText(badgeText(b))) return 'members-only';
+      const hit = badgeFieldHit(b);
+      if (hit) return hit;
       /* Text bzw. aria-label kann am Kindknoten des Badges hängen. */
       for (const d of b.querySelectorAll('[aria-label], [title]')) {
-        if (window.YB.matcher.isMembersOnlyText(badgeText(d))) return 'members-only';
+        const childHit = badgeFieldHit(d);
+        if (childHit) return childHit;
       }
     }
     return null;
@@ -416,7 +428,7 @@
       /* Neu gerenderter Knoten ohne Treffer: Badge kann jetzt — oder später —
          vorhanden sein. Prüfen und ggf. vormerken, sonst bleibt genau diese
          Karte dauerhaft sichtbar (früher `return` ohne Badge-Test). */
-      if (!reason && state.settings.hideMembersOnly) {
+      if (!reason && (state.settings.hideMembersOnly || state.settings.hideAiGenerated)) {
         const lateHit = matchBadge(current);
         if (lateHit) {
           state.processed.set(key, lateHit);
@@ -438,8 +450,8 @@
       const badgeHit = matchBadge(current);
       if (badgeHit) {
         state.processed.set(key, badgeHit);
-        /* „Members only“ ist eine Eigenschaft des Angebots, kein Interessen-
-           signal: lokal ausblenden, kein „Kein Interesse“-Klick. */
+        /* Badge-Treffer („Members only“ / KI-Hinweis) sind Eigenschaften des
+           Angebots, kein Interessensignal: lokal ausblenden, kein Klick. */
         hideLocally(current, badgeHit);
         return;
       }
@@ -467,9 +479,9 @@
         }
       }
       state.processed.set(key, null);
-      /* YouTube hängt den „Members only“-Badge teils erst nach dem ersten
-         Rendern an. Karte vormerken und in scanNow erneut auf den Badge prüfen. */
-      if (state.settings.hideMembersOnly && current.item) state.badgeWatched.add(current.item);
+      /* YouTube hängt Badges teils erst nach dem ersten Rendern an. Karte
+         vormerken und in scanNow erneut auf Badges prüfen. */
+      if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated) && current.item) state.badgeWatched.add(current.item);
     } finally {
       state.inFlight.delete(key);
       if (state.io && current.item) state.io.unobserve(current.item);
@@ -539,7 +551,7 @@
         /* Spät gerenderter Badge: Die Karte wurde bereits als „kein Treffer“
            verbucht, YouTube liefert den Badge aber erst danach nach. Nur
            vorgemerkte Karten erneut prüfen — billig, kein zweites OCR/Semantik. */
-        if (state.settings.hideMembersOnly && state.badgeWatched.has(item)) {
+        if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated) && state.badgeWatched.has(item)) {
           const hit = matchBadge({ item });
           if (hit) {
             state.badgeWatched.delete(item);
@@ -610,6 +622,7 @@
       enabled: state.settings.enabled,
       mode: state.settings.mode,
       hideMembersOnly: state.settings.hideMembersOnly,
+      hideAiGenerated: state.settings.hideAiGenerated,
       actionDelayMs: state.settings.actionDelayMs,
       checkTitle: state.settings.checkTitle,
       checkThumbOcr: state.settings.checkThumbOcr,
@@ -647,17 +660,25 @@
     },
     /* Aggregat für Tests: nutzt exakt extract/matchBadge/processed des Contents. */
     audit: () => {
-      const res = { members: 0, membersHidden: 0, membersProcessedUnhidden: [], nonMembersHidden: [] };
+      const res = {
+        members: 0, membersHidden: 0, membersProcessedUnhidden: [],
+        ai: 0, aiHidden: 0, aiProcessedUnhidden: [],
+        nonMembersHidden: []
+      };
       for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
         const v = extract(item);
         if (!v) continue;
         const badge = matchBadge({ item });
         const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
         const hidden = item.classList.contains('yb-hidden');
-        if (badge) {
+        if (badge === 'members-only') {
           res.members++;
           if (hidden) res.membersHidden++;
           else if (state.processed.has(key)) res.membersProcessedUnhidden.push(v.title.slice(0, 60));
+        } else if (badge === 'ai-generated') {
+          res.ai++;
+          if (hidden) res.aiHidden++;
+          else if (state.processed.has(key)) res.aiProcessedUnhidden.push(v.title.slice(0, 60));
         } else if (hidden) {
           res.nonMembersHidden.push(v.title.slice(0, 60));
         }

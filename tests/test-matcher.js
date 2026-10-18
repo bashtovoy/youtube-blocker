@@ -20,4 +20,21 @@ for (const text of [
 for (const text of ['Sponsored', '10:30', 'Membership', 'Спонсировано', '', null]) {
   assert.strictEqual(m.isMembersOnlyText(text), false, 'not a members badge: ' + text);
 }
+/* KI-Hinweis-Badge wie auf watch?v=wFAvZSefhnE (18.10.2026, vier Sprachen). */
+for (const text of [
+  'AI', 'ai', 'KI', 'ИИ', 'ШІ', ' ии ',
+  'AI: Content was made with AI',
+  'KI-Hinweis: Inhalt wurde mit KI erstellt',
+  'ИИ: контент создан с помощью ИИ',
+  'ШІ: контент створено за допомогою штучного інтелекту'
+]) {
+  assert.strictEqual(m.isAiBadgeText(text), true, 'ai badge: ' + text);
+}
+/* Gegenproben: KI-Wörter im Titel oder andere Badges dürfen nie zählen. */
+for (const text of [
+  'AI news', 'Sora AI', 'AI music mix', 'KI-News', 'MAI', 'АИ',
+  'Auto-dubbed', 'Members only', 'Новое видео про Claude AI', '', null
+]) {
+  assert.strictEqual(m.isAiBadgeText(text), false, 'not an ai badge: ' + text);
+}
 console.log('matcher tests: OK');

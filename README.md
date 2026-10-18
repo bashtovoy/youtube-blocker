@@ -63,10 +63,13 @@ Mindestversion: Chrome 116.
    für Text im Vorschaubild zusätzlich einschalten.
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
-4. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
+4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv: Karten mit dem
+   YouTube-Hinweis-Badge für KI-erstellte Inhalte („AI“/„KI“/„ИИ“/„ШІ“)
+   verschwinden unabhängig von der Liste; abschaltbar im Popup.
+5. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
    werden automatisch gespeichert (Auto-Speichern mit kurzem Debounce) und
    sofort auf alle YouTube-Tabs angewendet.
-5. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
+6. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
    scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
    über einen MutationObserver.
 
@@ -224,7 +227,7 @@ extension/
 
 ```bash
 node --check extension/*.js      # Syntax
-node tests/test-matcher.js       # Modultest des Text-Matchers
+node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erkennung (Members/KI)
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
