@@ -3,6 +3,15 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.5] — 2026-10-18
+
+### Behoben
+- **Semantik-Statusanzeige blieb nach Browser-Neustart oder Update grau (○), obwohl die Modelle bereits geladen waren.** Es gibt zwei kalte Pfade, in denen kein Host-Status existiert: der Chrome-Service-Worker beantwortet Statusfragen, solange das Offscreen-Dokument noch nicht gestartet ist (neuer Zustand `off` ohne `lastUsedAt`), und der Host selbst startet nach jedem Neustart mit `off`. Beide prüfen jetzt den Modellbestand im Browser-Cache (neu: `model-cache.js`, Cache API „transformers-cache“, beide Turm-Paare q8/q4f16) und melden ihn als Feld `cached`. Das Popup zeigt damit grün mit dem Tooltip „Bereit — Modelle werden bei Bedarf in Sekunden geladen“ und dem Hinweis „Semantik-Modelle: heruntergeladen …“ statt „werden beim ersten Vorschaubild vorbereitet“. Ohne Cache bleibt die Anzeige bewusst grau (einmaliger Erstbezug beim ersten Vorschaubild).
+- Zusätzlich: Wurden die Modelle in der laufenden Sitzung geladen (Cache, lokale Dateien oder Erstbezug), gilt der Bestand als vorhanden (`filesCached`) — die Anzeige fällt nicht mehr hinter den Live-Status zurück.
+
+### Tests
+- Neues Chrome-E2E-Szenario `t-sem-status`: Kaltstart mit Cache → grün (`off` + `cached:true`), Cache gelöscht → grau mit Hinweis, echter Erstbezug mit sichtbarem Fortschrittsbalken → grün (`ready`), Browser-Neustart mit Cache → wieder grün. Alle Schritte grün auf Chrome for Testing (isoliertes Testprofil).
+
 ## [1.5.4] — 2026-10-18
 
 ### Behoben

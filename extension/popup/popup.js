@@ -73,6 +73,11 @@ function semStatusView(st) {
     }
     return { text: t('sem_preparing'), cls: '', bar: 'indet', pct: 0 };
   }
+  /* „off“ mit cached: Dateien liegen im Browser-Cache (z. B. direkt nach dem
+     Browserstart) — kein Erstbezug mehr nötig, Modell startet bei Bedarf. */
+  if (st.state === 'off' && st.cached) {
+    return { text: t('sem_cached'), cls: '', bar: 'none', pct: 0 };
+  }
   return { text: t('sem_idle'), cls: '', bar: 'none', pct: 0 };
 }
 
@@ -121,12 +126,13 @@ function renderStats() {
   setStat('statFuzzy', on('fuzzy') ? 'ok' : 'off', on('fuzzy') ? 'stat_ok' : 'stat_off');
 
   /* Semantik: Live-Status des Hosts (Modelle bereit / laden / Fehler).
-     „off“ mit lastUsedAt = Worker wurde nach Leerlauf bewusst beendet und
-     startet bei Bedarf in Sekunden neu → gilt als einsatzbereit (grün). */
+     „off“ mit lastUsedAt = Worker wurde nach Leerlauf bewusst beendet;
+     „off“ mit cached = Modelldateien liegen im Browser-Cache (z. B. nach
+     Browserstart/Update) — in beiden Fällen startbereit → grün. */
   let sem = ['pending', 'stat_pending'];
   if (!on('checkSemanticImage')) sem = ['off', 'stat_off'];
   else if (lastSemStatus && lastSemStatus.state === 'ready') sem = ['ok', 'stat_ok'];
-  else if (lastSemStatus && lastSemStatus.state === 'off' && lastSemStatus.lastUsedAt) sem = ['ok', 'stat_ok_idle'];
+  else if (lastSemStatus && lastSemStatus.state === 'off' && (lastSemStatus.lastUsedAt || lastSemStatus.cached)) sem = ['ok', 'stat_ok_idle'];
   else if (lastSemStatus && lastSemStatus.state === 'loading') sem = ['wait', 'stat_wait'];
   else if (lastSemStatus && lastSemStatus.state === 'error') sem = ['err', 'stat_err'];
   setStat('statSemanticImage', sem[0], sem[1]);

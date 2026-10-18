@@ -34,6 +34,9 @@
   let initMs = 0;
   let lastScoreMs = 0;
   let lastUsedAt = 0;
+  /* true = Modelldateien liegen (im Browser-Cache bzw. wurden geladen) und der
+     Kanal startet nach einem Neustart ohne erneuten Download; null = unbekannt. */
+  let filesCached = null;
   let idleTimer = null;
   let queue = Promise.resolve();
   let preparePromise = null;
@@ -50,7 +53,7 @@
   }
 
   function saveStatus() {
-    const payload = { state, device, error: lastError, initMs, lastScoreMs, updatedAt: Date.now(), dl };
+    const payload = { state, device, error: lastError, initMs, lastScoreMs, updatedAt: Date.now(), dl, cached: filesCached };
     try {
       /* Chrome-Offscreen hat keinen storage-Zugriff → Dienstweg über den Service Worker. */
       if (typeof self.YB_STATUS_SINK === 'function') self.YB_STATUS_SINK(STATUS_KEY, payload);
@@ -199,6 +202,9 @@
       }
       device = res.device || null;
       initMs = Date.now() - t0;
+      /* Türme geladen (Cache, lokale Dateien oder Erstbezug) → Bestand ist da;
+         nach einem Neustart darf die Statusanzeige grün bleiben. */
+      filesCached = true;
       return res;
     })().catch(err => {
       initPromise = null;
@@ -313,7 +319,7 @@
   }
 
   function status() {
-    return { state, device, error: lastError, initMs, lastScoreMs, lastUsedAt, dl };
+    return { state, device, error: lastError, initMs, lastScoreMs, lastUsedAt, dl, cached: filesCached };
   }
 
   self.YB_SEM_HOST = { ensure, score, status, reset: () => terminateWorker('reset') };
@@ -322,4 +328,16 @@
      sonst gar keinen semStatus-Eintrag und die Statuszeile im Popup bliebe leer
      (state „off“ → Hinweistext statt leerer Zeile, siehe popup.js). */
   saveStatus();
+
+  /* Zusätzlich prüfen, ob der Modellbestand schon im Browser-Cache liegt:
+     Nach einem Neustart (Browser oder Erweiterung) gab es sonst weder „ready“
+     noch lastUsedAt — die Anzeige blieb grau, obwohl die Modelle ohne erneuten
+     Download startbereit sind (Ergebnis → Feld „cached“). */
+  if (self.YB_MODEL_CACHE) {
+    self.YB_MODEL_CACHE.check().then(ok => {
+      if (ok === null) return;   /* nicht prüfbar → Zustand unbekannt lassen */
+      filesCached = ok;
+      saveStatus();
+    }).catch(() => { /* Status ist optional */ });
+  }
 })();

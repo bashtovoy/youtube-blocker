@@ -6,6 +6,11 @@
    dorthin. Statusmeldungen des Offscreen-Dokuments kommen über {target:'sw'} zurück. */
 'use strict';
 const api = (typeof browser !== 'undefined') ? browser : chrome;
+/* Modellbestand-Prüfung (Cache API) auch im Chrome-Service-Worker bereitstellen;
+   Firefox lädt die Datei über manifest.background.scripts. */
+if (typeof importScripts === 'function') {
+  try { importScripts('model-cache.js'); } catch (e) { /* Status bleibt optional */ }
+}
 /* MV3 heißt der Knopf "action", Firefox MV2 "browserAction" — beide Bäume bedienen. */
 const actionApi = api.action || api.browserAction;
 let cfgCache = { keywords: [], settings: {} };
@@ -55,10 +60,13 @@ async function offscreenCall(route, msg) {
 }
 
 /* Statusabfragen beantworten, ohne das Offscreen-Dokument zu starten: Vor der
-   ersten echten Anfrage ist schlicht noch kein Host aktiv (Zustand „aus“). */
-function offStatus(route) {
+   ersten echten Anfrage ist schlicht noch kein Host aktiv (Zustand „aus“).
+   Der Blick in den Modell-Cache sagt dem Popup, ob die Modelle trotzdem ohne
+   erneuten Download startbereit sind (state „off“ + cached → grün). */
+async function offStatus(route) {
   if (route === 'sem') {
-    return { ok: true, status: { state: 'off', device: null, error: null, initMs: 0, lastScoreMs: 0, lastUsedAt: 0, dl: null } };
+    const cached = self.YB_MODEL_CACHE ? await self.YB_MODEL_CACHE.check() : null;
+    return { ok: true, status: { state: 'off', device: null, error: null, initMs: 0, lastScoreMs: 0, lastUsedAt: 0, dl: null, cached } };
   }
   return { ok: true, status: { ready: false, langs: null, cached: 0 } };
 }
