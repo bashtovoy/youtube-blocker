@@ -133,3 +133,65 @@ api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     api.storage.local.set({ dismissedCount: 0, hiddenCount: 0 });
   }
 });
+
+/* ---------- Nach einem Extension-Update: Content-Scripts in offene Tabs nachreichen ----------
+   Browser ersetzen Content-Scripts in bereits geöffneten Tabs bei einem Update nicht;
+   die alte Instanz verliert dabei ihren runtime-Kontext („verwaist“). Neue Wörter
+   erreichen solche Tabs nie wieder — Karten bleiben bis zum manuellen Neuladen
+   ungefiltert. Deshalb injizieren wir einmal je Version die Skriptliste aus dem
+   Manifest in alle YouTube-Tabs, die noch eine alte Version melden (ybping). */
+const CONTENT_VERSION_KEY = 'contentScriptVersion';   /* zuletzt injizierte Version */
+
+let reinjectChain = Promise.resolve();
+function reinjectStaleTabs(force) {
+  reinjectChain = reinjectChain
+    .then(() => doReinjectStaleTabs(force))
+    .catch(e => console.warn('[YB] reinject failed:', String((e && e.message) || e)));
+  return reinjectChain;
+}
+
+async function doReinjectStaleTabs(force) {
+  /* In Test-/Teilumgebungen (gemocktes api) gibt es die APIs nicht — still überspringen. */
+  if (!api.runtime.getManifest || !api.storage || !api.tabs) return;
+  const version = api.runtime.getManifest().version;
+  if (!force) {
+    /* Schneller Pfad: für diese Version wurde bereits injiziert. */
+    const stored = await api.storage.local.get(CONTENT_VERSION_KEY);
+    if (stored[CONTENT_VERSION_KEY] === version) return;
+  }
+  const cs = (api.runtime.getManifest().content_scripts || [])[0];
+  const files = cs && cs.js;
+  if (!Array.isArray(files) || !files.length) return;
+  const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
+  let injected = 0;
+  for (const tab of tabs) {
+    if (tab.discarded || tab.status === 'loading') continue;   /* lädt/schläft: bekommt beim Laden ohnehin frische Skripte */
+    let live = '';
+    try {
+      const res = await api.tabs.sendMessage(tab.id, { type: 'ybping' });
+      live = (res && res.version) ? String(res.version) : '';
+    } catch (e) { live = ''; }     /* verwaist: die Nachricht erreicht niemanden mehr */
+    if (live === version) continue;
+    try {
+      if (api.scripting && api.scripting.executeScript) {           /* Chrome (MV3) */
+        await api.scripting.executeScript({ target: { tabId: tab.id }, files });
+      } else if (api.tabs && api.tabs.executeScript) {              /* Firefox (MV2) */
+        for (const file of files) await api.tabs.executeScript(tab.id, { file, runAt: 'document_idle' });
+      } else {
+        throw new Error('keine Injektions-API verfügbar');
+      }
+      injected++;
+    } catch (e) { /* geschützte/verworfene Tabs: content_scripts injizieren beim nächsten Laden normal */ }
+  }
+  await api.storage.local.set({ [CONTENT_VERSION_KEY]: version });
+  if (injected) console.log('[YB] content scripts reinjected into', injected, 'tab(s)');
+}
+
+/* Auslöser:
+   - onInstalled: Update/Installation — immer erzwingen (deckt auch das Neuladen
+     des temporären Add-ons in Firefox ab, bei dem die Version gleich bleibt);
+   - onStartup und Skriptstart (auch jeder MV3-Service-Worker-Start): gestempelt,
+     kostet danach nur eine storage-Lesung. */
+reinjectStaleTabs();
+if (api.runtime.onInstalled) api.runtime.onInstalled.addListener(() => reinjectStaleTabs(true));
+if (api.runtime.onStartup) api.runtime.onStartup.addListener(() => reinjectStaleTabs());

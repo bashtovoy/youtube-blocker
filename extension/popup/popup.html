@@ -81,6 +81,12 @@
     details.bulk summary { cursor: pointer; color: #6b3fd6; font-size: 12px; font-weight: 600; }
     details.bulk textarea { margin-top: 6px; }
     .kwcount { color: #7a7391; font-size: 11px; margin-top: 5px; }
+    /* Hinweis: In offenen Tabs läuft nach einem Update noch die alte Skript-Instanz */
+    #staleTabs { display: flex; gap: 8px; align-items: center; justify-content: space-between;
+      margin: 0 0 10px; padding: 8px 10px; border: 1px solid #f0cf6b; border-radius: 12px;
+      background: #fff8e1; color: #7a5a00; font-size: 12px; }
+    #staleTabs[hidden] { display: none; }
+    #staleTabs button { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -89,6 +95,10 @@
     <span id="blocked"></span>
   </header>
   <main>
+    <div id="staleTabs" hidden>
+      <span data-i18n="stale_tabs">In offenen YouTube-Tabs läuft noch eine ältere Version der Erweiterung — neue Wörter greifen dort erst nach dem Neuladen.</span>
+      <button id="staleReload" class="secondary" data-i18n="stale_reload">Tabs neu laden</button>
+    </div>
     <label class="row"><input type="checkbox" id="enabled"> <span data-i18n="enabled">Erweiterung aktiviert</span></label>
     <label class="row"><span data-i18n="ui_lang_label">Sprache der Oberfläche:</span>
       <select id="uiLang">
@@ -178,6 +188,7 @@
   <script src="../image.js"></script>
   <script src="../semantic.js"></script>
   <script src="i18n.js"></script>
+  <script src="stale-tabs.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

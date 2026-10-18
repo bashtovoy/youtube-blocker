@@ -40,6 +40,9 @@ function buildChromeManifest(ff) {
     (String(p).includes('://') ? hostPermissions : permissions).push(p);
   }
   permissions.push('offscreen');
+  /* Automatische Neu-Injektion der Content-Scripts in offene Tabs nach Updates
+     (chrome.scripting.executeScript; in Firefox macht das tabs.executeScript). */
+  permissions.push('scripting');
   return {
     manifest_version: 3,
     name: ff.name,

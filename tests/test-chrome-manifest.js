@@ -18,7 +18,7 @@ assert.ok(m.action && m.action.default_popup === 'popup/popup.html');
 assert.deepStrictEqual(m.host_permissions,
   ['*://*.youtube.com/*', '*://music.youtube.com/*', '*://*.ytimg.com/*', '*://*.googlevideo.com/*']);
 assert.ok(!m.permissions.some(p => String(p).includes('://')), 'permissions ohne Host-Muster');
-for (const p of ['storage', 'unlimitedStorage', 'tabs', 'offscreen']) {
+for (const p of ['storage', 'unlimitedStorage', 'tabs', 'offscreen', 'scripting']) {
   assert.ok(m.permissions.includes(p), 'permissions enthält ' + p);
 }
 

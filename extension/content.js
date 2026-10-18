@@ -3,6 +3,16 @@
   'use strict';
 
   const api = (typeof browser !== 'undefined') ? browser : chrome;
+
+  /* Nach einem Extension-Update behält ein bereits offener Tab die alte Instanz
+     dieses Skripts (Browser tauschen Content-Scripts in offenen Tabs nicht aus;
+     background.js injiziert deshalb nach einem Update erneut). Läuft in dieser
+     Isolated World noch eine frühere Instanz, melden wir ihre Beobachter ab,
+     damit nichts doppelt läuft. */
+  if (window.YB && window.YB.__instance && typeof window.YB.__instance.dispose === 'function') {
+    try { window.YB.__instance.dispose(); } catch (e) { /* Vorgänger war bereits beendet */ }
+  }
+
   const DEFAULTS = {
     enabled: true,
     mode: 'dismiss',
@@ -46,7 +56,8 @@
     semanticReady: false,
     semanticFailed: false,
     semanticRetryNeeded: false,
-    ocrFailed: false
+    ocrFailed: false,
+    disposed: false   /* true, wenn eine neuere Skript-Instanz die Seite übernommen hat */
   };
 
   const log = (...a) => {
@@ -259,6 +270,7 @@
 
   async function applyAction(v, reason) {
     return actionQueue.push(async () => {
+      if (state.disposed) return false;
       await throttleAction();
       if (state.settings.mode === 'dismiss') {
         try {
@@ -391,7 +403,7 @@
   }
 
   async function processVideo(v) {
-    if (!v) return;
+    if (!v || state.disposed) return;
     await waitForImage(v.img).catch(() => false);
     const current = extract(v.item) || v;
     const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
@@ -508,7 +520,7 @@
   }
 
   function scanNow() {
-    if (!state.settings.enabled || !hasDetectionTargets()) return;
+    if (state.disposed || !state.settings.enabled || !hasDetectionTargets()) return;
     const obs = ensureIO();
     for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
       if (item.classList.contains('yb-hidden')) continue;
@@ -560,8 +572,15 @@
     scanNow();
   }
 
-  api.runtime.onMessage.addListener(msg => {
+  api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
+    /* Lebenszeichen: Popup und Hintergrund erkennen damit Tabs, in denen nach
+       einem Update noch die alte (verwaiste) Instanz läuft, und Tabs, die die
+       aktuelle Version bereits ausführen. */
+    if (msg.type === 'ybping') {
+      sendResponse({ ok: true, version: api.runtime.getManifest().version });
+      return;
+    }
     if (msg.type === 'config-changed') {
       state.processed.clear();
       speechInitTried = false;
@@ -650,4 +669,19 @@
   loadConfig().then(() => {
     if (state.settings.enabled && hasDetectionTargets()) startObservers();
   });
+
+  /* Übergabe-Handle für die nächste Version (siehe Kopf dieses Skripts): Eine
+     nach einem Update neu injizierte Instanz ruft dispose() auf und übernimmt
+     die Seite, ohne dass zwei Instanzen parallel arbeiten. */
+  window.YB = window.YB || {};
+  window.YB.__instance = {
+    version: api.runtime.getManifest().version,
+    dispose: () => {
+      state.disposed = true;
+      try { if (state.observer) state.observer.disconnect(); } catch (e) { /* bereits getrennt */ }
+      try { if (state.io) { state.io.disconnect(); state.io = null; } } catch (e) { /* bereits getrennt */ }
+      clearTimeout(state.scanTimer);
+      state.observer = null;
+    }
+  };
 })();

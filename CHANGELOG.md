@@ -3,6 +3,15 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.6] — 2026-10-18
+
+### Behoben
+- **Neue Wörter wirkten manchmal erst nach dem manuellen Neuladen (F5) der YouTube-Seite.** Ursache: Beim Extension-Update tauschen Chrome und Firefox Content-Scripts in bereits geöffneten Tabs nicht aus. Die alte Instanz verliert dabei ihren Extension-Kontext („verwaist“), Nachrichten des Popups laufen ins Leere — die neue Wortliste erreichte den Tab nie wieder. Jetzt injiziert der Hintergrund nach einem Update (einmal je Version, per `ybping` nur in wirklich veraltete Tabs) automatisch die aktuelle Skriptliste: Chrome über `scripting.executeScript` (neue Berechtigung), Firefox über `tabs.executeScript`. Eine neu gestartete Instanz meldet die Beobachter der alten sauber ab (`window.YB.__instance.dispose`), damit nichts doppelt läuft.
+- Zusätzlich zeigt das Popup beim Öffnen und nach jedem Speichern einen Hinweis mit Knopf **„Tabs neu laden“**, wenn ein Tab auch danach keine aktuelle Version meldet (z. B. geschützte oder schlafende Tabs) — statt wie bisher still zu scheitern.
+
+### Tests
+- Neuer Unit-Test `test-stale-tabs` (Erkennungslogik: verwaist/Altversion/Schlaf-Tabs) und neues Live-Szenario `t-stale-tab` (Update bei offener YouTube-Seite → neue Wörter greifen ohne F5; gesunde Tabs werden nicht als veraltet gemeldet).
+
 ## [1.5.5] — 2026-10-18
 
 ### Behoben

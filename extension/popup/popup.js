@@ -194,6 +194,40 @@ function status(msg, ok = true) {
   if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
 }
 
+/* ---- Tabs mit veralteter Skript-Instanz -------------------------------------
+   Offene YouTube-Tabs behalten nach einem Extension-Update das alte Content-
+   Script; Nachrichten des Popups laufen dort ins Leere — genau deshalb wirkten
+   neue Wörter manchmal erst nach dem manuellen Neuladen (F5). ybping verrät
+   solche Tabs (antwortet erst ab 1.5.6); der Hintergrund injiziert sie nach
+   einem Update zusätzlich schon automatisch. */
+let staleTabs = [];
+
+function renderStaleTabs(ids) {
+  staleTabs = ids || [];
+  const box = $('staleTabs');
+  if (box) box.hidden = staleTabs.length === 0;
+}
+
+async function checkStaleTabs() {
+  try {
+    const version = api.runtime.getManifest().version;
+    const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
+    const { stale } = await YB.staleTabs.pingTabs(
+      tabs, id => api.tabs.sendMessage(id, { type: 'ybping' }), version);
+    renderStaleTabs(stale);
+  } catch (e) {
+    renderStaleTabs([]);   /* Abfrage fehlgeschlagen: lieber nichts behaupten */
+  }
+}
+
+$('staleReload').onclick = async () => {
+  const ids = staleTabs.slice();
+  renderStaleTabs([]);
+  for (const id of ids) {
+    try { await api.tabs.reload(id); } catch (e) { /* Tab existiert nicht mehr */ }
+  }
+};
+
 function normalizeKeywords(list) {
   return (list || [])
     .map(k => typeof k === 'string'
@@ -229,6 +263,8 @@ async function load() {
     .catch(() => { ocrState = 'err'; renderStats(); });
   /* Whisper-Bibliothek nur prüfen, wenn die Spracherkennung eingeschaltet ist */
   if ($('checkSpeech').checked) checkWhisper();
+  /* Läuft in einem offenen YouTube-Tab noch die alte Skript-Instanz? */
+  checkStaleTabs();
 }
 
 function updateCount() {
@@ -364,6 +400,8 @@ async function persist() {
     const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
     await Promise.all(tabs.map(t => api.tabs.sendMessage(t.id, { type: 'config-changed' }).catch(() => {})));
     markSaved();
+    /* Fehlgeschlagene Zustellungen oben sind bewusst still — hier werden sie sichtbar. */
+    checkStaleTabs();
   } catch (e) {
     dirty = true;
     status(t('save_error', { msg: e.message }), false);
