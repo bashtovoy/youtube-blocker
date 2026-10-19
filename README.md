@@ -66,10 +66,16 @@ Mindestversion: Chrome 116.
 4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv: Karten mit dem
    YouTube-Hinweis-Badge für KI-erstellte Inhalte („AI“/„KI“/„ИИ“/„ШІ“)
    verschwinden unabhängig von der Liste; abschaltbar im Popup.
-5. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
+5. **„Werbekarten ‚YouTube empfiehlt‘ ausblenden“** ist ebenfalls standardmäßig
+   aktiv: YouTube-eigene Werbe-/Empfehlungskarten („YouTube empfiehlt“,
+   „Sponsored“, „Содержит платную рекламу“, CTA + „0 грн“ u. a.) verschwinden
+   lokal, ohne „Kein Interesse“-Klick. Die Regeln liegen als Daten in
+   `extension/promo-rules.js`; unter **„Diagnose der Werbeformate“** zeigt das
+   Popup einen lokalen Bericht unbekannter Verdachtsfälle zum Kopieren.
+6. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
    werden automatisch gespeichert (Auto-Speichern mit kurzem Debounce) und
    sofort auf alle YouTube-Tabs angewendet.
-6. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
+7. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
    scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
    über einen MutationObserver.
 
@@ -186,6 +192,7 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   transkribiert nur die ersten N Sekunden. Für Russisch — multilinguales
   Modell (`small`), das sind ~460 MB im Worker.
 - Shorts haben einen eigenen Renderer und sind im Erkennungsbereich enthalten; die Verfügbarkeit des offiziellen „Kein Interesse“ hängt vom aktuellen YouTube-Layout ab — wird kein eindeutiger Menüpunkt gefunden, wählt die Erweiterung keine zufällige Aktion, sondern blendet lokal aus.
+- Die Werbekarten-Erkennung ist regelbasiert: YouTube benennt Badges und Layouts gelegentlich um. Dank mehrstufiger Signale (Text, Struktur, Container) trägt sie das meist weiter; ganz neue Formate erscheinen als Verdachtsfall im lokalen Diagnosebericht des Popups („Diagnose der Werbeformate“) und werden mit dem nächsten Release zur Regel. Es werden keine Daten gesendet.
 
 ## Struktur
 
@@ -194,6 +201,8 @@ extension/
   manifest.json   — MV2, content_scripts auf *.youtube.com
   content.js      — Orchestrator: DOM-Scan → Erkennung → Aktion
   matcher.js      — unscharfer Abgleich von Schlüsselwörtern
+  promo-rules.js  — Datenregeln für Werbekarten (Muster, Gewichte, Schwelle)
+  promo.js        — mehrstufige Werbekarten-Erkennung + Diagnose-Fingerabdruck
   image.js        — visuelle Deskriptoren (legacy; Referenzfotos nicht mehr nötig)
   semantic.js     — Content-Client: Text → Bild semantisches Matching (Messaging)
   semantic-host.js — SigLIP-Worker-Host in der Background-Seite (umgeht CSP/Trusted Types)
@@ -228,6 +237,7 @@ extension/
 ```bash
 node --check extension/*.js      # Syntax
 node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erkennung (Members/KI)
+node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele, Diagnose
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout

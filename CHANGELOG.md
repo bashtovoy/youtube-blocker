@@ -3,6 +3,18 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.11] — 2026-10-19
+
+### Hinzugefügt
+- **Filter für YouTube-eigene Werbekarten („YouTube empfiehlt“).** YouTube schiebt in Feed und Suche bezahlte Karten ein, die wie normale Videos aussehen — mit Werbe-Badge in der Metazeile („YouTube рекомендует“, „YouTube empfiehlt“, „YouTube recommends“, „YouTube рекомендує“), Handlungsaufforderung („Попробовать за 0 грн“, „Try for free“) und teilweise Preis-/Gratis-Marker. Statt fester DOM-Selektoren zählen mehrere unabhängige Signale zusammen: Textmarker (Badge, CTA, „Sponsored“/„Gesponsert“, „Содержит платную рекламу“), Struktur (externe Ziele — auch über den YouTube-Redirect-Wrapper `/redirect?q=…` aufgelöst — und fehlende Dauer/Aufrufe/Datum) sowie bekannte Werbe-Container (`ytd-ad-slot-renderer`, `ytd-in-feed-ad-layout-renderer`, `ytd-promoted-sparkles-web-renderer` u. a.). Erst ab der Regelschwelle (3) wird ausgeblendet; ein Badge oder ein bekannter Werbe-Container erreicht sie allein, CTA plus Preis (1+1) bewusst nicht. Die neue Einstellung **„Werbekarten ‚YouTube empfiehlt‘ ausblenden“** unter „Was geprüft wird“ arbeitet wie der KI-Badge-Filter: lokal, unabhängig von der Wortliste, ohne „Kein Interesse“-Klick, mit eigenem Statusindikator; Standard **aktiv**. Spät gerenderte Marker werden nachgezogen, ein Re-Render blendet erneut aus, reine Werbeplätze ohne Video-Bezug verschwinden direkt.
+- **Diagnose unbekannter Werbeformate (lokal, ohne Netzverkehr).** Karten mit schwachen Signalen unterhalb der Schwelle oder mit Verdachtswörtern („рекоменд“, „sponsor“, „werbung“, „anzeige“, „промо“, „0 грн“ …) landen als kompakter Fingerabdruck — Signal-IDs, kurze Textausschnitte, externe Hosts, Kürzel des Titels, Regelversion — in einem lokalen Klingelspeicher (höchstens 50 Einträge, Duplikate per Hash verworfen). Das Popup zeigt unter **„Diagnose der Werbeformate“** die Anzahl und kopiert den JSON-Bericht auf Klick; die Erweiterung versendet nichts von selbst. Damit wird ein neues Werbeformat mit einer Textprobe gemeldet und mit dem nächsten Release zur Regel.
+
+### Geändert
+- **Werbe-Regeln liegen als Daten in `extension/promo-rules.js`** (Muster als Strings, Gewichte, Schwelle, Container-Liste, Diagnose-Wörter): Ein neues Format ist ein Dateneintrag, keine Änderung der Erkennungslogik. Geladen werden die Regeln vor `content.js` (Firefox-Manifest und Chrome-Transform identisch); `YB.debug.state()` zeigt `hidePromoted` und `promoSuspects`, `YB.debug.audit()` zählt Werbetreffer (`promo`, `promoHidden`, `promoProcessedUnhidden`), `YB.debug.promoSuspects()` gibt den Diagnosebericht aus.
+
+### Tests
+- Neuer Unit-Test `test-promo`: Badge-Muster in vier Sprachen mit Gegenproben (u. a. „Nur für Mitglieder“, „Рекомендуем посмотреть“), CTA- und Preismuster, interne vs. externe Ziele inklusive `/redirect?q=…`-Auflösung, Punktschwelle (Badge allein reicht, CTA+Preis nicht, extern+CTA ja), Titel-Abzug (ein Titel „Попробовать за 0 грн“ zählt nie), Diagnose-Fingerabdruck und Klingelspeicher (Duplikate, Obergrenze, Reihenfolge).
+
 ## [1.5.10] — 2026-10-18
 
 ### Behoben

@@ -23,6 +23,7 @@
     checkSpeech: false,
     hideMembersOnly: false,
     hideAiGenerated: true,
+    hidePromoted: true,
     ocrLangs: 'eng+rus',
     /* Kalibrierung 10/2026 (Kontrollbilder, q8): echte Treffer liegen bei
        Margin 0.037–0.079, Rauschen unter 0.03. Der alte Standard 0.1 war
@@ -40,6 +41,9 @@
     keywords: [],
     processed: new Map(),   /* key → Grund (null = kein Treffer); erlaubt Re-Hide nach YouTube-Re-Render */
     hiddenIds: new Set(),   /* videoIds, die wir lokal ausgeblendet haben (für Re-Hide-Sweep) */
+    promoSeen: new WeakSet(),   /* bereits ausgeblendete Werbe-Container (keine Doppelzählung) */
+    suspects: [],   /* lokale Diagnose verdächtiger Werbekarten (storage: promoSuspects) */
+    suspectTimer: null,
     inFlight: new Set(),
     lastActionAt: 0,
     observer: null,
@@ -67,7 +71,8 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.settings.hideMembersOnly || state.settings.hideAiGenerated;
+    return state.keywords.length > 0 || state.settings.hideMembersOnly ||
+      state.settings.hideAiGenerated || state.settings.hidePromoted;
   }
 
   /* YouTube hat die Badges auf neue View-Model-Komponenten umgestellt:
@@ -116,6 +121,58 @@
     return null;
   }
 
+  /* ---- Werbekarten („YouTube empfiehlt“) -------------------------------------
+     Mehrstufige Erkennung statt fester DOM-Selektoren: Textmarker, Struktur
+     und bekannte Werbe-Container zählen zusammen; erst ab der Regelschwelle
+     wird lokal ausgeblendet (kein „Kein Interesse“). Regeln: promo-rules.js. */
+  function promoInfo(v) {
+    if (!state.settings.hidePromoted || !v || !v.item) return null;
+    try {
+      return window.YB.promo.analyze(v.item, { title: v.title });
+    } catch (e) {
+      return null;   /* Ein defekter Regelsatz darf die übrige Erkennung nicht stoppen. */
+    }
+  }
+
+  function scheduleSuspectSave() {
+    clearTimeout(state.suspectTimer);
+    state.suspectTimer = setTimeout(() => {
+      const max = window.YB.promoRules.suspectsMax || 50;
+      api.storage.local.set({ promoSuspects: state.suspects.slice(0, max) }).catch(() => {});
+    }, 1200);
+  }
+
+  /* Verdächtige Karten (schwache Signale, aber unter der Schwelle) landen nur
+     lokal — Grundlage für die Diagnose im Popup, ohne Netzverkehr. */
+  function notePromoSuspect(v, info) {
+    if (!info || info.isHit) return;
+    if (!info.signals.length && !(info.suspects && info.suspects.length)) return;
+    const fp = window.YB.promo.fingerprint(info, v.item, { title: v.title });
+    if (state.suspects.some(e => e && e.hash === fp.hash)) return;
+    state.suspects = window.YB.promo.addSuspect(state.suspects, fp, window.YB.promoRules.suspectsMax);
+    scheduleSuspectSave();
+  }
+
+  /* Bekannte Werbe-Container ohne Video-Bezug (reine Werbeplätze) direkt ausblenden. */
+  function hideAdContainers() {
+    if (!state.settings.hidePromoted) return;
+    let nodes;
+    try {
+      nodes = document.querySelectorAll(window.YB.promoRules.containers.join(', '));
+    } catch (e) {
+      return;
+    }
+    for (const el of nodes) {
+      if (!el.isConnected || el.closest('.yb-hidden')) continue;
+      if (state.promoSeen.has(el)) {
+        window.YB.dismiss.hideItem(el);   /* Re-Render: Klasse wiederherstellen, nicht erneut zählen */
+        continue;
+      }
+      state.promoSeen.add(el);
+      hideLocally({ item: el }, 'promo');
+    }
+  }
+
   function settingNumber(value, fallback, min, max) {
     if (value === '' || value === null || value === undefined) return fallback;
     const n = Number(value);
@@ -123,7 +180,7 @@
   }
 
   async function loadConfig() {
-    const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [] });
+    const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [], promoSuspects: [] });
     const s = Object.assign({}, DEFAULTS, data.settings || {});
     /* Alte Importe können Zahlfelder als leere Strings enthalten; sonst würde
        z. B. actionDelayMs die Pause zwischen Signalen stillschweigend abschalten. */
@@ -136,6 +193,7 @@
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && k.text && k.enabled !== false);
     state.keywords = kwObjects.map(k => String(k.text));
+    state.suspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
     /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelKeywords):
        ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. */
     state.titleKeywords = window.YB.matcher.channelKeywords(kwObjects, 'title');
@@ -428,11 +486,19 @@
       /* Neu gerenderter Knoten ohne Treffer: Badge kann jetzt — oder später —
          vorhanden sein. Prüfen und ggf. vormerken, sonst bleibt genau diese
          Karte dauerhaft sichtbar (früher `return` ohne Badge-Test). */
-      if (!reason && (state.settings.hideMembersOnly || state.settings.hideAiGenerated)) {
+      if (!reason && (state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted)) {
         const lateHit = matchBadge(current);
         if (lateHit) {
           state.processed.set(key, lateHit);
           hideLocally(current, lateHit);
+          if (state.io && current.item) state.io.unobserve(current.item);
+          return;
+        }
+        /* Auch der Werbe-Marker („YouTube empfiehlt“) kann spät gerendert werden. */
+        const latePromo = promoInfo(current);
+        if (latePromo && latePromo.isHit) {
+          state.processed.set(key, 'promo');
+          hideLocally(current, 'promo');
           if (state.io && current.item) state.io.unobserve(current.item);
           return;
         }
@@ -453,6 +519,14 @@
         /* Badge-Treffer („Members only“ / KI-Hinweis) sind Eigenschaften des
            Angebots, kein Interessensignal: lokal ausblenden, kein Klick. */
         hideLocally(current, badgeHit);
+        return;
+      }
+      const promo = promoInfo(current);
+      if (promo && promo.isHit) {
+        state.processed.set(key, 'promo');
+        /* Werbekarten sind eine Eigenschaft des Angebots, kein Interessensignal:
+           lokal ausblenden, kein „Kein Interesse“-Klick. */
+        hideLocally(current, 'promo');
         return;
       }
       const titleHit = matchTitle(current);
@@ -479,9 +553,10 @@
         }
       }
       state.processed.set(key, null);
+      notePromoSuspect(current, promo);
       /* YouTube hängt Badges teils erst nach dem ersten Rendern an. Karte
          vormerken und in scanNow erneut auf Badges prüfen. */
-      if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated) && current.item) state.badgeWatched.add(current.item);
+      if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && current.item) state.badgeWatched.add(current.item);
     } finally {
       state.inFlight.delete(key);
       if (state.io && current.item) state.io.unobserve(current.item);
@@ -551,11 +626,21 @@
         /* Spät gerenderter Badge: Die Karte wurde bereits als „kein Treffer“
            verbucht, YouTube liefert den Badge aber erst danach nach. Nur
            vorgemerkte Karten erneut prüfen — billig, kein zweites OCR/Semantik. */
-        if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated) && state.badgeWatched.has(item)) {
+        if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && state.badgeWatched.has(item)) {
           const hit = matchBadge({ item });
           if (hit) {
             state.badgeWatched.delete(item);
             hideLocally({ item, videoId: quickVideoId(item) }, hit);
+          } else {
+            /* Spät gerenderter Werbe-Marker (z. B. „YouTube empfiehlt“) */
+            const lateV = extract(item);
+            const latePromo = lateV ? promoInfo(lateV) : null;
+            if (latePromo && latePromo.isHit) {
+              state.badgeWatched.delete(item);
+              const lateKey = lateV.videoId + '|' + lateV.title.slice(0, 100) + '|' + lateV.thumb;
+              state.processed.set(lateKey, 'promo');
+              hideLocally(lateV, 'promo');
+            }
           }
         }
         continue;
@@ -563,6 +648,7 @@
       state.observed.add(item);
       obs.observe(item);
     }
+    hideAdContainers();
   }
 
   function scheduleScan() {
@@ -623,6 +709,7 @@
       mode: state.settings.mode,
       hideMembersOnly: state.settings.hideMembersOnly,
       hideAiGenerated: state.settings.hideAiGenerated,
+      hidePromoted: state.settings.hidePromoted,
       actionDelayMs: state.settings.actionDelayMs,
       checkTitle: state.settings.checkTitle,
       checkThumbOcr: state.settings.checkThumbOcr,
@@ -634,7 +721,8 @@
       semanticReady: state.semanticReady,
       semanticFailed: state.semanticFailed,
       processedCount: state.processed.size,
-      hiddenIds: state.hiddenIds.size
+      hiddenIds: state.hiddenIds.size,
+      promoSuspects: state.suspects.length
     }),
     scan: () => {
       const out = [];
@@ -658,17 +746,21 @@
       console.table(out);
       return { total: out.length, matches: out.filter(r => r.status === 'MATCH').length, items: out };
     },
+    promoSuspects: () => state.suspects.slice(),
     /* Aggregat für Tests: nutzt exakt extract/matchBadge/processed des Contents. */
     audit: () => {
       const res = {
         members: 0, membersHidden: 0, membersProcessedUnhidden: [],
         ai: 0, aiHidden: 0, aiProcessedUnhidden: [],
+        promo: 0, promoHidden: 0, promoProcessedUnhidden: [],
         nonMembersHidden: []
       };
       for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
         const v = extract(item);
         if (!v) continue;
         const badge = matchBadge({ item });
+        const promo = state.settings.hidePromoted ? window.YB.promo.analyze(item, { title: v.title }) : null;
+        const promoHit = !!(promo && promo.isHit);
         const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
         const hidden = item.classList.contains('yb-hidden');
         if (badge === 'members-only') {
@@ -679,6 +771,10 @@
           res.ai++;
           if (hidden) res.aiHidden++;
           else if (state.processed.has(key)) res.aiProcessedUnhidden.push(v.title.slice(0, 60));
+        } else if (promoHit) {
+          res.promo++;
+          if (hidden) res.promoHidden++;
+          else if (state.processed.has(key)) res.promoProcessedUnhidden.push(v.title.slice(0, 60));
         } else if (hidden) {
           res.nonMembersHidden.push(v.title.slice(0, 60));
         }

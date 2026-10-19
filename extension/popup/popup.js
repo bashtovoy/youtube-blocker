@@ -8,7 +8,7 @@ const t = (key, vars) => i18n.t(key, vars);
 console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'fuzzy'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'fuzzy'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
 const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold'];
@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   checkSpeech: false,
   hideMembersOnly: false,
   hideAiGenerated: true,
+  hidePromoted: true,
   fuzzy: true,
   mode: 'dismiss',
   ocrLangs: 'eng+rus',
@@ -125,6 +126,7 @@ function renderStats() {
   setStat('statTitle', on('checkTitle') ? 'ok' : 'off', on('checkTitle') ? 'stat_ok' : 'stat_off');
   setStat('statMembersOnly', on('hideMembersOnly') ? 'ok' : 'off', on('hideMembersOnly') ? 'stat_ok' : 'stat_off');
   setStat('statAi', on('hideAiGenerated') ? 'ok' : 'off', on('hideAiGenerated') ? 'stat_ok' : 'stat_off');
+  setStat('statPromoted', on('hidePromoted') ? 'ok' : 'off', on('hidePromoted') ? 'stat_ok' : 'stat_off');
   setStat('statFuzzy', on('fuzzy') ? 'ok' : 'off', on('fuzzy') ? 'stat_ok' : 'stat_off');
 
   /* Semantik: Live-Status des Hosts (Modelle bereit / laden / Fehler).
@@ -167,6 +169,10 @@ function checkWhisper() {
 
 api.storage.onChanged.addListener(changes => {
   if (changes.semStatus) renderSemStatus(changes.semStatus.newValue);
+  if (changes.promoSuspects) {
+    promoSuspects = Array.isArray(changes.promoSuspects.newValue) ? changes.promoSuspects.newValue : [];
+    renderPromoDiag();
+  }
 });
 
 function renderCounts() {
@@ -183,6 +189,7 @@ function applyLanguage(lang) {
   renderKeywords();
   renderSemStatus(lastSemStatus);
   renderCounts();
+  renderPromoDiag();
 }
 
 function normRoute(r) {
@@ -230,6 +237,48 @@ $('staleReload').onclick = async () => {
   }
 };
 
+/* ---- Diagnose der Werbeformate ---------------------------------------------
+   Verdächtige Karten (schwache Signale, noch keine Regel) speichert das
+   Content-Skript lokal unter „promoSuspects“. Der Bericht ist JSON-Text zum
+   Kopieren — die Erweiterung selbst versendet nichts. */
+let promoSuspects = [];
+
+function renderPromoDiag() {
+  const el = $('promoDiagCount');
+  if (el) el.textContent = promoSuspects.length
+    ? t('promo_diag_count', { n: promoSuspects.length })
+    : t('promo_diag_empty');
+}
+
+$('promoDiagCopy').onclick = async () => {
+  const out = $('promoDiagOut');
+  const report = {
+    extension: 'youtube-blocker',
+    version: api.runtime.getManifest().version,
+    exportedAt: new Date().toISOString(),
+    suspects: promoSuspects
+  };
+  const json = JSON.stringify(report, null, 2);
+  out.textContent = json;
+  out.hidden = false;
+  try {
+    await navigator.clipboard.writeText(json);
+    status(t('promo_diag_copied'));
+  } catch (e) {
+    status(t('promo_diag_copy_failed'), false);
+  }
+};
+
+$('promoDiagClear').onclick = async () => {
+  promoSuspects = [];
+  renderPromoDiag();
+  const out = $('promoDiagOut');
+  out.textContent = '';
+  out.hidden = true;
+  await api.storage.local.set({ promoSuspects: [] });
+  status(t('promo_diag_cleared'));
+};
+
 function normalizeKeywords(list) {
   return (list || [])
     .map(k => typeof k === 'string'
@@ -240,7 +289,7 @@ function normalizeKeywords(list) {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null
+    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, promoSuspects: []
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   s.actionDelayMs = numberOr(s.actionDelayMs, DEFAULT_SETTINGS.actionDelayMs);
@@ -252,6 +301,7 @@ async function load() {
   keywords = normalizeKeywords(data.keywords);
   counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
   lastSemStatus = data.semStatus;
+  promoSuspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
   /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
   applyLanguage(i18n.normalize(s.uiLang) || i18n.detect(api));
   /* Live-Status beim Host erfragen: der gespeicherte semStatus kann fehlen oder
@@ -420,7 +470,7 @@ $('kwApplyBulk').onclick = () => {
   renderKeywords();
   schedulePersist(0);
 };
-document.querySelector('details.bulk').addEventListener('toggle', (e) => {
+document.querySelector('#kwBulk').addEventListener('toggle', (e) => {
   if (e.target.open) $('keywordsBulk').value = keywords.map(k => k.text).join('\n');
 });
 
