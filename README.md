@@ -234,7 +234,9 @@ node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler,
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen)
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
-node tests/test-quiet-warn.js    # Log-Filter: nur die content-length-Warnung wird verworfen
+node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen
+node tests/test-ocr-worker.js    # OCR-Worker-Einstieg: Filter lädt vor dem Tesseract-Skript
+node tests/test-reinject-health.js # Selbstheilung verwaister Content-Scripts (Drossel, Sitzungs-Marker, Versionswechsel)
 node build-chrome.js             # Chrome-MV3-Sammlung → dist-chrome/ + web-ext-artifacts/*-chrome.zip
 npx web-ext lint --source-dir extension
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/

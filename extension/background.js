@@ -138,13 +138,23 @@ api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-/* ---------- Nach einem Extension-Update: Content-Scripts in offene Tabs nachreichen ----------
+/* ---------- Verwaiste Content-Scripts in offene Tabs nachreichen ----------
    Browser ersetzen Content-Scripts in bereits geöffneten Tabs bei einem Update nicht;
    die alte Instanz verliert dabei ihren runtime-Kontext („verwaist“). Neue Wörter
    erreichen solche Tabs nie wieder — Karten bleiben bis zum manuellen Neuladen
-   ungefiltert. Deshalb injizieren wir einmal je Version die Skriptliste aus dem
-   Manifest in alle YouTube-Tabs, die noch eine alte Version melden (ybping). */
-const CONTENT_VERSION_KEY = 'contentScriptVersion';   /* zuletzt injizierte Version */
+   ungefiltert. Deshalb injizieren wir die Skriptliste aus dem Manifest in alle
+   YouTube-Tabs, die sich nicht mit der laufenden Version melden (ybping).
+
+   Geprüft wird nicht mehr nur einmal je Version: Ein manuelles Neuladen der
+   Erweiterung (gleiche Version) feuert in Chrome kein onInstalled — solche Tabs
+   blieben sonst bis zum manuellen F5 taub. Ein gedrosseltes Nachfassen prüft
+   deshalb auch zwischendurch; eine frische Extension-Sitzung (Chrome leert
+   storage.session bei Reload/Update/Neustart) löst es sofort aus. */
+const CONTENT_VERSION_KEY = 'contentScriptVersion';   /* Version der letzten Prüfung */
+const CONTENT_CHECKED_KEY = 'contentCheckedAt';       /* Zeitpunkt der letzten Prüfung */
+const SESSION_BOOT_KEY = 'contentSessionAt';          /* Chrome: Marker der Extension-Sitzung */
+const CHECK_INTERVAL_MS = 2 * 60 * 1000;              /* Nachfassen höchstens alle 2 Minuten */
+const CHECK_FLOOR_MS = 30 * 1000;                     /* Notbremse gegen enge Doppelläufe */
 
 let reinjectChain = Promise.resolve();
 function reinjectStaleTabs(force) {
@@ -158,10 +168,27 @@ async function doReinjectStaleTabs(force) {
   /* In Test-/Teilumgebungen (gemocktes api) gibt es die APIs nicht — still überspringen. */
   if (!api.runtime.getManifest || !api.storage || !api.tabs) return;
   const version = api.runtime.getManifest().version;
+  const now = Date.now();
   if (!force) {
-    /* Schneller Pfad: für diese Version wurde bereits injiziert. */
-    const stored = await api.storage.local.get(CONTENT_VERSION_KEY);
-    if (stored[CONTENT_VERSION_KEY] === version) return;
+    const stored = await api.storage.local.get([CONTENT_VERSION_KEY, CONTENT_CHECKED_KEY]);
+    const since = now - (Number(stored[CONTENT_CHECKED_KEY]) || 0);
+    if (since < CHECK_FLOOR_MS) return;   /* Notbremse: nie zweimal kurz hintereinander */
+    const due = stored[CONTENT_VERSION_KEY] !== version || since >= CHECK_INTERVAL_MS;
+    if (!due) {
+      /* Innerhalb der Drosselzeit zählt nur eine frische Extension-Sitzung. */
+      let newSession = false;
+      if (api.storage.session) {
+        try {
+          const sess = await api.storage.session.get(SESSION_BOOT_KEY);
+          newSession = !sess[SESSION_BOOT_KEY];
+        } catch (e) { newSession = false; }
+      }
+      if (!newSession) return;
+    }
+  }
+  /* Marker der Extension-Sitzung setzen, damit Folge-Starts die Drosselzeit einhalten. */
+  if (api.storage.session) {
+    try { await api.storage.session.set({ [SESSION_BOOT_KEY]: now }); } catch (e) { /* optional */ }
   }
   const cs = (api.runtime.getManifest().content_scripts || [])[0];
   const files = cs && cs.js;
@@ -187,7 +214,7 @@ async function doReinjectStaleTabs(force) {
       injected++;
     } catch (e) { /* geschützte/verworfene Tabs: content_scripts injizieren beim nächsten Laden normal */ }
   }
-  await api.storage.local.set({ [CONTENT_VERSION_KEY]: version });
+  await api.storage.local.set({ [CONTENT_VERSION_KEY]: version, [CONTENT_CHECKED_KEY]: Date.now() });
   if (injected) console.log('[YB] content scripts reinjected into', injected, 'tab(s)');
 }
 
@@ -196,8 +223,9 @@ async function doReinjectStaleTabs(force) {
      des temporären Add-ons in Firefox ab, bei dem die Version gleich bleibt).
      Das gemerkte „kein GPU-Adapter“-Merkmal verfällt beim Update von selbst:
      sein Wert trägt die Erweiterungsversion (semantic-host.js).
-   - onStartup und Skriptstart (auch jeder MV3-Service-Worker-Start): gestempelt,
-     kostet danach nur eine storage-Lesung. */
+   - onStartup und Skriptstart (auch jeder MV3-Service-Worker-Start): gedrosselt —
+     eine storage-Lesung, und höchstens alle CHECK_INTERVAL_MS (oder sofort in
+     einer frischen Extension-Sitzung) ein Nachfassen, das verwaiste Tabs heilt. */
 reinjectStaleTabs();
 if (api.runtime.onInstalled) api.runtime.onInstalled.addListener(() => reinjectStaleTabs(true));
 if (api.runtime.onStartup) api.runtime.onStartup.addListener(() => reinjectStaleTabs());

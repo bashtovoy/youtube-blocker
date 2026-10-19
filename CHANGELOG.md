@@ -3,6 +3,19 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.10] — 2026-10-18
+
+### Behoben
+- **Nach einem manuellen Neuladen der Erweiterung (gleiche Version) blieben offene YouTube-Tabs taub, bis die Seite von Hand neu geladen wurde.** Bisher prüfte der Hintergrund verwaiste Content-Scripts strikt einmal je Version — ein manuelles Neuladen der ungepackten Erweiterung feuert in Chrome aber kein `onInstalled`, und die Tabs bekamen nie wieder Skripte: weder Wortliste noch OCR noch Semantik liefen dort noch. Jetzt fällt das Nachreichen gedrosselt auch zwischendurch an (höchstens alle 2 Minuten, Notbremse 30 Sekunden) und heilt verwaiste Tabs selbst; eine frische Extension-Sitzung (Chrome leert `storage.session` bei Reload/Update/Neustart) löst es sofort aus. Die Kosten bleiben minimal: eine `storage`-Lesung je Start, ein Ping-Lauf erst nach Ablauf der Drossel — gesunde Tabs werden nicht angefasst.
+- **Die Meldungen „Image too small to scale!! …“ und „Line cannot be recognized!!“ sammelten sich im Fehlerbereich von chrome://extensions ein.** Der tesseract.js-Kern meldet damit zu kleine Ausschnitte bzw. Zeilen ohne erkennbaren Text — kein Fehler, nur kosmetischer Lärm bei schwachen Vorschaubildern, der wie ein Defekt aussah. Der neue Worker-Einstieg `ocr-worker.js` lädt den vorhandenen Log-Filter (`quiet-warn.js`) vor dem Tesseract-Worker; der Filter deckt jetzt auch diese beiden Präfixe ab. Alles andere bleibt im Protokoll sichtbar.
+
+### Geändert
+- **Firefox-Manifest: eigener Android-Mindeststand (`gecko_android.strict_min_version` 142.0).** Die AMO-Prüfung warnte, dass `data_collection_permissions` von Firefox für Android erst ab 142 unterstützt wird und der Desktop-Floor 140 damit für Android zu niedrig ansetzt. Desktop bleibt bei 140, Android ist jetzt ausdrücklich ab 142 deklariert — die Warnung verschwindet, ohne Desktop-Nutzer auszusperren.
+
+### Tests
+- Neuer Unit-Test `test-reinject-health`: Drossel und Notbremse greifen, frische Sitzung und Versionswechsel heilen sofort, gesunde Tabs bleiben unberührt, ladende/schlafende Tabs werden übersprungen, die Firefox-Form ohne `storage.session` verhält sich rein nach Intervall.
+- Neuer Unit-Test `test-ocr-worker`: der Worker-Einstieg lädt den Log-Filter vor dem Tesseract-Skript; `test-quiet-warn` deckt die beiden tesseract.js-Meldungen ab; `test-ocr-host-image` prüft zusätzlich, dass der Host den Filter-Worker (`ocr-worker.js`) ansteuert.
+
 ## [1.5.9] — 2026-10-18
 
 ### Hinzugefügt

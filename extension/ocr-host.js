@@ -5,15 +5,17 @@
    Content-Scripts synchron fehl ("Worker constructor: Sink type mismatch ... blocked by CSP").
    Der privilegierte Kontext unterliegt den Seitenrichtlinien nicht. Content-Scripts sprechen
    nur noch per runtime.sendMessage mit diesem Host.
-   Alle Dateien liegen lokal im Paket (lib/): Tesseract-Bibliothek, Worker-Skript,
-   SIMD-WASM-Kern und Sprachdaten — kein CDN, kein Fernbezug zur Laufzeit. */
+   Alle Dateien liegen lokal im Paket: der Worker startet über ocr-worker.js
+   (Log-Filter + Tesseract-Worker-Skript), Bibliothek, SIMD-WASM-Kern und
+   Sprachdaten liegen in lib/ — kein CDN, kein Fernbezug zur Laufzeit. */
 (function () {
   'use strict';
 
   const api = (typeof browser !== 'undefined') ? browser : chrome;
   const LIB_DIR = api.runtime.getURL('lib/');
   const LIB_URL = api.runtime.getURL('lib/tesseract.min.js');
-  const WORKER_URL = api.runtime.getURL('lib/worker-tesseract.min.js');
+  /* Worker-Einstieg mit Log-Filter (ocr-worker.js) — lädt den Tesseract-Worker. */
+  const WORKER_URL = api.runtime.getURL('ocr-worker.js');
   /* Worker nach Leerlauf beenden → Speicher der wasm-Erkennung wird freigegeben.
      Nächster Treffer initialisiert lazy neu (alles liegt lokal, ~2–5 s). */
   const IDLE_MS = 10 * 60 * 1000;
@@ -153,8 +155,8 @@
     }
   }
 
-  /* Erstellen/Erneuern des Tesseract-Workers. Alles lokal: Worker-Skript,
-     SIMD-Kern und .traineddata.gz kommen aus lib/ im Erweiterungspaket. */
+  /* Erstellen/Erneuern des Tesseract-Workers. Alles lokal: Einstieg ocr-worker.js,
+     Tesseract-Worker-Skript, SIMD-Kern und .traineddata.gz aus dem Erweiterungspaket. */
   function ensureWorker(langs) {
     if (worker && workerLangs === langs) return Promise.resolve(worker);
     if (worker) terminateWorker('Sprachwechsel');

@@ -79,7 +79,8 @@ const fakeWorker = {
   recognize(image) { recognized.push(image); return Promise.resolve(recognizeResult); },
   terminate() {}
 };
-const Tesseract = { createWorker: async () => fakeWorker };
+let createWorkerOpts = null;
+const Tesseract = { createWorker: async opts => { createWorkerOpts = opts; return fakeWorker; } };
 
 const sandbox = {
   browser: { runtime: { getURL: p => 'moz-extension://test/' + p } },
@@ -115,6 +116,9 @@ const plain = o => JSON.parse(JSON.stringify(o));
   assert.deepStrictEqual(arr(recognized[0]), arr(PNG_BYTES), 'AVIF → PNG-Bytes für Tesseract');
   assert.strictEqual(lastBitmapBlob.type, 'image/avif', 'Browser dekodiert die Original-Bytes');
   assert.ok(canvasCalls.includes('2d') && canvasCalls.includes('toBlob:image/png'), 'Canvas-Weg wurde benutzt');
+  assert.ok(createWorkerOpts && String(createWorkerOpts.workerPath).endsWith('/ocr-worker.js'),
+    'Worker startet über den Filter-Einstieg ocr-worker.js');
+  assert.ok(String(createWorkerOpts.corePath).endsWith('/lib/'), 'Kern kommt aus lib/');
 
   /* 2) JPEG: geht unverändert (ohne Canvas) an den Kern. */
   const canvasBefore = canvasCalls.length;
