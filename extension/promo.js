@@ -198,7 +198,7 @@
     const hasDuration = /\b\d{1,3}:\d{2}\b/.test(full);
     const hasMeta = hasDuration ||
       /\b\d[\d.,]*\s*(k|m|b|mio|тыс|млн|млрд|views?|aufrufe|просмотр)/i.test(full) ||
-      /\b\d+\s*(d|h|min|day|days|hour|hours|week|weeks|month|months|year|years|дн|ч|мин|нед|мес|год|лет|назад|ago|vor)/i.test(full);
+      /\b\d+\s*(d|h|min|day|days|hour|hours|week|weeks|month|months|year|years|woche|wochen|monat|monate|jahr|jahre|tag|tage|tagen|stunde|stunden|minute|minuten|дн|ч|мин|нед|мес|міс|год|рік|рок|лет|тижн|назад|ago|vor)/i.test(full);
     if (!hasMeta) add('noMeta', R.weights.noMeta, '');
 
     const score = computeScore(signals);

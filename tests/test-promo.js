@@ -111,6 +111,12 @@ assert.ok(p.suspectWords('Werbung und Anzeige').length >= 1);
 assert.ok(p.suspectWords('акция 0 грн').some(x => x.includes('0')));
 assert.deepStrictEqual(Array.from(p.suspectWords('обычное видео')), []);
 
+/* Datumsangaben in DE/UK zählen als Metadaten (kein noMeta-Signal) */
+const deDate = { tagName: 'YTD-RICH-ITEM-RENDERER', textContent: 'Ruhiges Video Kanal vor 2 Wochen' };
+assert.ok(!p.analyze(deDate, { title: 'Ruhiges Video' }).signals.some(s => s.id === 'noMeta'), 'deutsches Datum fehlt als Metadatum');
+const ukDate = { tagName: 'YTD-RICH-ITEM-RENDERER', textContent: 'Спокійне відео Канал 2 тижні тому' };
+assert.ok(!p.analyze(ukDate, { title: 'Спокійне відео' }).signals.some(s => s.id === 'noMeta'), 'ukrainisches Datum fehlt als Metadatum');
+
 const info = { score: 2, signals: [{ id: 'cta' }, { id: 'price' }], suspects: ['0 грн'], texts: ['Попробовать за 0 грн'], hosts: ['droidwin.com'], rulesVersion: R.version };
 const fp1 = p.fingerprint(info, promoCard, { title: 'X' });
 const fp2 = p.fingerprint(info, promoCard, { title: 'X' });
