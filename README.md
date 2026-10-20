@@ -38,7 +38,7 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 1. `about:debugging#/runtime/this-firefox` → **Temporäres Add-on laden…**
 2. Wähle `extension/manifest.json` aus.
 
-Für eine dauerhafte Installation (aus dem Projektwurzelverzeichnis): `web-ext build --source-dir extension --artifacts-dir web-ext-artifacts --ignore-files "models" "devreport.js"` (benötigt `web-ext`, z. B. via `npx web-ext`; Models und Dev-Brücke bleiben außen vor — das ZIP enthält keine Modelle, siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
+Für eine dauerhafte Installation (aus dem Projektwurzelverzeichnis): `web-ext build --source-dir extension --artifacts-dir web-ext-artifacts --ignore-files "models/**" "models" "devreport.js"` (benötigt `web-ext`, z. B. via `npx web-ext`; die großen SigLIP-Modelle und die Dev-Brücke bleiben außen vor — die OCR-Sprachdaten in `lib/` sind enthalten, siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
 
 ## Installation in Chrome
 
@@ -175,7 +175,11 @@ Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
   Begriffs (Drone/Dron/UAV) sind füreinander Konkurrenten und drücken die
   Margin — pro Konzept möglichst eine Schreibweise verwenden. Weitere
   Kalibrierung: `gui-test-assets/padexp/`.
-- `OCR-Sprachen` — standardmäßig `eng+rus`.
+- `OCR-Sprachen` — standardmäßig `eng+rus`. Beim Öffnen des Popups werden
+  die aktivierten Modelle vorgeladen; Status und Fortschritt stehen direkt
+  unter der OCR-Zeile. Bei `eng+rus` laufen beide Modelle in getrennten
+  Workern, damit ein Sprachwechsel die bereits geladene Sprache nicht
+  verwirft.
 - `Pause zwischen Signalen` — Schutz vor Flutung der YouTube-Oberfläche.
 - Sprache: Das Modell wird in `extension/models/` abgelegt, der Pfad wird in
   `speechModel` angegeben (z. B. `models/ggml-small.bin` — für Russisch
@@ -225,8 +229,10 @@ wiegen schwerer) und hier dokumentiert.
 Die SigLIP-Modelle (Bild-Turm ~52–95 MB, Text-Turm ~94–106 MB, je nach
 Gerät/Quantisierung: WebGPU q4f16, WASM q8) liegen **nicht** im ausgelieferten
 Paket — das
-AMO-Uploadlimit von 200 MB erlaubt das nicht. Die Erweiterung sucht sie in
-dieser Reihenfolge:
+AMO-Uploadlimit von 200 MB erlaubt das nicht. Die kleinen OCR-Sprachdaten
+(`lib/eng.traineddata.gz`, `lib/rus.traineddata.gz`) sind dagegen im Paket
+enthalten und werden beim Öffnen des Popups lokal vorgeladen. Die Erweiterung
+sucht die SigLIP-Modelle in dieser Reihenfolge:
 
 1. **Lokal** — `extension/models/siglip-base-patch16-224/onnx/…`, gefüllt von
    `setup.sh` (Dev-Builds, temporäre Installation).
@@ -268,7 +274,7 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   unabhängig von der Sprache der Oberfläche.
 - OCR ist aufwendig: bei großer Liste einschalten, sonst wird CPU unnötig verbraucht.
   Anfragen laufen sequenziell über eine Warteschlange; Ergebnisse werden je
-  Bild-URL im Hintergrund-Host gecacht, der Tesseract-Worker wird nach zehn
+  Bild-URL im Hintergrund-Host gecacht, die Tesseract-Worker werden nach zehn
   Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet. Bei kurzem
   oder unsicherem Erstantext läuft zusätzlich ein tiefer Durchgang mit fünf
   Bildvarianten — das kann pro Karte einige Sekunden dauern, verbessert aber

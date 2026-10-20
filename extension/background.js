@@ -69,7 +69,13 @@ async function offStatus(route) {
     const cached = self.YB_MODEL_CACHE ? await self.YB_MODEL_CACHE.check() : null;
     return { ok: true, status: { state: 'off', device: null, error: null, initMs: 0, lastScoreMs: 0, lastUsedAt: 0, dl: null, cached } };
   }
-  return { ok: true, status: { ready: false, langs: null, cached: 0 } };
+  return {
+    ok: true,
+    status: {
+      state: 'off', ready: false, loading: false, langs: [], loadingLangs: [],
+      stage: '', stageLang: '', progress: 0, error: null, cached: 0
+    }
+  };
 }
 
 async function callHost(route, msg) {

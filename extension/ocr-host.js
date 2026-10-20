@@ -40,14 +40,25 @@
   const MASK_MIN_COVERAGE = 0.0015;
   const MASK_MAX_COVERAGE = 0.70;
 
-  let worker = null;
-  let workerLangs = null;
-  let loadPromise = null;     /* Single-Flight: Bibliothek nachladen */
-  let createPromise = null;   /* Single-Flight: Worker erstellen */
+  /* Ein Tesseract-Worker je Sprache: „eng+rus“ soll beide Modelle wirklich
+     vorbereiten können, ohne sie in einem gemeinsamen Modell zu mischen.
+     Die Worker werden beim Öffnen des Popups vorgewärmt (prepare) und nach
+     zehn Minuten Leerlauf gemeinsam beendet. */
+  const workers = new Map();          /* lang → fertiger Worker */
+  const workerPromises = new Map();   /* lang → laufende Initialisierung */
+  let loadPromise = null;             /* Single-Flight: Bibliothek nachladen */
   let queue = Promise.resolve();
   let busy = 0;
   let idleTimer = null;
-  let failChain = 0;          /* aufeinanderfolgende Erkennungsfehler */
+  let failChain = 0;                  /* aufeinanderfolgende Erkennungsfehler */
+  let lastError = null;
+  let stage = '';                     /* Tesseract-Status für das Popup */
+  let stageLang = '';
+  let stageProgress = 0;
+  let prepareActive = 0;
+  let prepareChain = Promise.resolve();
+  let preparePromise = null;
+  let prepareKey = '';
   const textCache = new Map();
 
   function dlog(line) {
@@ -63,16 +74,23 @@
     clearTimeout(idleTimer);
     if (!(IDLE_MS > 0)) return;
     idleTimer = setTimeout(() => {
-      if (busy || createPromise) { armIdle(); return; }   /* noch Arbeit unterwegs */
+      if (busy || workerPromises.size || prepareActive) { armIdle(); return; }
       terminateWorker('idle');
     }, IDLE_MS);
   }
 
   function terminateWorker(reason) {
-    if (worker) { try { worker.terminate(); } catch (e) { /* schon tot */ } }
-    worker = null;
-    workerLangs = null;
-    createPromise = null;
+    for (const w of workers.values()) {
+      try { w.terminate(); } catch (e) { /* schon tot */ }
+    }
+    workers.clear();
+    workerPromises.clear();
+    preparePromise = null;
+    prepareKey = '';
+    lastError = null;
+    stage = '';
+    stageLang = '';
+    stageProgress = 0;
     failChain = 0;
     dlog('ocr host: worker beendet (' + reason + ')');
   }
@@ -92,13 +110,20 @@
     return loadPromise;
   }
 
-  function makeLogger() {
+  function makeLogger(lang) {
     let last = '';
     return m => {
       if (!m || !m.status || m.status === 'recognizing text') return;
-      if (m.status === last) return;
-      last = m.status;
-      dlog('ocr host: ' + m.status);
+      const progress = Number(m.progress);
+      if (m.status !== last) {
+        last = m.status;
+        stage = m.status;
+        stageLang = lang;
+        stageProgress = Number.isFinite(progress) ? progress : 0;
+        dlog('ocr host: ' + lang + ': ' + m.status);
+      } else if (Number.isFinite(progress)) {
+        stageProgress = progress;
+      }
     };
   }
 
@@ -401,14 +426,13 @@
     return out.join('\n');
   }
 
-  /* Erstellen/Erneuern des Tesseract-Workers. Alles lokal: Einstieg ocr-worker.js,
-     Tesseract-Worker-Skript, SIMD-Kern und .traineddata.gz aus dem Erweiterungspaket. */
-  function ensureWorker(langs) {
-    if (worker && workerLangs === langs) return Promise.resolve(worker);
-    if (worker) terminateWorker('Sprachwechsel');
-    workerLangs = langs;
-    const wanted = langs;
-    createPromise = (async () => {
+  /* Erstellen eines Tesseract-Workers für genau eine Sprache. Alles lokal:
+     Einstieg ocr-worker.js, Tesseract-Worker-Skript, SIMD-Kern und
+     .traineddata.gz aus dem Erweiterungspaket. */
+  function ensureWorker(lang) {
+    if (workers.has(lang)) return Promise.resolve(workers.get(lang));
+    if (workerPromises.has(lang)) return workerPromises.get(lang);
+    const promise = (async () => {
       await loadLib();
       /* tesseract.js 4.1.1 nimmt hier NUR ein Optionsobjekt entgegen
          (nicht „langs, oem, options“ wie v5): sonst bleiben workerPath/
@@ -421,31 +445,72 @@
         langPath: LIB_DIR,
         gzip: true,
         workerBlobURL: false,   /* Worker direkt von moz-extension:// laden (gleiche Herkunft) */
-        logger: makeLogger()
+        logger: makeLogger(lang)
       });
-      await w.loadLanguage(wanted);
-      await w.initialize(wanted);
-      /* PSM 11 liest mehrere getrennte Textblöcke; PSM 6 (SINGLE_BLOCK) hat
-         bei freigestellten Thumbnail-Überschriften zu viel zusammengezogen. */
-      await w.setParameters({
-        tessedit_pageseg_mode: OCR_PSM,
-        user_defined_dpi: OCR_DPI,
-        preserve_interword_spaces: '1'
-      });
+      try {
+        await w.loadLanguage(lang);
+        await w.initialize(lang);
+        /* PSM 11 liest mehrere getrennte Textblöcke; PSM 6 (SINGLE_BLOCK) hat
+           bei freigestellten Thumbnail-Überschriften zu viel zusammengezogen. */
+        await w.setParameters({
+          tessedit_pageseg_mode: OCR_PSM,
+          user_defined_dpi: OCR_DPI,
+          preserve_interword_spaces: '1'
+        });
+      } catch (e) {
+        try { w.terminate(); } catch (e2) { /* schon tot */ }
+        throw e;
+      }
       return w;
     })().then(w => {
-      createPromise = null;
-      worker = w;
+      workerPromises.delete(lang);
+      workers.set(lang, w);
+      lastError = null;
+      stage = '';
+      stageLang = '';
+      stageProgress = 0;
       failChain = 0;
-      dlog('ocr host: worker bereit (' + wanted + ')');
+      dlog('ocr host: worker bereit (' + lang + ')');
       return w;
     }).catch(err => {
-      createPromise = null;
-      worker = null;
-      workerLangs = null;
+      workerPromises.delete(lang);
+      lastError = String((err && err.message) || err);
+      stage = '';
+      stageLang = '';
+      stageProgress = 0;
       throw markFatal(err);
     });
-    return createPromise;
+    workerPromises.set(lang, promise);
+    return promise;
+  }
+
+  /* Vorwärmen für das Popup: alle in der Einstellung gewählten Sprachen
+     wirklich initialisieren. „eng+rus“ lädt bewusst zwei getrennte Worker,
+     damit die Anzeige „bereit“ nicht lügt und später kein Sprachwechsel mehr
+     nötig ist. */
+  function prepare(langs) {
+    const list = splitLangs(langs);
+    const key = list.join('+');
+    if (preparePromise && prepareKey === key) return preparePromise;
+    const run = prepareChain.then(async () => {
+      prepareActive++;
+      try {
+        lastError = null;
+        for (const lang of list) await ensureWorker(lang);
+      } finally {
+        prepareActive--;
+        armIdle();
+      }
+    });
+    prepareChain = run.catch(() => {});
+    prepareKey = key;
+    const clear = () => { if (preparePromise === completed) { preparePromise = null; prepareKey = ''; } };
+    const completed = run.then(
+      () => { clear(); return status(); },
+      e => { clear(); throw e; }
+    );
+    preparePromise = completed;
+    return completed;
   }
 
   function recognize(url, langs, hint) {
@@ -503,8 +568,22 @@
   }
 
   function status() {
-    return { ready: !!worker, langs: workerLangs, cached: textCache.size };
+    const readyLangs = Array.from(workers.keys());
+    const loadingLangs = Array.from(workerPromises.keys());
+    const loading = prepareActive > 0 || loadingLangs.length > 0;
+    return {
+      state: lastError ? 'error' : (loading ? 'loading' : (readyLangs.length ? 'ready' : 'off')),
+      ready: readyLangs.length > 0,
+      loading,
+      langs: readyLangs,
+      loadingLangs,
+      stage,
+      stageLang,
+      progress: Math.max(0, Math.min(100, Math.round(stageProgress * 100))),
+      error: lastError,
+      cached: textCache.size
+    };
   }
 
-  self.YB_OCR_HOST = { recognize, status, reset: () => terminateWorker('reset') };
+  self.YB_OCR_HOST = { recognize, prepare, status, reset: () => terminateWorker('reset') };
 })();

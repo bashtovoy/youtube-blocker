@@ -3,6 +3,31 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.15] — 2026-10-20
+
+### Hinzugefügt
+- **OCR-Modell wird beim Öffnen des Popups sichtbar vorgeladen.** Ist OCR
+  aktiviert, initialisiert das Popup die in `OCR-Sprachen` gewählten
+  Tesseract-Modelle sofort und zeigt darunter Status, Fortschrittsbalken und
+  bei einem Fehler einen Knopf „Erneut laden“. Der Ladevorgang läuft im
+  Hintergrund-/Offscreen-Host weiter, auch wenn das Popup gleich wieder
+  schließt. Bei `eng+rus` werden beide Modelle in getrennten Workern
+  vorbereitet; nach zehn Minuten Leerlauf werden sie gemeinsam beendet.
+- Der Host meldet dafür `state`, `loading`, `langs`, `loadingLangs`, `stage`,
+  `progress` und `error`. Die neuen Routen `prepare` und `status` sind auch im
+  Chrome-Offscreen-Dokument verfügbar.
+
+### Geändert
+- **Klarstellung zum Paket:** Die OCR-Sprachdaten `lib/eng.traineddata.gz` und
+  `lib/rus.traineddata.gz` bleiben im Firefox-/Chrome-Paket. Aus dem
+  AMO-Paket werden weiterhin nur die großen SigLIP-Modelle (`models/`)
+  ausgeschlossen.
+
+### Tests
+- `test-ocr-host-image` prüft den neuen Vorwärmpfad, den Bereit-Status mit
+  beiden Sprachen und dass ein vorhandener `eng`-Worker beim Wechsel auf
+  `rus` nicht mehr beendet wird.
+
 ## [1.5.14] — 2026-10-20
 
 ### Geändert

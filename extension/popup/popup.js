@@ -108,7 +108,10 @@ function renderSemStatus(st) {
    grüner Haken = aktiv und einsatzbereit; grauer Ring = aus oder noch nicht
    vorbereitet; blaue Punkte = lädt gerade; rotes „!“ = Fehler.
    Die Checkboxen bleiben reine Einstellungen. */
-let ocrState = 'pending';      /* pending | ok | err — Antwort des OCR-Hosts */
+let ocrStatus = null;          /* letzter Status des OCR-Hosts */
+let ocrPollTimer = null;       /* Popup offen halten, solange OCR lädt */
+let ocrPrepareRequest = null;  /* laufende prepare-Anfrage */
+let ocrPrepareKey = '';        /* Sprachsatz der laufenden Anfrage */
 let whisperState = 'pending';  /* pending | ok | missing — siehe checkWhisper() */
 let whisperChecked = false;    /* Bibliothek nur einmal je Popup-Öffnung prüfen */
 let shotsPermOk = null;        /* null = noch nicht geprüft */
@@ -144,11 +147,13 @@ function renderStats() {
   else if (lastSemStatus && lastSemStatus.state === 'error') sem = ['err', 'stat_err'];
   setStat('statSemanticImage', sem[0], sem[1]);
 
-  /* OCR: der Hintergrund-Host beantwortet die Statusabfrage */
+  /* OCR: der Host meldet Laden/Bereit/Fehler; das Popup fragt während des
+     Ladens nach, damit der Fortschritt nicht nur ein einmaliger Schnappschuss ist. */
   let ocr = ['pending', 'stat_pending'];
   if (!on('checkThumbOcr')) ocr = ['off', 'stat_off'];
-  else if (ocrState === 'ok') ocr = ['ok', 'stat_ok'];
-  else if (ocrState === 'err') ocr = ['err', 'stat_err'];
+  else if (ocrStatus && ocrStatus.state === 'loading') ocr = ['wait', 'stat_wait'];
+  else if (ocrStatus && ocrStatus.state === 'error') ocr = ['err', 'stat_err'];
+  else if (ocrStatus && ocrStatus.state === 'ready') ocr = ['ok', 'stat_ok'];
   setStat('statOcr', ocr[0], ocr[1]);
 
   /* Sprache: Whisper-Bibliothek installiert? (Modelldatei wird nicht geprüft) */
@@ -164,6 +169,119 @@ function renderStats() {
     if (on('shotBeforeHide')) sh = shotsPermOk === false ? ['err', 'shots_perm_missing'] : ['ok', 'stat_ok'];
     setStat('statShots', sh[0], sh[1]);
   }
+}
+
+/* ---- OCR-Modell: sichtbar vorbereiten und Status anzeigen -------------------
+   Die Tesseract-Modelle liegen lokal im Paket; „laden“ heißt hier: Worker,
+   WASM-Kern und die ausgewählten Sprachdaten initialisieren. Das passiert
+   automatisch beim Öffnen des Popups, sobald OCR aktiviert ist. Währenddessen
+   fragt das Popup den Host regelmäßig nach dem Status; nach Erfolg/Fehler
+   hört die Abfrage auf. */
+function ocrStatusView(st) {
+  if (!st) return { text: t('ocr_idle'), cls: '', bar: 'none', pct: 0 };
+  if (st.state === 'error') {
+    return { text: t('ocr_error', { msg: st.error || t('unknown') }), cls: 'err', bar: 'none', pct: 0 };
+  }
+  if (st.state === 'loading') {
+    const lang = (st.loadingLangs && st.loadingLangs[0]) || st.stageLang || '';
+    const text = lang ? t('ocr_loading_lang', { lang }) : t('ocr_loading');
+    const pct = Number(st.progress) || 0;
+    return pct > 0
+      ? { text, cls: '', bar: 'det', pct: Math.max(2, Math.min(100, pct)) }
+      : { text, cls: '', bar: 'indet', pct: 0 };
+  }
+  if (st.state === 'ready') {
+    const langs = (st.langs || []).join(', ');
+    return { text: t('ocr_ready', { langs: langs || 'eng' }), cls: 'ok', bar: 'none', pct: 0 };
+  }
+  return { text: t('ocr_idle'), cls: '', bar: 'none', pct: 0 };
+}
+
+function renderOcrStatus() {
+  const block = $('ocrBlock');
+  if (!block) return;
+  const enabled = $('checkThumbOcr').checked;
+  block.hidden = !enabled;
+  if (!enabled) return;
+  const v = ocrStatusView(ocrStatus);
+  const text = $('ocrModelStatus');
+  if (text) {
+    text.textContent = v.text;
+    text.classList.toggle('ok', v.cls === 'ok');
+    text.classList.toggle('err', v.cls === 'err');
+  }
+  const bar = $('ocrProgress');
+  const fill = $('ocrProgressFill');
+  if (bar && fill) {
+    bar.hidden = v.bar === 'none';
+    bar.classList.toggle('indeterminate', v.bar === 'indet');
+    fill.style.width = v.bar === 'det' ? v.pct + '%' : '';
+  }
+  const btn = $('ocrPrepare');
+  if (btn) {
+    const busy = ocrStatus && ocrStatus.state === 'loading';
+    btn.hidden = busy || !!(ocrStatus && ocrStatus.state === 'ready');
+    btn.disabled = busy;
+    btn.textContent = t(ocrStatus && ocrStatus.state === 'error' ? 'ocr_retry' : 'ocr_prepare');
+  }
+}
+
+function stopOcrPoll() {
+  if (ocrPollTimer) clearTimeout(ocrPollTimer);
+  ocrPollTimer = null;
+}
+
+function scheduleOcrPoll() {
+  stopOcrPoll();
+  if (!$('checkThumbOcr').checked) return;
+  if (ocrStatus && (ocrStatus.state === 'ready' || ocrStatus.state === 'error')) return;
+  ocrPollTimer = setTimeout(refreshOcrStatus, 700);
+}
+
+async function refreshOcrStatus() {
+  try {
+    const res = await api.runtime.sendMessage({ type: 'ybocr', op: 'status' });
+    if (res && res.ok && res.status) ocrStatus = res.status;
+    else ocrStatus = { state: 'error', error: (res && res.error) || t('unknown') };
+  } catch (e) {
+    ocrStatus = { state: 'error', error: String((e && e.message) || e) };
+  }
+  renderStats();
+  renderOcrStatus();
+  scheduleOcrPoll();
+}
+
+function prepareOcr() {
+  if (!$('checkThumbOcr').checked) { stopOcrPoll(); renderOcrStatus(); return; }
+  const langs = $('ocrLangs').value || 'eng+rus';
+  /* Sofort als „lädt“ anzeigen; die Wahrheit kommt anschließend vom Host. */
+  if (!ocrStatus || ocrStatus.state !== 'loading') {
+    ocrStatus = { state: 'loading', loadingLangs: langs.split('+'), progress: 0 };
+  }
+  renderStats();
+  renderOcrStatus();
+  stopOcrPoll();
+  ocrPollTimer = setTimeout(refreshOcrStatus, 250);
+  if (ocrPrepareRequest && ocrPrepareKey === langs) return;
+  ocrPrepareKey = langs;
+  ocrPrepareRequest = api.runtime.sendMessage({ type: 'ybocr', op: 'prepare', langs })
+    .then(res => {
+      if (res && res.ok && res.status) ocrStatus = res.status;
+      else if (res && !res.ok) ocrStatus = { state: 'error', error: res.error || t('unknown') };
+      return refreshOcrStatus();
+    })
+    .catch(e => {
+      stopOcrPoll();
+      ocrStatus = { state: 'error', error: String((e && e.message) || e) };
+      renderStats();
+      renderOcrStatus();
+    })
+    .finally(() => {
+      if (ocrPrepareKey === langs) {
+        ocrPrepareRequest = null;
+        ocrPrepareKey = '';
+      }
+    });
 }
 
 /* ---- Kontrollbilder: optionale Berechtigungen -------------------------------
@@ -224,6 +342,7 @@ function applyLanguage(lang) {
   $('kwList').dataset.empty = t('kw_empty');
   renderKeywords();
   renderSemStatus(lastSemStatus);
+  renderOcrStatus();
   renderCounts();
   renderPromoDiag();
 }
@@ -383,10 +502,12 @@ async function load() {
   api.runtime.sendMessage({ type: 'ybsem', op: 'status' })
     .then(res => { if (res && res.ok && res.status) renderSemStatus(res.status); })
     .catch(() => { /* Host nicht erreichbar → gespeicherter Stand bleibt stehen */ });
-  /* OCR-Host-Status für den Kanal-Indikator abfragen */
-  api.runtime.sendMessage({ type: 'ybocr', op: 'status' })
-    .then(res => { ocrState = (res && res.ok) ? 'ok' : 'err'; renderStats(); })
-    .catch(() => { ocrState = 'err'; renderStats(); });
+  /* OCR-Modell beim Öffnen des Popups vorbereiten und den Fortschritt
+     anzeigen. Auch wenn das Popup gleich wieder schließt, läuft die
+     Initialisierung im Hintergrund-/Offscreen-Host weiter. */
+  refreshOcrStatus();
+  if ($('checkThumbOcr').checked) prepareOcr();
+  else renderOcrStatus();
   /* Whisper-Bibliothek nur prüfen, wenn die Spracherkennung eingeschaltet ist */
   if ($('checkSpeech').checked) checkWhisper();
   /* Optionale Berechtigungen der Kontrollbilder prüfen (Häkchen + Warnhinweis) */
@@ -574,6 +695,10 @@ SETTING_IDS.forEach(id => {
   if (!el || id === 'shotBeforeHide') return;   /* eigener Listener: Berechtigung vor dem Speichern */
   el.addEventListener('change', () => {
     if (id === 'checkSpeech' && el.checked) checkWhisper();
+    if (id === 'checkThumbOcr') {
+      if (el.checked) prepareOcr();
+      else { stopOcrPoll(); renderOcrStatus(); }
+    }
     renderStats();
     schedulePersist(0);
   });
@@ -611,7 +736,10 @@ VALUE_IDS.forEach(id => {
   const el = $(id);
   if (!el || id === 'uiLang') return;   /* uiLang: eigener Listener unten (Sprache sofort anwenden) */
   const isText = el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number');
-  el.addEventListener(isText ? 'input' : 'change', () => schedulePersist(isText ? 700 : 0));
+  el.addEventListener(isText ? 'input' : 'change', () => {
+    if (id === 'ocrLangs' && $('checkThumbOcr').checked) prepareOcr();
+    schedulePersist(isText ? 700 : 0);
+  });
 });
 if ($('allowAll')) {
   $('allowAll').addEventListener('input', () => schedulePersist(700));
@@ -624,7 +752,9 @@ $('uiLang').addEventListener('change', () => {
 });
 
 /* Wird das Popup mit ausstehendem Debounce geschlossen, wird das Speichern nachgeholt */
-window.addEventListener('beforeunload', () => { if (dirty) persist(); });
+window.addEventListener('beforeunload', () => { stopOcrPoll(); if (dirty) persist(); });
+
+$('ocrPrepare').onclick = () => prepareOcr();
 
 $('export').onclick = async () => {
   const data = await api.storage.local.get(['settings', 'keywords']);

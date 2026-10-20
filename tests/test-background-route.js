@@ -102,6 +102,8 @@ function ask(listener, msg, timeoutMs = 2000) {
     assert.strictEqual(r.value.status.state, 'off');
     const o = await ask(listener, { type: 'ybocr', op: 'status' });
     assert.strictEqual(o.value.ok, true);
+    assert.strictEqual(o.value.status.state, 'off', 'OCR-Host meldet kalt „aus“');
+    assert.deepStrictEqual(plain(o.value.status.langs), []);
     assert.strictEqual(calls.offscreen, 0, 'kalte Statusabfrage startet kein Dokument');
   }
 

@@ -33,6 +33,10 @@
     const host = self.YB_OCR_HOST;
     try {
       if (!host) throw new Error('OCR-Host nicht geladen');
+      if (msg.op === 'prepare') {
+        const res = await host.prepare(msg.langs);
+        return { ok: true, status: res };
+      }
       if (msg.op === 'recognize') {
         const res = await host.recognize(msg.url, msg.langs, msg.hint);
         return { ok: true, text: res.text, ms: res.ms, cached: !!res.cached };

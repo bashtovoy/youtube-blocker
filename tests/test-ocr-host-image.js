@@ -134,6 +134,10 @@ const arr = u8 => Array.from(u8);
 const plain = o => JSON.parse(JSON.stringify(o));
 
 (async () => {
+  let st = host.status();
+  assert.strictEqual(st.state, 'off', 'vor dem ersten Lauf ist der Host aus');
+  assert.deepStrictEqual(plain(st.langs), []);
+
   /* 1) AVIF (echte ytimg-Lieferung): wird über Canvas zu PNG gewandelt. */
   nextResponse = () => okResponse('image/avif', AVIF_BYTES);
   let out = await host.recognize('https://i.ytimg.com/vi/x/hq720.jpg?sqp=1&rs=2', 'eng+rus');
@@ -210,17 +214,26 @@ const plain = o => JSON.parse(JSON.stringify(o));
   assert.strictEqual(recognized[recognized.length - 1].width, 8, 'Varianten sind 2× skaliert');
   assert.strictEqual(recognized[recognized.length - 1].height, 4);
 
-  /* 10) Kyrillischer Hinweis wählt rus statt des gemischten Modells. */
+  /* 10) Popup-Vorwärmen: „eng+rus“ initialisiert beide Modelle wirklich
+     und meldet danach einen belastbaren Bereit-Status. */
+  st = await host.prepare('eng+rus');
+  assert.strictEqual(st.state, 'ready', 'nach prepare ist der Host bereit');
+  assert.strictEqual(st.loading, false);
+  assert.strictEqual(st.error, null);
+  assert.deepStrictEqual(plain(st.langs).sort(), ['eng', 'rus'], 'beide Modelle sind geladen');
+  assert.deepStrictEqual(initializedLangs.slice().sort(), ['eng', 'rus']);
+
+  /* 11) Kyrillischer Hinweis wählt rus statt des gemischten Modells. Der
+     rus-Worker wurde oben bereits vorgeladen und bleibt neben eng bestehen. */
   recognizeResult = { data: { text: 'ПРИВЕТ МИР', confidence: 91 } };
   const loadedBefore = loadedLangs.length;
   const terminatedBefore = terminated;
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/ru/hq720.jpg', 'eng+rus', 'Привет, это русский заголовок');
   assert.strictEqual(out.text, 'ПРИВЕТ МИР');
-  assert.strictEqual(loadedLangs.length, loadedBefore + 1, 'ein neuer Worker für rus');
-  assert.strictEqual(loadedLangs[loadedLangs.length - 1], 'rus');
+  assert.strictEqual(loadedLangs.length, loadedBefore, 'kein erneutes Laden nach prepare');
   assert.strictEqual(initializedLangs[initializedLangs.length - 1], 'rus');
-  assert.ok(terminated > terminatedBefore, 'der alte eng-Worker wurde beendet');
+  assert.strictEqual(terminated, terminatedBefore, 'der eng-Worker bleibt für spätere Karten erhalten');
 
   process.stdout.write('ocr-host image tests: OK\n');
 })().catch(e => { console.error(e); process.exit(1); });

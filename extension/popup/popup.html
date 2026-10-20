@@ -56,6 +56,9 @@
     #semModelStatus.ok { color: #12a150; font-weight: 600; }
     #semModelStatus.err { color: #e0356a; font-weight: 600; }
     #semBlock { margin: -2px 0 6px; }
+    #ocrModelStatus.ok { color: #12a150; font-weight: 600; }
+    #ocrModelStatus.err { color: #e0356a; font-weight: 600; }
+    #ocrBlock { margin: -2px 0 6px; }
     .progress { height: 6px; border-radius: 4px; background: #ece6f4; overflow: hidden; margin: 4px 0 2px; }
     .progress-fill { height: 100%; width: 0; border-radius: 4px;
       background: linear-gradient(90deg,#2dd4bf,#38bdf8); transition: width .25s ease; }
@@ -150,6 +153,11 @@
         <div class="progress" id="semProgress" hidden><div class="progress-fill" id="semProgressFill"></div></div>
       </div>
       <label class="row"><input type="checkbox" id="checkThumbOcr"> <span data-i18n="check_ocr">OCR: Text im Vorschaubild</span> <span class="stat" id="statOcr"></span></label>
+      <div id="ocrBlock" hidden>
+        <div class="hint" id="ocrModelStatus" aria-live="polite"></div>
+        <div class="progress" id="ocrProgress" hidden><div class="progress-fill" id="ocrProgressFill"></div></div>
+        <div class="rowbtns"><button id="ocrPrepare" class="secondary" data-i18n="ocr_prepare">OCR-Modell laden</button></div>
+      </div>
       <label class="row"><input type="checkbox" id="checkSpeech"> <span data-i18n="check_speech">Sprache im Video (Whisper, aufwendig)</span> <span class="stat" id="statSpeech"></span></label>
       <label class="row"><input type="checkbox" id="hideMembersOnly"> <span data-i18n="check_members">„Members only“ ausblenden (Mitglieder-Badge)</span> <span class="stat" id="statMembersOnly"></span></label>
       <label class="row"><input type="checkbox" id="hideAiGenerated"> <span data-i18n="check_ai">KI-Inhalte ausblenden („KI“-Badge)</span> <span class="stat" id="statAi"></span></label>
