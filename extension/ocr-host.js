@@ -7,7 +7,14 @@
    nur noch per runtime.sendMessage mit diesem Host.
    Alle Dateien liegen lokal im Paket: der Worker startet über ocr-worker.js
    (Log-Filter + Tesseract-Worker-Skript), Bibliothek, SIMD-WASM-Kern und
-   Sprachdaten liegen in lib/ — kein CDN, kein Fernbezug zur Laufzeit. */
+   Sprachdaten liegen in lib/ — kein CDN, kein Fernbezug zur Laufzeit.
+
+   Erkennung seit 1.5.14 mehrstufig:
+   1. schneller Lauf auf dem Originalbild (PSM 11, nur die wahrscheinliche Sprache),
+   2. nur bei kurzem/unsicherem Text ein tiefer Lauf über präparierte Varianten
+      (Graustufen/Otsu, Rot-Maske, helle Maske, Invertierung, dunkle Maske).
+   Rot/Weiß getrennt zu erkennen ist bei stylisierten Thumbnails entscheidend;
+   die Sprachmodelle werden bewusst nicht als „eng+rus“ gemischt. */
 (function () {
   'use strict';
 
@@ -20,6 +27,18 @@
      Nächster Treffer initialisiert lazy neu (alles liegt lokal, ~2–5 s). */
   const IDLE_MS = 10 * 60 * 1000;
   const CACHE_MAX = 400;   /* Bild-URL+Sprachen → Text (Dedupe über Karten/Tabs/Rescans) */
+
+  /* Cache-Schlüssel mit Pipeline-Version: alte, schlechte OCR-Texte aus einer
+     früheren Sitzung dürfen einen erneuten Lauf nicht verhindern. */
+  const CACHE_VERSION = 'ocr-v2';
+  const OCR_PSM = '11';          /* SPARSE_TEXT: mehrere getrennte Textblöcke */
+  const OCR_DPI = '300';
+  const FAST_MIN_CHARS = 16;     /* darunter lohnt der tiefe Lauf fast immer */
+  const FAST_MIN_CONFIDENCE = 55;
+  const DEEP_SCALE = 2;
+  const DEEP_MAX_SIDE = 2600;    /* 1280×720 → 2560×1440, danach Speicherdeckel */
+  const MASK_MIN_COVERAGE = 0.0015;
+  const MASK_MAX_COVERAGE = 0.70;
 
   let worker = null;
   let workerLangs = null;
@@ -108,6 +127,16 @@
     return false;
   }
 
+  function canvasToPngBlob(canvas) {
+    return new Promise((resolve, reject) => {
+      if (!canvas || typeof canvas.toBlob !== 'function') {
+        reject(new Error('Canvas-Export nicht verfügbar'));
+        return;
+      }
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Canvas-Export fehlgeschlagen'))), 'image/png');
+    });
+  }
+
   async function imageBytesFor(url) {
     let res;
     try {
@@ -136,15 +165,15 @@
     /* Fremdformat (AVIF & Co.): der Browser dekodiert es zuverlässig,
        Tesseract bekommt ein verlustfreies PNG. */
     try {
-      const bitmap = await createImageBitmap(new Blob([bytes], { type: type || 'image/png' }));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: type || 'application/octet-stream' }));
       try {
         const canvas = document.createElement('canvas');
         canvas.width = bitmap.width;
         canvas.height = bitmap.height;
-        canvas.getContext('2d').drawImage(bitmap, 0, 0);
-        const blob = await new Promise((resolve, reject) => {
-          canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Canvas-Export fehlgeschlagen'))), 'image/png');
-        });
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas-Kontext fehlt');
+        ctx.drawImage(bitmap, 0, 0);
+        const blob = await canvasToPngBlob(canvas);
         return new Uint8Array(await blob.arrayBuffer());
       } finally {
         if (typeof bitmap.close === 'function') bitmap.close();
@@ -153,6 +182,223 @@
       dlog('ocr host: Bild nicht dekodierbar (' + ((e && e.message) || e) + ')');
       return null;
     }
+  }
+
+  /* ---------- Vorverarbeitung für den tiefen Lauf ----------
+     Tesseract mag dunkle Schrift auf hellem Grund. Je nach Thumbnail liegt
+     der Text aber als Rot, Weiß oder Schwarz auf einem unruhigen Hintergrund.
+     Darum erzeugen wir aus einem bereits dekodierten Bild mehrere binäre
+     Varianten; jede Variante wird nur erkannt, wenn sie plausibel Text
+     enthält (nicht fast leer und nicht fast flächig). */
+
+  async function decodeBitmap(bytes) {
+    if (typeof createImageBitmap !== 'function') return null;
+    try {
+      return await createImageBitmap(new Blob([bytes]));
+    } catch (e) {
+      dlog('ocr host: Bild für Varianten nicht dekodierbar (' + ((e && e.message) || e) + ')');
+      return null;
+    }
+  }
+
+  function pixelLuma(r, g, b) {
+    return (r * 299 + g * 587 + b * 114) / 1000;
+  }
+
+  function makeBaseImage(bitmap) {
+    const bw = Number(bitmap && bitmap.width) || 0;
+    const bh = Number(bitmap && bitmap.height) || 0;
+    if (!bw || !bh) return null;
+    const maxSide = Math.max(bw, bh);
+    const scale = Math.min(DEEP_SCALE, DEEP_MAX_SIDE / maxSide);
+    const width = Math.max(1, Math.round(bw * scale));
+    const height = Math.max(1, Math.round(bh * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const image = ctx.getImageData(0, 0, width, height);
+    if (!image || !image.data) return null;
+    return { data: image.data, width, height };
+  }
+
+  function otsuThreshold(data, width, height) {
+    const hist = new Uint32Array(256);
+    const total = width * height;
+    for (let i = 0; i < data.length; i += 4) {
+      const l = Math.round(pixelLuma(data[i], data[i + 1], data[i + 2]));
+      hist[Math.max(0, Math.min(255, l))]++;
+    }
+    let sum = 0;
+    for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let sumB = 0;
+    let weightB = 0;
+    let best = -1;
+    let threshold = 127;
+    for (let i = 0; i < 256; i++) {
+      weightB += hist[i];
+      if (!weightB) continue;
+      const weightF = total - weightB;
+      if (!weightF) break;
+      sumB += i * hist[i];
+      const meanB = sumB / weightB;
+      const meanF = (sum - sumB) / weightF;
+      const between = weightB * weightF * (meanB - meanF) * (meanB - meanF);
+      if (between > best) { best = between; threshold = i; }
+    }
+    return threshold;
+  }
+
+  function variantCanvas(base, mode, threshold) {
+    const { data, width, height } = base;
+    const out = new Uint8ClampedArray(data.length);
+    let foreground = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      let on = false;
+      if (a >= 32) {
+        const l = pixelLuma(r, g, b);
+        if (mode === 'gray') on = l <= threshold;
+        else if (mode === 'gray-inv') on = l > threshold;
+        else if (mode === 'red') {
+          /* Bewusst locker: die dicken Buchstaben haben weiche Kanten und
+             werden bei einer strengen Rot-Schwelle zerteilt. Der Test mit
+             „RIP“ auf der Referenzkarte liest nur mit dieser Maske exakt. */
+          on = r >= 70 && r - Math.max(g, b) >= 20;
+        } else if (mode === 'bright') {
+          on = l >= 175 && (Math.max(r, g, b) - Math.min(r, g, b)) <= 90;
+        } else if (mode === 'dark') {
+          on = l <= 75;
+        }
+      }
+      const v = on ? 0 : 255;
+      out[i] = v;
+      out[i + 1] = v;
+      out[i + 2] = v;
+      out[i + 3] = 255;
+      if (on) foreground++;
+    }
+
+    /* Masken, die fast nichts oder fast das ganze Bild als Text markieren,
+       sind für Tesseract nur Rauschen. Graustufen bleiben immer drin. */
+    if (mode === 'red' || mode === 'bright' || mode === 'dark') {
+      const coverage = foreground / (width * height);
+      if (coverage < MASK_MIN_COVERAGE || coverage > MASK_MAX_COVERAGE) return null;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const image = ctx.createImageData(width, height);
+    image.data.set(out);
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  /* Ein Canvas kann Tesseract direkt übernehmen; der Byte-Weg bleibt als
+     Fallback für Umgebungen, in denen die Canvas-Erkennung nicht greift. */
+  async function recognizePass(w, image) {
+    const res = await w.recognize(image);
+    const data = (res && res.data) || {};
+    const confidence = Number(data.confidence);
+    return {
+      text: String(data.text || ''),
+      confidence: Number.isFinite(confidence) ? confidence : null
+    };
+  }
+
+  async function recognizeCanvas(w, canvas) {
+    try {
+      return await recognizePass(w, canvas);
+    } catch (e) {
+      try {
+        const blob = await canvasToPngBlob(canvas);
+        return await recognizePass(w, new Uint8Array(await blob.arrayBuffer()));
+      } catch (e2) {
+        throw e;
+      }
+    }
+  }
+
+  async function deepPass(w, bytes) {
+    const bitmap = await decodeBitmap(bytes);
+    if (!bitmap) return [];
+    const out = [];
+    try {
+      const base = makeBaseImage(bitmap);
+      if (!base) return out;
+      const threshold = otsuThreshold(base.data, base.width, base.height);
+      const modes = ['gray', 'red', 'bright', 'gray-inv', 'dark'];
+      for (const mode of modes) {
+        const canvas = variantCanvas(base, mode, threshold);
+        if (!canvas) continue;
+        try {
+          const res = await recognizeCanvas(w, canvas);
+          const text = String(res.text || '').trim();
+          if (text) {
+            out.push(text);
+            dlog('ocr host: deep ' + mode + ' ' + text.length + ' Zeichen');
+          }
+        } catch (e) {
+          dlog('ocr host: deep ' + mode + ' fehlgeschlagen (' + ((e && e.message) || e) + ')');
+        }
+      }
+    } catch (e) {
+      dlog('ocr host: Varianten fehlgeschlagen (' + ((e && e.message) || e) + ')');
+    } finally {
+      if (typeof bitmap.close === 'function') bitmap.close();
+    }
+    return out;
+  }
+
+  /* ---------- Sprachen ----------
+     „eng+rus“ wird nicht als ein Tesseract-Modell geladen: Latein und
+     Kyrillisch konkurrieren dann bei kurzen, verzerrten Wörtern. Stattdessen
+     wählen wir anhand von Titel/Kanal die wahrscheinlichere Schrift und
+     laden nur deren Modell. Die andere Sprache bleibt dem Nutzer als
+     Einstellung erhalten, falls das Thumbnail anders beschriftet ist. */
+  function splitLangs(langs) {
+    const list = String(langs || 'eng+rus').split('+').map(s => s.trim()).filter(Boolean);
+    return list.length ? Array.from(new Set(list)) : ['eng'];
+  }
+
+  function primaryLang(langs, hint) {
+    const list = splitLangs(langs);
+    if (list.length === 1) return list[0];
+    const text = String(hint || '');
+    const cyr = (text.match(/[\u0400-\u04FF]/g) || []).length;
+    const lat = (text.match(/[A-Za-z]/g) || []).length;
+    if (cyr > lat && list.indexOf('rus') >= 0) return 'rus';
+    if (lat >= cyr && list.indexOf('eng') >= 0) return 'eng';
+    return list[0];
+  }
+
+  function needsDeep(text, confidence) {
+    const s = String(text || '').trim();
+    if (!s) return true;
+    if (s.length < FAST_MIN_CHARS) return true;
+    if (!/[\p{L}\p{N}]{3}/u.test(s)) return true;
+    if (Number.isFinite(confidence) && confidence < FAST_MIN_CONFIDENCE) return true;
+    return false;
+  }
+
+  function mergeTexts(texts) {
+    const seen = new Set();
+    const out = [];
+    for (const raw of texts || []) {
+      const text = String(raw || '').trim();
+      if (!text) continue;
+      const key = text.replace(/\s+/g, ' ').toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(text);
+    }
+    return out.join('\n');
   }
 
   /* Erstellen/Erneuern des Tesseract-Workers. Alles lokal: Einstieg ocr-worker.js,
@@ -179,6 +425,13 @@
       });
       await w.loadLanguage(wanted);
       await w.initialize(wanted);
+      /* PSM 11 liest mehrere getrennte Textblöcke; PSM 6 (SINGLE_BLOCK) hat
+         bei freigestellten Thumbnail-Überschriften zu viel zusammengezogen. */
+      await w.setParameters({
+        tessedit_pageseg_mode: OCR_PSM,
+        user_defined_dpi: OCR_DPI,
+        preserve_interword_spaces: '1'
+      });
       return w;
     })().then(w => {
       createPromise = null;
@@ -195,16 +448,16 @@
     return createPromise;
   }
 
-  function recognize(url, langs) {
+  function recognize(url, langs, hint) {
     const lang = String(langs || 'eng+rus');
-    const cacheKey = lang + '\u0001' + url;
+    const hintText = String(hint || '');
+    const cacheKey = CACHE_VERSION + '\u0001' + lang + '\u0001' + hintText + '\u0001' + url;
     if (textCache.has(cacheKey)) {
       return Promise.resolve({ text: textCache.get(cacheKey), cached: true });
     }
     const run = queue.then(async () => {
       busy++;
       try {
-        const w = await ensureWorker(lang);
         const t0 = Date.now();
         const bytes = await imageBytesFor(url);
         if (!bytes) {
@@ -213,13 +466,25 @@
           dlog('ocr host: Bild übersprungen ' + String(url).slice(0, 90));
           return { text: '', skipped: true };
         }
-        const res = await w.recognize(bytes);
-        const text = String((res && res.data && res.data.text) || '');
+
+        const primary = primaryLang(lang, hintText);
+        const w = await ensureWorker(primary);
+        const fast = await recognizePass(w, bytes);
         failChain = 0;
+
+        const texts = [fast.text];
+        let deep = false;
+        if (needsDeep(fast.text, fast.confidence)) {
+          deep = true;
+          texts.push(...await deepPass(w, bytes));
+        }
+
+        const text = mergeTexts(texts);
         textCache.set(cacheKey, text);
         while (textCache.size > CACHE_MAX) textCache.delete(textCache.keys().next().value);
         const ms = Date.now() - t0;
-        dlog('ocr ' + ms + 'ms ' + text.trim().length + ' chars');
+        dlog('ocr ' + ms + 'ms ' + text.trim().length + ' chars' +
+          (deep ? ' (deep)' : '') + ' [' + primary + ']');
         return { text, ms };
       } catch (e) {
         failChain++;

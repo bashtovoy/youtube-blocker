@@ -33,8 +33,12 @@
      nach ab. Ohne diese Kette würden alle Karten gleichzeitig anfragen, die
      hinteren liefen in den Timeout und bekämen nie ein Ergebnis. */
   let ocrChain = Promise.resolve();
-  function recognizeUrl(url, langs) {
-    const run = ocrChain.then(() => call({ op: 'recognize', url, langs }, TIMEOUT_RECOGNIZE_MS));
+  function recognizeUrl(url, langs, hint) {
+    const payload = { op: 'recognize', url, langs };
+    /* Titel/Kanal helfen dem Host, die wahrscheinlichere Schrift zu wählen
+       (Latein oder Kyrillisch), ohne beide Tesseract-Modelle zu mischen. */
+    if (hint) payload.hint = String(hint);
+    const run = ocrChain.then(() => call(payload, TIMEOUT_RECOGNIZE_MS));
     ocrChain = run.catch(() => {});
     return run.then(resp => resp.text || '');
   }

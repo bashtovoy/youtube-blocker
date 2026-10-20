@@ -1,8 +1,9 @@
-/* test-ocr-host-image.js — Bildbeschaffung des OCR-Hosts (extension/ocr-host.js).
-   Ohne Browser, über vm mit Fakes: AVIF-Bytes (ytimg liefert hq720-URLs so)
-   gehen nicht mehr an Tesseract, sondern werden über den Browser zu PNG
+/* test-ocr-host-image.js — Bildbeschaffung und mehrstufige Erkennung des
+   OCR-Hosts (extension/ocr-host.js). Ohne Browser, über vm mit Fakes:
+   AVIF-Bytes (ytimg liefert hq720-URLs so) werden über den Browser zu PNG
    gewandelt; JPEG/PNG/WebP laufen unverändert durch; 404/HTML und kaputte
-   Bilder werden still übersprungen (kein Fehler, kein Cache). */
+   Bilder werden still übersprungen (kein Fehler, kein Cache). Zusätzlich:
+   PSM 11, Sprachwahl nach Titel/Kanal und der tiefe Lauf mit Masken. */
 'use strict';
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const path = require('path');
@@ -53,12 +54,32 @@ async function fakeCreateImageBitmap(blob) {
   return { width: 4, height: 2, closed: false, close() { this.closed = true; } };
 }
 const canvasCalls = [];
+function makePixels(w, h) {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < data.length; i += 4) {
+    const band = ((i / 4) % 4);
+    /* Dunkelrot mit weicher Kante: die frühere strenge Rot-Schwelle hat
+       genau solche Pixel verworfen; die lockere Maske muss sie behalten. */
+    const rgb = band === 0 ? [100, 70, 70] : band === 1 ? [240, 240, 240] : band === 2 ? [10, 10, 10] : [128, 128, 128];
+    data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = 255;
+  }
+  return { data, width: w, height: h };
+}
 function makeCanvas() {
-  return {
+  const canvas = {
     width: 0, height: 0,
-    getContext(kind) { canvasCalls.push(kind); return { drawImage() {} }; },
+    getContext(kind) {
+      canvasCalls.push(kind);
+      return {
+        drawImage() {},
+        getImageData(x, y, w, h) { return makePixels(w, h); },
+        createImageData(w, h) { return makePixels(w, h); },
+        putImageData(image) { canvas.lastImage = image; }
+      };
+    },
     toBlob(cb, type) { canvasCalls.push('toBlob:' + type); cb(new FakeBlob([PNG_BYTES], { type })); }
   };
+  return canvas;
 }
 const document = {
   createElement(tag) {
@@ -70,17 +91,23 @@ const document = {
   documentElement: { appendChild() {} }
 };
 
-/* Tesseract-Fake: zeichnet auf, welche Bytes der „Kern“ bekommt. */
+/* Tesseract-Fake: zeichnet auf, welche Bytes/Canvases der „Kern“ bekommt. */
 const recognized = [];
-let recognizeResult = { data: { text: 'TEXT' } };
+const loadedLangs = [];
+const initializedLangs = [];
+const paramCalls = [];
+let terminated = 0;
+let recognizeResult = { data: { text: 'RECOGNIZED THUMBNAIL TEXT', confidence: 91 } };
 const fakeWorker = {
-  async loadLanguage() {},
-  async initialize() {},
+  async loadLanguage(lang) { loadedLangs.push(lang); },
+  async initialize(lang) { initializedLangs.push(lang); },
+  async setParameters(params) { paramCalls.push(params); },
   recognize(image) { recognized.push(image); return Promise.resolve(recognizeResult); },
-  terminate() {}
+  terminate() { terminated++; }
 };
 let createWorkerOpts = null;
-const Tesseract = { createWorker: async opts => { createWorkerOpts = opts; return fakeWorker; } };
+let created = 0;
+const Tesseract = { createWorker: async opts => { createWorkerOpts = opts; created++; return fakeWorker; } };
 
 const sandbox = {
   browser: { runtime: { getURL: p => 'moz-extension://test/' + p } },
@@ -110,7 +137,7 @@ const plain = o => JSON.parse(JSON.stringify(o));
   /* 1) AVIF (echte ytimg-Lieferung): wird über Canvas zu PNG gewandelt. */
   nextResponse = () => okResponse('image/avif', AVIF_BYTES);
   let out = await host.recognize('https://i.ytimg.com/vi/x/hq720.jpg?sqp=1&rs=2', 'eng+rus');
-  assert.strictEqual(out.text, 'TEXT', 'Text kommt durch');
+  assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT', 'Text kommt durch');
   assert.ok(Number.isFinite(out.ms), 'Laufzeit wird gemeldet');
   assert.strictEqual(recognized.length, 1, 'der Kern bekam genau ein Bild');
   assert.deepStrictEqual(arr(recognized[0]), arr(PNG_BYTES), 'AVIF → PNG-Bytes für Tesseract');
@@ -119,12 +146,15 @@ const plain = o => JSON.parse(JSON.stringify(o));
   assert.ok(createWorkerOpts && String(createWorkerOpts.workerPath).endsWith('/ocr-worker.js'),
     'Worker startet über den Filter-Einstieg ocr-worker.js');
   assert.ok(String(createWorkerOpts.corePath).endsWith('/lib/'), 'Kern kommt aus lib/');
+  assert.strictEqual(paramCalls[0].tessedit_pageseg_mode, '11', 'PSM 11 wird gesetzt');
+  assert.deepStrictEqual(loadedLangs, ['eng'], 'ohne kyrillischen Hinweis nur eng');
+  assert.deepStrictEqual(initializedLangs, ['eng']);
 
   /* 2) JPEG: geht unverändert (ohne Canvas) an den Kern. */
   const canvasBefore = canvasCalls.length;
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/y/hqdefault.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'TEXT');
+  assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT');
   assert.deepStrictEqual(arr(recognized[recognized.length - 1]), arr(JPEG_BYTES), 'JPEG bleibt unverändert');
   assert.strictEqual(canvasCalls.length, canvasBefore, 'keine Konvertierung nötig');
 
@@ -142,7 +172,7 @@ const plain = o => JSON.parse(JSON.stringify(o));
   /* Derselbe URL später erneut: kein negativer Cache — zweiter Versuch erlaubt. */
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/gone/hq720.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'TEXT', 'nach Netz-Recovery liefert derselbe URL Text');
+  assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT', 'nach Netz-Recovery liefert derselbe URL Text');
 
   /* 5) HTML unter 200: ebenfalls Skip (kein Bild). */
   nextResponse = () => okResponse('text/html; charset=utf-8', new Uint8Array([60, 33, 68, 79, 67, 84, 89, 80, 69, 62]));
@@ -166,6 +196,31 @@ const plain = o => JSON.parse(JSON.stringify(o));
   nextResponse = () => { throw new Error('netz weg'); };
   out = await host.recognize('https://i.ytimg.com/vi/offline/hq720.jpg', 'eng+rus');
   assert.deepStrictEqual(plain(out), { text: '', skipped: true }, 'Netzfehler → Skip');
+
+  /* 9) Kurzer/unsicherer Text löst den tiefen Lauf mit Masken aus.
+     Der Fake liefert für jede Variante denselben Kurztext; entscheidend ist,
+     dass nach dem schnellen Lauf weitere Bildvarianten an Tesseract gehen. */
+  recognizeResult = { data: { text: '10 iLvs?', confidence: 40 } };
+  const recognizedBeforeDeep = recognized.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/deep/hq720.jpg', 'eng+rus');
+  assert.strictEqual(out.text, '10 iLvs?', 'tiefer Lauf liefert den erkannten Text');
+  assert.strictEqual(recognized.length - recognizedBeforeDeep, 6,
+    'schneller Lauf + fünf Varianten (grau, rot, hell, invertiert, dunkel)');
+  assert.strictEqual(recognized[recognized.length - 1].width, 8, 'Varianten sind 2× skaliert');
+  assert.strictEqual(recognized[recognized.length - 1].height, 4);
+
+  /* 10) Kyrillischer Hinweis wählt rus statt des gemischten Modells. */
+  recognizeResult = { data: { text: 'ПРИВЕТ МИР', confidence: 91 } };
+  const loadedBefore = loadedLangs.length;
+  const terminatedBefore = terminated;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/ru/hq720.jpg', 'eng+rus', 'Привет, это русский заголовок');
+  assert.strictEqual(out.text, 'ПРИВЕТ МИР');
+  assert.strictEqual(loadedLangs.length, loadedBefore + 1, 'ein neuer Worker für rus');
+  assert.strictEqual(loadedLangs[loadedLangs.length - 1], 'rus');
+  assert.strictEqual(initializedLangs[initializedLangs.length - 1], 'rus');
+  assert.ok(terminated > terminatedBefore, 'der alte eng-Worker wurde beendet');
 
   process.stdout.write('ocr-host image tests: OK\n');
 })().catch(e => { console.error(e); process.exit(1); });

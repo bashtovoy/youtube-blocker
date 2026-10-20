@@ -34,7 +34,7 @@
     try {
       if (!host) throw new Error('OCR-Host nicht geladen');
       if (msg.op === 'recognize') {
-        const res = await host.recognize(msg.url, msg.langs);
+        const res = await host.recognize(msg.url, msg.langs, msg.hint);
         return { ok: true, text: res.text, ms: res.ms, cached: !!res.cached };
       }
       if (msg.op === 'status') {

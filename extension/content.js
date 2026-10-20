@@ -598,7 +598,8 @@
     if (ocrNeeded) {
       try {
         const t0 = Date.now();
-        const text = await window.YB.ocr.recognizeUrl(v.thumb, state.settings.ocrLangs);
+        const hint = [v.title, v.channel].filter(Boolean).join(' ');
+        const text = await window.YB.ocr.recognizeUrl(v.thumb, state.settings.ocrLangs, hint);
         const trimmed = String(text || '').trim();
         log('ocr', v.videoId, trimmed.length + ' chars', (Date.now() - t0) + 'ms',
           trimmed ? '« ' + trimmed.slice(0, 60) + ' »' : '(kein Text)');

@@ -3,6 +3,33 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.14] — 2026-10-20
+
+### Geändert
+- **Mehrstufige OCR für stilisierte Vorschaubilder.** Der erste Lauf nutzt
+  jetzt PSM 11 (`SPARSE_TEXT`) statt PSM 6 und lädt nur die wahrscheinlichere
+  Sprache: Bei lateinischem Titel/Kanal `eng`, bei überwiegend kyrillischem
+  `rus`; `eng+rus` wird nicht mehr als ein gemischtes Modell geladen. Kurzer
+  oder unsicherer Erstantext löst einen zweiten Durchgang mit fünf Varianten
+  aus: Graustufen/Otsu, lockere Rot-Maske, helle Maske, invertierte Graustufen
+  und dunkle Maske, jeweils 2× skaliert. Die Texte werden dedupliziert
+  zusammengeführt; dadurch werden getrennte Überschriften wie rotes „RIP“ und
+  weißes „LLMs?“ in einem Ergebnis sichtbar.
+- **Sprachhinweis aus dem Content-Script.** `content.js` sendet Titel und Kanal
+  als Hinweis an `ocr.js`/`host-routes.js`; der Host wählt danach das
+  Tesseract-Modell. Der Cache-Schlüssel enthält jetzt Pipeline-Version,
+  Sprache und Hinweis, damit alte fehlerhafte Texte nicht wiederverwendet
+  werden.
+
+### Tests
+- `test-ocr-host-image` prüft PSM 11, die Sprachwahl (eng/rus), den tiefen
+  Lauf mit fünf Varianten und die lockere Rot-Maske an einem dunkelroten
+  Testmuster.
+- `test-ocr-client` prüft die Weitergabe des Sprachhinweises.
+- Referenzkarte `kuO4NOqp7Tc` („The End of LLMs? (NCM)“) im isolierten
+  Browser-Harness: Das OCR-Ergebnis enthält jetzt `RIP`; der Matcher findet
+  das kurze Schlüsselwort ohne Titel-Workaround.
+
 ## [1.5.13] — 2026-10-20
 
 ### Hinzugefügt

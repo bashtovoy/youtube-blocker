@@ -103,5 +103,11 @@ const tick = () => new Promise(r => setImmediate(r));
   reply = () => Promise.resolve({ ok: true, text: 'OK' });
   assert.strictEqual(await ocr.recognizeUrl('u7', 'eng'), 'OK');
 
+  /* 9) Titel/Kanal gehen als Hinweis mit — der Host wählt danach die Schrift. */
+  reply = () => Promise.resolve({ ok: true, text: 'HINT' });
+  assert.strictEqual(await ocr.recognizeUrl('u8', 'eng+rus', 'Cloud Codes'), 'HINT');
+  assert.strictEqual(sent[sent.length - 1].hint, 'Cloud Codes');
+  assert.strictEqual(sent[sent.length - 1].langs, 'eng+rus');
+
   console.log('ocr client tests: OK');
 })().catch(e => { console.error(e); process.exit(1); });
