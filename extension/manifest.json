@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Youtube Blocker",
-  "version": "1.5.11",
+  "version": "1.5.12",
   "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal und an der semantischen Übereinstimmung deiner Liste mit dem Inhalt des Vorschaubilds (lokales SigLIP, OCR) und sendet das Signal „Kein Interesse“.",
   "icons": {
     "48": "icons/icon48.png",
@@ -16,9 +16,14 @@
     "*://*.ytimg.com/*",
     "*://*.googlevideo.com/*"
   ],
+  "optional_permissions": [
+    "downloads",
+    "<all_urls>"
+  ],
   "background": {
     "scripts": [
       "model-cache.js",
+      "shots.js",
       "semantic-host.js",
       "ocr-host.js",
       "host-routes.js",
@@ -41,6 +46,7 @@
         "speech.js",
         "ocr.js",
         "dismiss.js",
+        "shots.js",
         "content.js"
       ],
       "run_at": "document_idle",

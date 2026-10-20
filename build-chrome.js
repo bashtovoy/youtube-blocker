@@ -39,6 +39,15 @@ function buildChromeManifest(ff) {
   for (const p of ff.permissions || []) {
     (String(p).includes('://') ? hostPermissions : permissions).push(p);
   }
+  /* Optionale Berechtigungen getrennt führen: <all_urls> und Host-Muster dürfen
+     in MV3 nicht in permissions stehen (Kontrollbilder werden erst beim
+     Einschalten der Einstellung angefragt). */
+  const optionalPermissions = [];
+  const optionalHostPermissions = [];
+  for (const p of ff.optional_permissions || []) {
+    const s = String(p);
+    (s === '<all_urls>' || s.includes('://') ? optionalHostPermissions : optionalPermissions).push(p);
+  }
   permissions.push('offscreen');
   /* Automatische Neu-Injektion der Content-Scripts in offene Tabs nach Updates
      (chrome.scripting.executeScript; in Firefox macht das tabs.executeScript). */
@@ -52,6 +61,8 @@ function buildChromeManifest(ff) {
     icons: ff.icons,
     permissions,
     host_permissions: hostPermissions,
+    ...(optionalPermissions.length ? { optional_permissions: optionalPermissions } : {}),
+    ...(optionalHostPermissions.length ? { optional_host_permissions: optionalHostPermissions } : {}),
     background: { service_worker: 'background.js' },
     action: ff.browser_action,
     content_scripts: ff.content_scripts,

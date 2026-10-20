@@ -82,6 +82,41 @@ Mindestversion: Chrome 116.
 Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 (im Firefox-Popup würde der Datei-Dialog das Popup sofort schließen).
 
+## Kontrollbilder vor dem Ausblenden (ab 1.5.12)
+
+Im Popup unter **„Kontrolle der Ausblendungen“** gibt es die Checkbox
+**„Screenshot vor dem Ausblenden (nur Kartenbereich)“** (Standard: aus). Ist sie
+aktiv, legt die Erweiterung vor jedem Ausblenden ein kleines JPEG der Karte ab —
+nur der Rahmen der Karte, nicht der ganze Bildschirm:
+
+```
+Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
+```
+
+- Gründe im Dateinamen: `ai`, `members`, `promo`, `title`, `channel`,
+  `semantic`, `ocr`, `speech`; Werbeplätze ohne Video-Kennung erscheinen als
+  `slot`.
+- JPEG-Qualität 30: Firefox speichert 1 CSS-Pixel je Bildpunkt, Chrome
+  verkleinert auf höchstens 480 Pixel Breite — je nach Karte etwa 3–25 KB.
+- Das Bild entsteht **vor** der Aktion — auch vor dem Klick auf „Kein
+  Interesse“ und bei Werbe-Containern.
+- Liegt die Karte noch nicht vollständig im sichtbaren Bereich, wartet das
+  Ausblenden bis zu **8 Sekunden**; die Seite wird dabei nicht gescrollt.
+  Wird die Karte in dieser Zeit nicht sichtbar, wird sie ohne Bild ausgeblendet
+  (Hinweis in der Konsole des Content-Skripts).
+- Bereits ausgeblendete Karten, die YouTube neu rendert, erzeugen kein zweites
+  Bild und keinen zweiten Zähler.
+- **Berechtigungen:** Beim ersten Einschalten fragt der Browser einmalig nach
+  `downloads` und dem Zugriff auf alle Seiten (für den Bildschirmausschnitt).
+  Beide sind optional und werden **nicht** bei der Installation verlangt;
+  ohne sie bleibt die Funktion aus. Wird die Berechtigung später entzogen,
+  zeigt das Popup einen Hinweis — Häkchen aus- und wieder einschalten.
+- Firefox schneidet den Kartenrahmen direkt beim Aufnehmen zu
+  (`tabs.captureTab`, `scale: 1`); Chrome nimmt den sichtbaren Tab auf und
+  schneidet/verkleinert ihn im Hintergrund (`captureVisibleTab`, höchstens zwei
+  Aufnahmen je Sekunde). Damit keine Bilder fremder Tabs entstehen, prüft
+  Chrome unmittelbar vor der Aufnahme, dass der YouTube-Tab noch aktiv ist.
+
 ## Einstellungen
 
 - `dHash/pHash-Schwelle` — Hamming-Distanz. Kleiner = strenger.
@@ -211,7 +246,8 @@ extension/
   ocr-host.js     — Tesseract-Host in der Background-Seite (umgeht CSP/Trusted Types)
   speech.js       — whisper.cpp im Worker (optional)
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
-  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik- und OCR-Routing
+  shots.js        — Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt (Content + Hintergrund)
+  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-Routing, Kontrollbilder
   popup/          — Verwaltung von Liste und Einstellungen
   lib/ models/    — externe Bibliotheken; Modelle nur lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
 ```
@@ -243,6 +279,7 @@ node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hyb
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen)
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
+node tests/test-shots.js         # Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
 node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen
 node tests/test-ocr-worker.js    # OCR-Worker-Einstieg: Filter lädt vor dem Tesseract-Skript

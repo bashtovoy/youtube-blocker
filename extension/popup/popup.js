@@ -8,7 +8,7 @@ const t = (key, vars) => i18n.t(key, vars);
 console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'fuzzy'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide', 'fuzzy'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
 const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold'];
@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   hideMembersOnly: false,
   hideAiGenerated: true,
   hidePromoted: true,
+  shotBeforeHide: false,
   fuzzy: true,
   mode: 'dismiss',
   ocrLangs: 'eng+rus',
@@ -109,6 +110,7 @@ function renderSemStatus(st) {
 let ocrState = 'pending';      /* pending | ok | err — Antwort des OCR-Hosts */
 let whisperState = 'pending';  /* pending | ok | missing — siehe checkWhisper() */
 let whisperChecked = false;    /* Bibliothek nur einmal je Popup-Öffnung prüfen */
+let shotsPermOk = null;        /* null = noch nicht geprüft */
 
 const STAT_GLYPH = { ok: '✓', wait: '…', err: '!', off: '○', pending: '○' };
 
@@ -154,6 +156,39 @@ function renderStats() {
   else if (whisperState === 'ok') sp = ['ok', 'stat_ok'];
   else if (whisperState === 'missing') sp = ['pending', 'stat_speech_missing'];
   setStat('statSpeech', sp[0], sp[1]);
+
+  /* Kontrollbilder: eingeschaltet, aber Berechtigung fehlt/entzogen → rot */
+  if ($('statShots')) {
+    let sh = ['off', 'stat_off'];
+    if (on('shotBeforeHide')) sh = shotsPermOk === false ? ['err', 'shots_perm_missing'] : ['ok', 'stat_ok'];
+    setStat('statShots', sh[0], sh[1]);
+  }
+}
+
+/* ---- Kontrollbilder: optionale Berechtigungen -------------------------------
+   Aufnehmen des Tabs verlangt <all_urls>, Speichern „downloads“. Beide werden
+   erst beim Einschalten angefragt — wer die Funktion nie nutzt, sieht keinen
+   Hinweis und keine Installationswarnung. */
+function renderShotsPerm() {
+  const warn = $('shotsPerm');
+  if (!warn) return;
+  warn.hidden = !($('shotBeforeHide').checked && shotsPermOk === false);
+}
+
+async function checkShotsPermission() {
+  if (!api.permissions || !api.permissions.contains) {
+    shotsPermOk = false;
+    renderShotsPerm();
+    renderStats();
+    return;
+  }
+  try {
+    shotsPermOk = await api.permissions.contains({ permissions: ['downloads'], origins: ['<all_urls>'] });
+  } catch (e) {
+    shotsPermOk = false;
+  }
+  renderShotsPerm();
+  renderStats();
 }
 
 /* Whisper-Bibliothek einmalig prüfen: setup.sh setzt ohne Download nur eine
@@ -315,6 +350,8 @@ async function load() {
     .catch(() => { ocrState = 'err'; renderStats(); });
   /* Whisper-Bibliothek nur prüfen, wenn die Spracherkennung eingeschaltet ist */
   if ($('checkSpeech').checked) checkWhisper();
+  /* Optionale Berechtigungen der Kontrollbilder prüfen (Häkchen + Warnhinweis) */
+  checkShotsPermission();
   /* Läuft in einem offenen YouTube-Tab noch die alte Skript-Instanz? */
   checkStaleTabs();
 }
@@ -477,11 +514,41 @@ document.querySelector('#kwBulk').addEventListener('toggle', (e) => {
 /* Automatisches Speichern der Einstellungen: Häkchen/Auswahl wirken sofort, Text/Zahl mit Debounce */
 SETTING_IDS.forEach(id => {
   const el = $(id);
-  if (el) el.addEventListener('change', () => {
+  if (!el || id === 'shotBeforeHide') return;   /* eigener Listener: Berechtigung vor dem Speichern */
+  el.addEventListener('change', () => {
     if (id === 'checkSpeech' && el.checked) checkWhisper();
     renderStats();
     schedulePersist(0);
   });
+});
+
+/* Kontrollbilder: Das Häkchen darf erst „an“ bleiben, wenn der Browser die
+   Aufnahme des Tabs und das Speichern erlaubt hat. Der Aufruf erfolgt direkt in
+   der Nutzergeste (kein await davor), sonst verweigert Firefox den Dialog. */
+$('shotBeforeHide').addEventListener('change', async () => {
+  const el = $('shotBeforeHide');
+  renderShotsPerm();
+  renderStats();
+  if (!el.checked) { schedulePersist(0); return; }
+  let granted = false;
+  try {
+    if (api.permissions && api.permissions.request) {
+      granted = await api.permissions.request({ permissions: ['downloads'], origins: ['<all_urls>'] });
+    }
+  } catch (e) { granted = false; }
+  if (!granted) {
+    el.checked = false;
+    shotsPermOk = false;
+    renderShotsPerm();
+    renderStats();
+    status(t('shots_perm_denied'), false);
+    return;
+  }
+  shotsPermOk = true;
+  renderShotsPerm();
+  renderStats();
+  schedulePersist(0);
+  status(t('shots_on'));
 });
 VALUE_IDS.forEach(id => {
   const el = $(id);

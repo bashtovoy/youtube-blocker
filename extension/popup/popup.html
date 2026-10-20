@@ -44,6 +44,7 @@
       border: 1px solid #e2d4fb; border-radius: 999px; }
     #status { color: #12a150; min-height: 16px; font-size: 12px; font-weight: 600; }
     .hint { color: #8a839c; font-size: 11px; }
+    .hint.err { color: #e0356a; font-weight: 600; }
     /* Statusindikatoren der Erkennungskanäle (rechts in jeder Zeile) */
     .stat { margin-left: auto; font-weight: 800; font-size: 12px; line-height: 1; cursor: default; user-select: none; }
     .stat.ok { color: #12a150; }
@@ -180,6 +181,13 @@
       <label class="row"><span data-i18n="speech_secs_label">Sprache analysieren, Sek.:</span>
         <input type="number" id="speechMaxSeconds" min="10" max="600" step="10" value="120" style="width:70px">
       </label>
+    </fieldset>
+
+    <fieldset>
+      <legend data-i18n="shots_legend">Kontrolle der Ausblendungen</legend>
+      <label class="row"><input type="checkbox" id="shotBeforeHide"> <span data-i18n="check_shots">Screenshot vor dem Ausblenden (nur Kartenbereich)</span> <span class="stat" id="statShots"></span></label>
+      <div class="hint" data-i18n="shots_hint">Speichert ein JPEG unter „Downloads/YouTube Blocker/JJJJ-MM-TT/“ — nur den Bereich der Karte, etwa 3–25 KB. Beim ersten Einschalten fragt der Browser einmalig nach der Erlaubnis für Bildschirmausschnitte und Downloads.</div>
+      <div class="hint err" id="shotsPerm" hidden data-i18n="shots_perm_missing">Die Berechtigung wurde entzogen. Häkchen aus- und wieder einschalten, um sie erneut zu erteilen.</div>
     </fieldset>
 
     <details class="bulk" id="promoDiag">

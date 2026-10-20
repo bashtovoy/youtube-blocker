@@ -3,6 +3,23 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.12] — 2026-10-20
+
+### Hinzugefügt
+- **Kontrollbilder vor dem Ausblenden (optional, Standard aus).** Die neue Checkbox **„Screenshot vor dem Ausblenden (nur Kartenbereich)“** unter „Kontrolle der Ausblendungen“ speichert vor jeder Ausblendung ein kleines JPEG — ausschließlich den Rahmen der Karte, nicht den Bildschirm. Ablage im Download-Verzeichnis des Browsers als `YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg` (ohne Video-Kennung `slot`); Gründe: `ai`, `members`, `promo`, `title`, `channel`, `semantic`, `ocr`, `speech`. JPEG-Qualität 30 — Firefox speichert 1 CSS-Pixel je Bildpunkt, Chrome höchstens 480 Pixel Breite; je nach Karte etwa 3–25 KB. Das Bild entsteht **vor** der Aktion, also auch vor dem Klick auf „Kein Interesse“ und bei Werbe-Containern.
+- **Sichtbarkeit statt Scrollen.** Liegt eine Karte noch nicht vollständig im sichtbaren Bereich (oder ist der Tab im Hintergrund), wartet das Ausblenden bis zu 8 Sekunden auf ihre Sichtbarkeit; die Seite wird nicht gescrollt. Wird sie nicht sichtbar, blendet die Erweiterung ohne Bild aus und vermerkt das in der Konsole. Bereits ausgeblendete Karten erzeugen nach einem Re-Render weder ein zweites Bild noch einen zweiten Zähler.
+- **Optionale Berechtigungen.** `downloads` und `<all_urls>` stehen in `optional_permissions` und werden erst beim Einschalten der Checkbox einmalig angefragt — die Installation selbst bleibt unverändert. Ohne Berechtigung bleibt die Funktion aus; das Popup zeigt einen Hinweis, wenn sie später entzogen wird. Firefox nimmt den Kartenrahmen direkt auf (`tabs.captureTab`, `scale: 1`); Chrome nimmt den sichtbaren Tab auf, schneidet ihn im Hintergrund zu und verkleinert ihn (`captureVisibleTab`, Warteschlange mit höchstens zwei Aufnahmen je Sekunde). Vor der Chrome-Aufnahme wird geprüft, dass der YouTube-Tab noch aktiv ist.
+
+### Geändert
+- `shots.js` bündelt die reinen Helfer (Dateiname, Sichtbarkeitsprüfung, Zuschnitt) für Content-Skript und Hintergrund; das Manifest lädt es vor `content.js` und im Hintergrund.
+- `build-chrome.js` trennt optionale Berechtigungen für MV3: `downloads` bleibt in `optional_permissions`, `<all_urls>` wandert nach `optional_host_permissions`.
+- Popup-Texte für die neue Funktion in Deutsch, Englisch, Russisch und Ukrainisch.
+
+### Tests
+- Neuer Unit-Test `test-shots`: Dateiname (Datum, Uhrzeit, Kennung, Grund, ASCII-Sicherheit), vollständige Sichtbarkeit inklusive Masthead, Zuschnitt des Chrome-Bildes und Ausgabegröße.
+- `test-chrome-manifest` prüft zusätzlich die Trennung der optionalen Berechtigungen.
+- In isolierten temporären Profilen geprüft (Firefox 158, Chromium 136): Speicherung mit Unterordner und Grund, Bildgröße 480×127 (Chrome) bzw. 1063×281/200×379 (Firefox), korrekter Ausschnitt nach Scrollen, verzögertes Ausblenden ohne Bild bei nichtsichtbaren Karten und Re-Render ohne Duplikat.
+
 ## [1.5.11] — 2026-10-19
 
 ### Hinzugefügt

@@ -22,6 +22,12 @@ for (const p of ['storage', 'unlimitedStorage', 'tabs', 'offscreen', 'scripting'
   assert.ok(m.permissions.includes(p), 'permissions enthält ' + p);
 }
 
+/* Optionale Berechtigungen der Kontrollbilder: <all_urls> gehört in MV3 zu den
+   optionalen Host-Berechtigungen, „downloads“ bleibt eine normale. */
+assert.deepStrictEqual(m.optional_permissions, ['downloads']);
+assert.deepStrictEqual(m.optional_host_permissions, ['<all_urls>']);
+assert.ok(!m.host_permissions.includes('<all_urls>'), 'optional bleibt optional');
+
 /* WASM (SigLIP/Tesseract) braucht die CSP-Ausnahme; keine gecko-Einstellungen. */
 assert.ok(/script-src 'self'/.test(m.content_security_policy.extension_pages));
 assert.ok(/wasm-unsafe-eval/.test(m.content_security_policy.extension_pages));

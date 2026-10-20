@@ -10,6 +10,7 @@ const api = (typeof browser !== 'undefined') ? browser : chrome;
    Firefox lädt die Datei über manifest.background.scripts. */
 if (typeof importScripts === 'function') {
   try { importScripts('model-cache.js'); } catch (e) { /* Status bleibt optional */ }
+  try { importScripts('shots.js'); } catch (e) { /* Kontrollbilder bleiben optional */ }
 }
 /* MV3 heißt der Knopf "action", Firefox MV2 "browserAction" — beide Bäume bedienen. */
 const actionApi = api.action || api.browserAction;
@@ -77,6 +78,125 @@ async function callHost(route, msg) {
   return offscreenCall(route, msg);                                                 /* Chrome, Hosts im Offscreen */
 }
 
+/* ---------- Kontrollbilder vor dem Ausblenden ----------
+   Der Content schickt den Rahmen der Karte; hier wird der Tab aufgenommen, auf
+   die Karte zugeschnitten (Chrome) bzw. direkt beschnitten (Firefox) und als
+   JPEG unter „Downloads/YouTube Blocker/JJJJ-MM-TT/…“ abgelegt. Sequenziell,
+   weil Chrome nur zwei Aufnahmen je Sekunde erlaubt. */
+let shotChain = Promise.resolve();
+let lastShotAt = 0;
+
+function shotsLib() { return self.YB && self.YB.shots; }
+
+async function blobToDataUrl(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, buf.subarray(i, i + chunk));
+  }
+  return 'data:' + blob.type + ';base64,' + btoa(bin);
+}
+
+/* Chrome: captureVisibleTab liefert den ganzen Tab. Ausschnitt der Karte
+   herausschneiden und auf CSS-Größe verkleinern — das spart die meiste Dateigröße. */
+async function cropShot(dataUrl, msg) {
+  const lib = shotsLib();
+  if (!lib) throw new Error('shots.js fehlt');
+  const blob = await (await fetch(dataUrl)).blob();
+  const bmp = await createImageBitmap(blob);
+  try {
+    const crop = lib.cropPixels(msg.rect, msg.viewport, bmp.width, bmp.height);
+    if (!crop) throw new Error('Kartenrahmen außerhalb des Bildes');
+    const out = lib.outputSize(msg.rect);
+    if (!out) throw new Error('Kartengröße unbrauchbar');
+    const canvas = new OffscreenCanvas(out.w, out.h);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas nicht verfügbar');
+    ctx.drawImage(bmp, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, out.w, out.h);
+    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: lib.QUALITY / 100 });
+    return await blobToDataUrl(jpeg);
+  } finally {
+    if (bmp.close) bmp.close();
+  }
+}
+
+/* Firefox lehnt data:-URLs in downloads.download ab („Access denied for URL“).
+   Dort eine Blob-URL der Hintergrundseite verwenden; Chrome akzeptiert data:-URLs,
+   kennt aber im Service Worker kein URL.createObjectURL. */
+async function downloadShot(dataUrl, file) {
+  const canBlob = typeof document !== 'undefined' &&
+    typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
+  if (!canBlob) {
+    await api.downloads.download({ url: dataUrl, filename: file, conflictAction: 'uniquify', saveAs: false });
+    return;
+  }
+  const blob = await (await fetch(dataUrl)).blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    await api.downloads.download({ url, filename: file, conflictAction: 'uniquify', saveAs: false });
+  } finally {
+    /* Der Download liest die Blob-URL asynchron; deshalb erst später freigeben. */
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+}
+
+async function doShot(msg, sender) {
+  const lib = shotsLib();
+  if (!lib || !api.downloads) return { ok: false, error: 'downloads-api' };
+  const tab = sender && sender.tab;
+  if (!tab || tab.id == null) return { ok: false, error: 'kein-tab' };
+  /* Beide optionalen Berechtigungen werden erst beim Einschalten im Popup erteilt. */
+  if (api.permissions && api.permissions.contains) {
+    const allowed = await api.permissions.contains({ permissions: ['downloads'], origins: ['<all_urls>'] });
+    if (!allowed) return { ok: false, error: 'berechtigung-fehlt' };
+  }
+  const wait = lib.SHOT_GAP_MS - (Date.now() - lastShotAt);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastShotAt = Date.now();
+
+  let dataUrl;
+  if (api.tabs.captureTab) {
+    /* Firefox: rect ist relativ zur Seite (nicht zum Fenster); scale 1 liefert
+       CSS-Pixel statt Gerätepixel — kleinste Datei ohne Nachbearbeitung. */
+    const rect = {
+      x: Math.round(msg.rect.x + msg.scroll.x),
+      y: Math.round(msg.rect.y + msg.scroll.y),
+      width: Math.max(1, Math.round(msg.rect.w)),
+      height: Math.max(1, Math.round(msg.rect.h))
+    };
+    dataUrl = await api.tabs.captureTab(tab.id, {
+      rect, scale: 1, format: 'jpeg', quality: lib.QUALITY
+    });
+  } else {
+    /* captureVisibleTab nimmt den aktiven Tab des Fensters auf, nicht gezielt den
+       Absender. Wechselt der Nutzer während der Warteschlange den Tab, entstünde
+       ein Bild der falschen Seite — daher unmittelbar vorher prüfen. */
+    try {
+      const current = await api.tabs.get(tab.id);
+      if (!current || !current.active) return { ok: false, error: 'nicht-aktiv' };
+    } catch (e) {
+      return { ok: false, error: 'tab-weg' };
+    }
+    const raw = await api.tabs.captureVisibleTab(tab.windowId, {
+      format: 'jpeg', quality: lib.CAPTURE_QUALITY
+    });
+    dataUrl = await cropShot(raw, msg);
+  }
+  if (!dataUrl) return { ok: false, error: 'aufnahme-leer' };
+
+  const file = lib.fileName(new Date(), msg.videoId, msg.reason);
+  await downloadShot(dataUrl, file);
+  console.log('[YB] Kontrollbild gespeichert:', file);
+  return { ok: true, file };
+}
+
+function enqueueShot(msg, sender) {
+  const run = shotChain.then(() => doShot(msg, sender), () => doShot(msg, sender));
+  shotChain = run.catch(() => {});
+  return run;
+}
+
 /* ---------- Nachrichtenrouting ---------- */
 
 api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -102,6 +222,13 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => api.storage.local.get(kind))
       .then(d => api.storage.local.set({ [kind]: (d[kind] || 0) + by }))
       .catch(() => {});
+  } else if (msg.type === 'ybshot') {
+    /* Antwort erst nach Aufnahme und Download; der Content wartet mit dem
+       Ausblenden, solange das Bild noch entsteht. */
+    enqueueShot(msg, sender)
+      .then(sendResponse)
+      .catch(e => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
   } else if (msg.type === 'ybsem' || msg.type === 'ybocr') {
     /* Antwort via sendResponse + return true: das erwartet Chrome von asynchronen
        Listenern; Firefox akzeptiert diese Form ebenfalls. sendResponse hält den

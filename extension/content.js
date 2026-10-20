@@ -24,6 +24,7 @@
     hideMembersOnly: false,
     hideAiGenerated: true,
     hidePromoted: true,
+    shotBeforeHide: false,
     ocrLangs: 'eng+rus',
     /* Kalibrierung 10/2026 (Kontrollbilder, q8): echte Treffer liegen bei
        Margin 0.037–0.079, Rauschen unter 0.03. Der alte Standard 0.1 war
@@ -54,6 +55,7 @@
     imageListeners: new WeakSet(),
     scanTimer: null,
     imageCache: new Map(),
+    shotShown: new WeakMap(),   /* Karte → „videoId|Grund“: nur ein Bild je Ausblendung */
     titleKeywords: [],
     imageKeywords: [],
     ocrKeywords: [],
@@ -331,7 +333,129 @@
 
   const actionQueue = { tail: Promise.resolve(), push(fn) { const p = this.tail.then(fn, fn); this.tail = p.catch(() => {}); return p; } };
 
+  /* ---- Kontrollbilder -----------------------------------------------------
+     Nur wenn die Einstellung aktiv ist, wird vor dem Ausblenden der Kartenrahmen
+     aufgenommen. Der Browser liefert ausschließlich den sichtbaren Bereich —
+     deshalb wartet das Ausblenden, bis die Karte vollständig im Fenster liegt
+     (ohne Scrollen, höchstens WAIT_VISIBLE_MS). Danach wird gespeichert und erst
+     dann ausgeblendet; ein Fehler verhindert das Ausblenden nie. */
+  function shotsOn() {
+    return !!(state.settings.shotBeforeHide && window.YB.shots);
+  }
+
+  function shotStamp(v, reason) {
+    return (v.videoId || 'slot') + '|' + (reason || '');
+  }
+
+  /* Feste Balken (Masthead) verdecken die obere Kante der Karte — dann wäre der
+     Screenshot unvollständig. Als Sperrflächen in Fensterkoordinaten melden. */
+  function fixedBlockers() {
+    const out = [];
+    for (const sel of ['ytd-masthead', '#masthead-container', '#masthead', 'ytmusic-nav-bar']) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    return out;
+  }
+
+  function cardVisibleNow(item) {
+    if (document.visibilityState !== 'visible') return false;
+    const r = item.getBoundingClientRect();
+    if (!(r.width >= 8 && r.height >= 8)) return false;
+    return window.YB.shots.fullyVisible(
+      { x: r.left, y: r.top, w: r.width, h: r.height },
+      { w: window.innerWidth, h: window.innerHeight },
+      fixedBlockers()
+    );
+  }
+
+  function waitForCardVisible(item, timeoutMs) {
+    return new Promise(resolve => {
+      let timer = null, done = false;
+      const deadline = Date.now() + timeoutMs;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        document.removeEventListener('visibilitychange', tick);
+        window.removeEventListener('scroll', tick, true);
+        window.removeEventListener('resize', tick);
+        resolve(ok);
+      };
+      const tick = () => {
+        if (done) return;
+        if (state.disposed || !item.isConnected) { finish(false); return; }
+        if (cardVisibleNow(item)) { finish(true); return; }
+        if (Date.now() >= deadline) { finish(false); return; }
+        clearTimeout(timer);
+        timer = setTimeout(tick, 180);
+      };
+      document.addEventListener('visibilitychange', tick);
+      window.addEventListener('scroll', tick, true);
+      window.addEventListener('resize', tick);
+      tick();
+    });
+  }
+
+  function withTimeout(promise, ms) {
+    let timer = null;
+    const timeout = new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  async function captureBeforeHide(v, reason) {
+    const shots = window.YB.shots;
+    const item = v.item;
+    if (!shots || !item) return false;
+    if (!(await waitForCardVisible(item, shots.WAIT_VISIBLE_MS))) {
+      log('shot skipped (card not fully visible)', v.videoId || 'slot', '←', reason);
+      return false;
+    }
+    const r = item.getBoundingClientRect();
+    const msg = {
+      type: 'ybshot',
+      videoId: v.videoId || '',
+      reason,
+      rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+      scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
+      viewport: { w: window.innerWidth, h: window.innerHeight }
+    };
+    try {
+      const res = await withTimeout(api.runtime.sendMessage(msg), 6000);
+      if (res && res.ok) {
+        log('shot saved', res.file);
+        return true;
+      }
+      log('shot failed', v.videoId || 'slot', (res && res.error) || 'keine Antwort');
+    } catch (e) {
+      log('shot failed', v.videoId || 'slot', e.message);
+    }
+    return false;
+  }
+
+  /* Wrapper: ohne Einstellung sofort ausblenden; sonst erst das Bild versuchen.
+     Die Buchung im WeakMap verhindert Doppelbilder, wenn mehrere Pfade dieselbe
+     Karte treffen (Badge + spätes Signal + Dismiss-Rückfall). */
   function hideLocally(v, reason) {
+    const item = v.item;
+    const stamp = shotStamp(v, reason);
+    if (!shotsOn() || !item || state.shotShown.get(item) === stamp) {
+      hideLocallyNow(v, reason);
+      return;
+    }
+    state.shotShown.set(item, stamp);
+    captureBeforeHide(v, reason).then(
+      () => hideLocallyNow(v, reason),
+      () => hideLocallyNow(v, reason)
+    );
+  }
+
+  function hideLocallyNow(v, reason) {
+    if (state.disposed) return;
     window.YB.dismiss.hideItem(v.item);
     if (v.videoId) state.hiddenIds.add(v.videoId);
     log('hidden locally', v.videoId, '←', reason);
@@ -339,6 +463,14 @@
   }
 
   async function applyAction(v, reason) {
+    /* Bild vor dem „Kein Interesse“-Klick: Das Menü darf den Rahmen nicht verdecken.
+       Das Warten auf die sichtbare Karte liegt außerhalb der Aktionswarteschlange,
+       damit andere Karten nicht blockiert werden. */
+    const stamp = shotStamp(v, reason);
+    if (shotsOn() && v.item && state.shotShown.get(v.item) !== stamp) {
+      state.shotShown.set(v.item, stamp);
+      await captureBeforeHide(v, reason);
+    }
     return actionQueue.push(async () => {
       if (state.disposed) return false;
       await throttleAction();
@@ -356,7 +488,7 @@
           log('dismiss unavailable, local hide:', v.videoId, e.message);
         }
       }
-      hideLocally(v, reason);
+      hideLocallyNow(v, reason);
       return false;
     });
   }
@@ -710,6 +842,7 @@
       hideMembersOnly: state.settings.hideMembersOnly,
       hideAiGenerated: state.settings.hideAiGenerated,
       hidePromoted: state.settings.hidePromoted,
+      shotBeforeHide: state.settings.shotBeforeHide,
       actionDelayMs: state.settings.actionDelayMs,
       checkTitle: state.settings.checkTitle,
       checkThumbOcr: state.settings.checkThumbOcr,
