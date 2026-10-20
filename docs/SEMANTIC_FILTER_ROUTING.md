@@ -295,3 +295,45 @@ temporär geladener Erweiterung bei jedem Start feuert.
 Funktional ändert das nichts: Inferenz bleibt lokal; Wasm/q8 ist der erprobte
 Zweig, WebGPU/q4f16 bleibt der schnelle Zweig — überall dort, wo ein Adapter
 existiert.
+
+## Nachtrag 10/2026 — Freigaben (Ausnahmen)
+
+Die Wortliste kann pro Eintrag Ausnahmen tragen (`exceptions`), zusätzlich gibt
+es globale Freigaben (`settings.allowAll`). Die Entscheidung lautet:
+
+```
+blockieren = Keyword im Kanal gefunden UND keine Ausnahme im Kontext
+```
+
+Kontext je Kanal:
+
+- **Titel/Kanal:** immer Titel + Kanal.
+- **OCR:** OCR-Text + Titel + Kanal.
+- **Sprache:** Transkript + Titel + Kanal.
+- **Semantik:** Titel + Kanal. Freigegebene Konzepte werden aus den
+  SigLIP-Scores entfernt, bevor `marginDecision` läuft; die Margin wird nur
+  unter den aktiven Konzepten berechnet. Eine Freigabe darf also keinen echten
+  Treffer eines anderen Konzepts verdrängen.
+
+Der Matcher liefert den ersten Treffer, dessen Ausnahme **nicht** zutrifft —
+nicht einfach den ersten Treffer. Eine Ausnahme gilt nur für ihr Schlüsselwort.
+Globale Freigaben werden im Content vor dem Titelabgleich geprüft und heben
+alle Worttreffer dieser Karte auf; Badges und Werbekarten bleiben unabhängig.
+
+Beispiele:
+
+```
+Робот => теннис, настольный теннис, пинг-понг, tennis, теніс
+Tesla => No Tesla
+No Tesla        (global)
+```
+
+Matching: Groß-/Kleinschreibung, ё/е, Bindestriche und Satzzeichen werden
+normalisiert. Kurze Begriffe (unter 4 Zeichen) treffen nur ein ganzes Wort;
+längere auch Wortstämme (`теннис` → `теннисист`, `tennis` → `tennisplayer`).
+Phrasen werden als Wortfolge verglichen, das letzte Wort darf ein Stamm sein
+(`No Tesla` → `No Teslas`). Die Prüfung ist wörtlich: „No Tesla? Tesla ist
+toll“ wird ebenfalls freigegeben.
+
+Abwärtskompatibilität: `exceptions` und `allowAll` sind optional; alte
+JSON-Listen ohne diese Felder bleiben gültig.

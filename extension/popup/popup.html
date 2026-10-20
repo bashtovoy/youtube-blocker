@@ -61,20 +61,25 @@
       background: linear-gradient(90deg,#2dd4bf,#38bdf8); transition: width .25s ease; }
     .progress.indeterminate .progress-fill { width: 40%; animation: ybslide 1.1s ease-in-out infinite; }
     @keyframes ybslide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
-    .kwlist { max-height: 200px; overflow-y: auto; border: 1px solid #eadfe9; border-radius: 10px; background: #fff; margin-bottom: 6px; }
+    .kwlist { max-height: 260px; overflow-y: auto; border: 1px solid #eadfe9; border-radius: 10px; background: #fff; margin-bottom: 6px; }
     .kwlist:empty::after { content: attr(data-empty); color: #a49bb5; font-size: 12px; padding: 10px; display: block; }
-    .kwrow { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #f2ecf6; }
+    .kwrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #f2ecf6; }
     .kwrow:last-child { border-bottom: 0; }
     .kwrow:hover { background: #faf6ff; }
     .kwrow input[type=checkbox] { accent-color: #2dd4bf; margin: 0; }
-    .kwrow input[type=text] { flex: 1; background: transparent; color: #33354f; border: 0; padding: 3px 2px; font: inherit; }
-    .kwrow input[type=text]:focus { outline: 2px solid #bfe9ff; border-radius: 4px; }
+    .kwrow > input[type=text] { flex: 1 1 80px; min-width: 0; background: transparent; color: #33354f; border: 0; padding: 3px 2px; font: inherit; }
+    .kwrow > input[type=text]:focus { outline: 2px solid #bfe9ff; border-radius: 4px; }
     .kwrow.off { opacity: .5; }
-    .kwrow.off input[type=text] { text-decoration: line-through; color: #a49bb5; }
+    .kwrow.off > input[type=text] { text-decoration: line-through; color: #a49bb5; }
+    .kwrow .kwexc { flex: 1 0 calc(100% - 21px); min-width: 0; margin: -1px 0 2px 21px; }
+    .kwrow .kwexc input[type=text] { width: 100%; background: #fff; color: #6b3fd6; border: 1px solid #f0e8f7; border-radius: 6px; padding: 3px 6px; font-size: 11px; }
+    .kwrow .kwexc input[type=text]:focus { outline: 2px solid #bfe9ff; border-color: #38bdf8; }
+    .kwrow .kwexc input[type=text]::placeholder { color: #b0a7c2; }
     .kwrow .cnt { color: #38bdf8; font-size: 11px; font-weight: 700; min-width: 18px; text-align: right; }
     .kwrow .route { background: transparent; border: 1px solid #ece4f6; border-radius: 6px; color: #8b84a6; font-size: 11px; padding: 1px 2px; }
     .kwrow .del { background: transparent; color: #ff9db0; border: 0; font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
     .kwrow .del:hover { color: #ff5c5c; }
+    #allowAll { height: 58px; min-height: 44px; }
     .kwadd { display: flex; gap: 6px; }
     .kwadd input[type=text] { flex: 1; background: #fff; color: #33354f; border: 1px solid #e3d9e8; border-radius: 10px; padding: 7px; font: inherit; }
     .kwadd input[type=text]:focus { outline: 2px solid #bfe9ff; border-color: #38bdf8; }
@@ -123,9 +128,17 @@
       <details class="bulk" id="kwBulk">
         <summary data-i18n="kw_bulk_summary">Massenbearbeitung</summary>
         <textarea id="keywordsBulk" data-i18n-placeholder="kw_bulk_ph" placeholder="ein Wort/Satz pro Zeile"></textarea>
+        <div class="hint" data-i18n="kw_bulk_exc_hint">Format: Wort => Ausnahmen, durch Kommas getrennt. Beispiel: Roboter => Tennis, Tischtennis</div>
         <div class="rowbtns"><button id="kwApplyBulk" class="secondary" data-i18n="kw_bulk_apply">Aus Text übernehmen</button></div>
       </details>
       <div class="hint" data-i18n="kw_hint">Jeder Eintrag ist ein Begriff, den die Erweiterung im Titel und semantisch im Vorschaubild sucht. Zum Beispiel: „Fußball“, „Elektroautos“, „Trump“. OCR kann zusätzlich für Text im Vorschaubild aktiviert werden.</div>
+      <div class="hint" data-i18n="kw_exc_hint">Ausnahmen gelten nur für ihr Wort. Kurze Begriffe (unter 4 Zeichen) treffen nur ein ganzes Wort; längere auch Wortstämme (Tennis → Tennisspieler).</div>
+    </fieldset>
+
+    <fieldset>
+      <legend data-i18n="allow_legend">Global freigeben</legend>
+      <textarea id="allowAll" data-i18n-placeholder="allow_ph" placeholder="eine Phrase pro Zeile, z. B. No Tesla"></textarea>
+      <div class="hint" data-i18n="allow_hint">Enthält der Titel oder Kanal eine dieser Phrasen, wird die Karte durch kein Schlüsselwort ausgeblendet. Beispiel: No Tesla lässt Anti-Tesla-Videos durch, normale Tesla-Videos bleiben blockiert. KI-/Mitglieder-/Werbebadges werden weiterhin geprüft.</div>
     </fieldset>
 
     <fieldset>

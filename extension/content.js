@@ -34,7 +34,8 @@
     speechModel: 'models/ggml-base.bin',
     speechMaxSeconds: 120,
     actionDelayMs: 2500,
-    logMatch: true
+    logMatch: true,
+    allowAll: []
   };
 
   const state = {
@@ -59,6 +60,11 @@
     titleKeywords: [],
     imageKeywords: [],
     ocrKeywords: [],
+    allEntries: [],
+    titleEntries: [],
+    imageEntries: [],
+    ocrEntries: [],
+    allowAll: [],
     semanticKeywordsKey: '',
     semanticReady: false,
     semanticFailed: false,
@@ -191,16 +197,26 @@
     s.speechMaxSeconds = settingNumber(s.speechMaxSeconds, DEFAULTS.speechMaxSeconds, 10, 600);
     s.hashThreshold = settingNumber(s.hashThreshold, 8, 0, 30);
     state.settings = s;
+    state.allowAll = window.YB.matcher.normalizeAllowAll(s.allowAll);
+    s.allowAll = state.allowAll;
     const kwObjects = (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
-      .filter(k => k && k.text && k.enabled !== false);
-    state.keywords = kwObjects.map(k => String(k.text));
+      .filter(k => k && String(k.text || '').trim() && k.enabled !== false);
     state.suspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
-    /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelKeywords):
-       ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. */
-    state.titleKeywords = window.YB.matcher.channelKeywords(kwObjects, 'title');
-    state.imageKeywords = window.YB.matcher.channelKeywords(kwObjects, 'image');
-    state.ocrKeywords = window.YB.matcher.channelKeywords(kwObjects, 'ocr');
+    /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelEntries):
+       ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. Einträge
+       tragen ihre Freigaben mit; state.*Keywords bleibt für Host/Debug. */
+    state.allEntries = kwObjects.map(k => ({
+      text: String(k.text || '').trim(),
+      exceptions: window.YB.matcher.exceptionsOf(k)
+    })).filter(e => e.text);
+    state.titleEntries = window.YB.matcher.channelEntries(kwObjects, 'title');
+    state.imageEntries = window.YB.matcher.channelEntries(kwObjects, 'image');
+    state.ocrEntries = window.YB.matcher.channelEntries(kwObjects, 'ocr');
+    state.keywords = state.allEntries.map(e => e.text);
+    state.titleKeywords = state.titleEntries.map(e => e.text);
+    state.imageKeywords = state.imageEntries.map(e => e.text);
+    state.ocrKeywords = state.ocrEntries.map(e => e.text);
     state.semanticKeywordsKey = '';
     state.semanticReady = false;
     state.semanticFailed = false;
@@ -210,7 +226,9 @@
       keywords: state.keywords.length,
       title: state.titleKeywords.length,
       image: state.imageKeywords.length,
-      ocr: state.ocrKeywords.length
+      ocr: state.ocrKeywords.length,
+      allowAll: state.allowAll.length,
+      exceptions: state.allEntries.filter(e => e.exceptions.length).length
     });
     if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
       api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }).catch(() => {});
@@ -495,12 +513,13 @@
 
   function matchTitle(v) {
     if (!state.settings.checkTitle) return null;
-    const opt = { fuzzy: state.settings.fuzzy };
-    const t = window.YB.matcher.matchKeywords(v.title, state.titleKeywords, opt);
-    if (t) return { source: 'title', keyword: t };
+    const contextText = [v.title, v.channel].filter(Boolean).join(' ');
+    const opt = { fuzzy: state.settings.fuzzy, contextText };
+    const t = window.YB.matcher.matchEntries(v.title, state.titleEntries, opt);
+    if (t) return { source: 'title', keyword: t.text };
     if (v.channel) {
-      const c = window.YB.matcher.matchKeywords(v.channel, state.titleKeywords, opt);
-      if (c) return { source: 'channel', keyword: c };
+      const c = window.YB.matcher.matchEntries(v.channel, state.titleEntries, opt);
+      if (c) return { source: 'channel', keyword: c.text };
     }
     return null;
   }
@@ -539,7 +558,12 @@
       try {
         await ensureSemanticTexts();
         const scores = await window.YB.semantic.scoreImage(v.thumb);
-        const m = window.YB.semantic.marginDecision(scores, state.settings.semanticMargin);
+        const contextText = [v.title, v.channel].filter(Boolean).join(' ');
+        const active = window.YB.matcher.activeScores(scores, state.imageEntries, contextText);
+        if (active.length !== (scores || []).length) {
+          log('semantic exceptions', v.videoId, 'skipped', (scores || []).length - active.length);
+        }
+        const m = window.YB.semantic.marginDecision(active, state.settings.semanticMargin);
         if (m) {
           /* Diagnose (Punkt 10 des Routing-Dokuments): Ziel-Kosinus, beste
              Konkurrenz, kontrastive Margin, Schwelle und Profilkennung. */
@@ -578,8 +602,9 @@
         const trimmed = String(text || '').trim();
         log('ocr', v.videoId, trimmed.length + ' chars', (Date.now() - t0) + 'ms',
           trimmed ? '« ' + trimmed.slice(0, 60) + ' »' : '(kein Text)');
-        const kw = window.YB.matcher.matchKeywords(text, state.ocrKeywords, { fuzzy: false });
-        if (kw) return { source: 'ocr', keyword: kw };
+        const contextText = [v.title, v.channel, text].filter(Boolean).join(' ');
+        const kw = window.YB.matcher.matchEntries(text, state.ocrEntries, { fuzzy: false, contextText });
+        if (kw) return { source: 'ocr', keyword: kw.text };
       } catch (e) {
         /* Nur fatale Fehler (Bibliothek/Worker/Sprachdaten defekt) schalten den
            Kanal für diese Seitensession ab; einzelne Bildfehler nicht. */
@@ -595,11 +620,15 @@
   }
 
   async function matchSpeech(v) {
-    if (!state.settings.checkSpeech || !window.YB.speech.isAvailable() || !state.keywords.length) return null;
+    if (!state.settings.checkSpeech || !window.YB.speech.isAvailable() || !state.allEntries.length) return null;
     try {
       const text = await window.YB.speech.transcribeVideo(v.videoId, state.settings.speechMaxSeconds);
-      const kw = window.YB.matcher.matchKeywords(text, state.keywords, { fuzzy: state.settings.fuzzy });
-      if (kw) return { source: 'speech', keyword: kw };
+      const contextText = [v.title, v.channel, text].filter(Boolean).join(' ');
+      const kw = window.YB.matcher.matchEntries(text, state.allEntries, {
+        fuzzy: state.settings.fuzzy,
+        contextText
+      });
+      if (kw) return { source: 'speech', keyword: kw.text };
     } catch (e) { log('speech fail', v.videoId, e.message); }
     return null;
   }
@@ -659,6 +688,19 @@
         /* Werbekarten sind eine Eigenschaft des Angebots, kein Interessensignal:
            lokal ausblenden, kein „Kein Interesse“-Klick. */
         hideLocally(current, 'promo');
+        return;
+      }
+      /* Globale Freigaben gelten für die ganze Karte: „No Tesla“ lässt auch
+         Karten durch, die zusätzlich ein anderes Wort der Liste treffen.
+         Badges und Werbekarten bleiben davon unberührt (oben geprüft). */
+      const allowContext = [current.title, current.channel].filter(Boolean).join(' ');
+      const allowTerm = window.YB.matcher.firstException(allowContext, state.allowAll);
+      if (allowTerm) {
+        state.processed.set(key, null);
+        log('global allow', current.videoId, '←', allowTerm);
+        if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && current.item) {
+          state.badgeWatched.add(current.item);
+        }
         return;
       }
       const titleHit = matchTitle(current);
@@ -851,6 +893,8 @@
       fuzzy: state.settings.fuzzy,
       keywords: state.keywords.slice(),
       imageKeywords: state.imageKeywords.slice(),
+      allowAll: state.allowAll.slice(),
+      exceptions: state.allEntries.filter(e => e.exceptions.length).length,
       semanticReady: state.semanticReady,
       semanticFailed: state.semanticFailed,
       processedCount: state.processed.size,

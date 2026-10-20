@@ -93,6 +93,78 @@
     return null;
   }
 
+  /* ---- Freigaben (Ausnahmen) ----
+     Eine Ausnahme gilt nur für ihr Schlüsselwort. Die globale Liste
+     (settings.allowAll) wird vom Content zusätzlich vor dem Titelabgleich
+     geprüft und hebt alle Worttreffer einer Karte auf.
+     Kurze Begriffe (< 4 Zeichen) treffen nur ein ganzes Wort; längere auch
+     Wortstämme (теннис → теннисист, tennis → tennisplayer). Phrasen werden
+     als Wortfolge verglichen, das letzte Wort darf ebenfalls ein Stamm sein
+     (No Tesla → No Teslas). */
+  function addTerm(out, value) {
+    const s = String(value == null ? '' : value).trim();
+    const n = normalize(s);
+    if (!n) return;
+    if (!out.some(x => normalize(x) === n)) out.push(s);
+  }
+
+  function normalizeExceptions(value) {
+    const out = [];
+    if (Array.isArray(value)) value.forEach(v => addTerm(out, v));
+    else if (typeof value === 'string') value.split(/[\n,;]+/).forEach(v => addTerm(out, v));
+    return out;
+  }
+
+  function normalizeAllowAll(value) {
+    const out = [];
+    if (Array.isArray(value)) value.forEach(v => addTerm(out, v));
+    else if (typeof value === 'string') value.split(/\n+/).forEach(v => addTerm(out, v));
+    return out;
+  }
+
+  function exceptionsOf(keyword) {
+    if (keyword && typeof keyword === 'object') return normalizeExceptions(keyword.exceptions);
+    return [];
+  }
+
+  function termMatches(textTokens, needleTokens) {
+    if (!needleTokens.length || needleTokens.length > textTokens.length) return false;
+    if (needleTokens.length === 1) {
+      const k = needleTokens[0];
+      if (k.length < 4) return textTokens.includes(k);
+      return textTokens.some(t => t.includes(k));
+    }
+    /* Phrase: alle Wörter exakt, das letzte ab 4 Zeichen als Stamm. */
+    const last = needleTokens.length - 1;
+    for (let i = 0; i + needleTokens.length <= textTokens.length; i++) {
+      let ok = true;
+      for (let j = 0; j < needleTokens.length; j++) {
+        const t = textTokens[i + j];
+        const k = needleTokens[j];
+        if (j === last && k.length >= 4) {
+          if (!t.startsWith(k)) { ok = false; break; }
+        } else if (t !== k) {
+          ok = false; break;
+        }
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  function firstException(text, exceptions) {
+    const hay = tokenize(text);
+    if (!hay.length) return null;
+    for (const raw of normalizeExceptions(exceptions)) {
+      if (termMatches(hay, tokenize(raw))) return raw;
+    }
+    return null;
+  }
+
+  function exceptionMatches(text, exceptions) {
+    return firstException(text, exceptions) !== null;
+  }
+
   /* ---- Routen je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1) ----
      route ∈ 'title' | 'ocr' | 'image' | 'hybrid'. Eine fehlende Route bedeutet
      das bisherige Verhalten (alle Kanäle); 'hybrid' ist die kontrollierte
@@ -105,7 +177,7 @@
     return ROUTES.indexOf(r) >= 0 ? r : null;
   }
 
-  function channelKeywords(keywords, channel) {
+  function channelEntries(keywords, channel) {
     const out = [];
     for (const kw of keywords || []) {
       const isObj = kw !== null && typeof kw === 'object';
@@ -113,9 +185,53 @@
       if (!text) continue;
       if (isObj && kw.enabled === false) continue;
       const route = isObj ? routeOf(kw) : null;
-      if (route === null || route === 'hybrid' || route === channel) out.push(text);
+      if (route === null || route === 'hybrid' || route === channel) {
+        out.push({ text, exceptions: exceptionsOf(kw) });
+      }
     }
     return out;
+  }
+
+  function channelKeywords(keywords, channel) {
+    return channelEntries(keywords, channel).map(e => e.text);
+  }
+
+  /* Erste Trefferzeile, deren Ausnahmen im Kontext NICHT zutreffen.
+     contextText enthält je nach Kanal Titel + Kanal (+ OCR/Transkript). */
+  function matchEntries(text, entries, opts) {
+    opts = opts || {};
+    const textTokens = tokenize(text);
+    if (!textTokens.length) return null;
+    const ctx = opts.contextText === undefined ? text : opts.contextText;
+    for (const entry of entries || []) {
+      const isObj = entry !== null && typeof entry === 'object';
+      const raw = String((isObj ? entry.text : entry) || '').trim();
+      if (!raw) continue;
+      const kwTokens = tokenize(raw);
+      if (!kwTokens.length) continue;
+      if (!tokensMatch(textTokens, kwTokens, opts.fuzzy !== false)) continue;
+      const ex = isObj ? normalizeExceptions(entry.exceptions) : [];
+      if (firstException(ctx, ex)) continue;
+      return { text: raw, exceptions: ex };
+    }
+    return null;
+  }
+
+  /* Entfernt Konzepte, die für diese Karte freigegeben sind, aus den
+     SigLIP-Scores. Die Margin wird danach nur unter aktiven Konzepten
+     berechnet, damit eine Freigabe keinen echten Treffer verdrängt. */
+  function activeScores(scores, entries, contextText) {
+    const allowed = new Set();
+    for (const entry of entries || []) {
+      const isObj = entry !== null && typeof entry === 'object';
+      const text = String((isObj ? entry.text : entry) || '').trim();
+      if (!text) continue;
+      const ex = isObj ? normalizeExceptions(entry.exceptions) : [];
+      if (ex.length && firstException(contextText, ex)) allowed.add(normalize(text));
+    }
+    if (!allowed.size) return Array.isArray(scores) ? scores : [];
+    return (Array.isArray(scores) ? scores : [])
+      .filter(s => !allowed.has(normalize(s && s.text)));
   }
 
   /* ---- „Members only“-Badges: YouTube lokalisiert den Text. ----
@@ -148,5 +264,11 @@
   }
 
   window.YB = window.YB || {};
-  window.YB.matcher = { normalize, tokenize, matchKeywords, levenshtein, channelKeywords, routeOf, isMembersOnlyText, isAiBadgeText };
+  window.YB.matcher = {
+    normalize, tokenize, matchKeywords, levenshtein,
+    channelKeywords, channelEntries, matchEntries, routeOf,
+    normalizeExceptions, normalizeAllowAll, exceptionsOf,
+    firstException, exceptionMatches, termMatches, activeScores,
+    isMembersOnlyText, isAiBadgeText
+  };
 })();

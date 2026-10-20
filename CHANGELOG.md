@@ -3,6 +3,47 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.13] — 2026-10-20
+
+### Hinzugefügt
+- **Ausnahmen pro Schlüsselwort.** Jeder Eintrag kann eigene Freigaben tragen
+  (im Popup unter dem Wort, in der Massenbearbeitung als
+  `Wort => Ausnahme, Ausnahme`). Eine Ausnahme hebt nur dieses Wort auf;
+  andere Wörter der Liste treffen weiterhin. Beispiel:
+  `Робот => теннис, настольный теннис, пинг-понг, tennis, теніс`.
+- **Globale Freigaben.** Das neue Feld „Global freigeben“ lässt eine Karte
+  durch, wenn Titel oder Kanal eine der eingetragenen Phrasen enthält — auch
+  dann, wenn weitere Wörter der Liste treffen. Beispiel: `No Tesla` lässt
+  Anti-Tesla-Videos durch, während normale Tesla-Videos blockiert bleiben.
+  Dieselbe Phrase kann alternativ nur beim Wort `Tesla` als Ausnahme
+  eingetragen werden und gilt dann ausschließlich für dieses Wort.
+- **Sanfte Morphologie.** Kurze Begriffe (unter 4 Zeichen) treffen nur ein
+  ganzes Wort; längere auch Wortstämme (`теннис` → `теннисист`, `tennis` →
+  `tennisplayer`). Phrasen werden als Wortfolge verglichen, das letzte Wort
+  darf ein Stamm sein (`No Tesla` → `No Teslas`).
+- **Semantik und weitere Kanäle.** Freigegebene Konzepte werden vor der
+  Margin-Entscheidung aus den SigLIP-Scores entfernt, damit sie keinen echten
+  Treffer verdrängen. OCR und Sprache prüfen die Ausnahmen im jeweiligen Text
+  zusammen mit Titel und Kanal.
+
+### Geändert
+- `matcher.js` um `channelEntries`, `matchEntries`, `exceptionsOf`,
+  `firstException`, `exceptionMatches` und `activeScores` erweitert;
+  `channelKeywords` bleibt abwärtskompatibel.
+- `content.js` prüft globale Freigaben nach Badges/Werbekarten und vor dem
+  Titelabgleich; Titel-, OCR- und Sprachtreffer berücksichtigen die Ausnahmen
+  ihres Wortes.
+- Popup: Ausnahmefeld je Wort, globales Freigabefeld, Massenformat
+  `Wort => Ausnahmen`; beim Massenübernehmen bleiben `enabled` und `route`
+  bereits vorhandener Wörter erhalten.
+- JSON-Export/Import bewahrt `exceptions` und `settings.allowAll`; ältere
+  Dateien ohne diese Felder funktionieren weiter.
+
+### Tests
+- Neuer Unit-Test `test-exceptions`: Normalisierung, kurze/lange Begriffe,
+  `No Tesla`, mehrere Treffer (erster nicht freigegebener Treffer),
+  Routen/Kanäle und Entfernen freigegebener Konzepte vor der Margin-Entscheidung.
+
 ## [1.5.12] — 2026-10-20
 
 ### Hinzugefügt

@@ -60,7 +60,9 @@ Mindestversion: Chrome 116.
    Jeder Begriff wird im Titel und zusätzlich **semantisch im Vorschaubild**
    gesucht (lokales SigLIP). Über die Route je Begriff (Auto/Titel/OCR/Bild/
    Hybrid, siehe unten) lässt sich der Kanal einschränken. **OCR** lässt sich
-   für Text im Vorschaubild zusätzlich einschalten.
+   für Text im Vorschaubild zusätzlich einschalten. Unter jedem Begriff können
+   **Ausnahmen** eingetragen werden; darunter steht die **globale Freigabe**
+   (siehe „Ausnahmen und globale Freigaben“).
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
 4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv: Karten mit dem
@@ -81,6 +83,51 @@ Mindestversion: Chrome 116.
 
 Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 (im Firefox-Popup würde der Datei-Dialog das Popup sofort schließen).
+
+## Ausnahmen und globale Freigaben (ab 1.5.13)
+
+Jedes Wort kann eigene Ausnahmen tragen. Im Popup steht unter dem Wort das Feld
+**„Ausnahmen“**; in der Massenbearbeitung lautet das Format:
+
+```
+Roboter => Tennis, Tischtennis, Ping-Pong, tennis, теніс
+```
+
+Eine Ausnahme hebt nur dieses eine Wort auf. Andere Wörter der Liste treffen
+weiterhin. Beispiel: „Робот-теннисист“ wird nicht wegen `Roboter` ausgeblendet;
+ein Video, das zusätzlich `news` trifft, bleibt blockiert.
+
+Zusätzlich gibt es die **globale Freigabe** („Global freigeben“ / „Разрешать
+всё“). Eine Phrase pro Zeile, zum Beispiel:
+
+```
+No Tesla
+```
+
+Enthält Titel oder Kanal diese Phrase, wird die Karte durch kein Schlüsselwort
+ausgeblendet — auch dann nicht, wenn sie weitere Wörter trifft. Normale
+Tesla-Videos ohne „No Tesla“ bleiben blockiert. Dieselbe Phrase kann auch nur
+beim Wort `Tesla` als Ausnahme eingetragen werden; dann gilt sie ausschließlich
+für Tesla.
+
+Matching: Groß-/Kleinschreibung, ё/е, Bindestriche und Satzzeichen werden
+normalisiert. Kurze Begriffe (unter 4 Zeichen) treffen nur ein ganzes Wort;
+längere auch Wortstämme (`теннис` → `теннисист`, `tennis` → `tennisplayer`).
+Phrasen werden als Wortfolge verglichen, das letzte Wort darf ein Stamm sein
+(`No Tesla` → `No Teslas`).
+
+Grenzen:
+
+- „No Tesla“ ist eine literale Phrase. „No Tesla? Tesla ist toll“ wird ebenfalls
+  freigegeben. Eine semantische Anti-Tesla-Erkennung ist nicht enthalten.
+- Die globale Freigabe wird gegen Titel und Kanal geprüft. Steht die Phrase nur
+  im OCR-Text oder Transkript, greift sie in v1 nicht.
+- KI-, Mitglieder- und Werbebadges werden durch Freigaben nicht aufgehoben.
+- Bei einem semantischen Bildtreffer werden freigegebene Konzepte aus der
+  Margin-Berechnung entfernt; ein anderes aktives Konzept kann weiterhin
+  treffen. OCR und Sprache prüfen die Ausnahmen im jeweiligen Text mit.
+- Alte JSON-Listen ohne `exceptions`/`allowAll` funktionieren unverändert; der
+  Export enthält beide Felder ab 1.5.13.
 
 ## Kontrollbilder vor dem Ausblenden (ab 1.5.12)
 
@@ -273,6 +320,7 @@ extension/
 ```bash
 node --check extension/*.js      # Syntax
 node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erkennung (Members/KI)
+node tests/test-exceptions.js    # Freigaben pro Wort und global (No Tesla), Semantik-Filter
 node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele, Diagnose
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)

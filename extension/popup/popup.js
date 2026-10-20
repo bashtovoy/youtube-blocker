@@ -31,7 +31,8 @@ const DEFAULT_SETTINGS = {
   actionDelayMs: 2500,
   speechLang: 'ru',
   speechModel: 'models/ggml-base.bin',
-  speechMaxSeconds: 120
+  speechMaxSeconds: 120,
+  allowAll: []
 };
 
 /* Importe aus älteren Versionen können Zahlfelder als leeren String enthalten.
@@ -316,10 +317,46 @@ $('promoDiagClear').onclick = async () => {
 
 function normalizeKeywords(list) {
   return (list || [])
-    .map(k => typeof k === 'string'
-      ? { text: k.trim(), enabled: true, route: '' }
-      : { text: String(k.text || '').trim(), enabled: k.enabled !== false, route: normRoute(k.route) })
+    .map(k => {
+      const isObj = k !== null && typeof k === 'object';
+      const o = {
+        text: String((isObj ? k.text : k) || '').trim(),
+        enabled: isObj ? k.enabled !== false : true,
+        route: isObj ? normRoute(k.route) : ''
+      };
+      const ex = YB.matcher.normalizeExceptions(isObj ? k.exceptions : null);
+      if (ex.length) o.exceptions = ex;
+      return o;
+    })
     .filter(k => k.text);
+}
+
+/* Eine Zeile im Massenfeld: „Wort => Tennis, Tischtennis“. */
+function formatKeywordLine(k) {
+  const ex = YB.matcher.normalizeExceptions(k && k.exceptions);
+  return String((k && k.text) || '').trim() + (ex.length ? ' => ' + ex.join(', ') : '');
+}
+
+/* Massenfeld übernehmen: enabled/route bereits vorhandener Wörter bleiben
+   erhalten, damit das Bearbeiten der Freigaben keine Häkchen zurücksetzt. */
+function parseKeywordLines(text) {
+  const prev = new Map(keywords.map(k => [String(k.text || '').trim().toLowerCase(), k]));
+  return String(text || '').split('\n').map(line => {
+    const raw = line.trim();
+    if (!raw) return null;
+    const at = raw.indexOf('=>');
+    const word = (at >= 0 ? raw.slice(0, at) : raw).trim();
+    if (!word) return null;
+    const ex = at >= 0 ? YB.matcher.normalizeExceptions(raw.slice(at + 2)) : [];
+    const old = prev.get(word.toLowerCase());
+    const o = {
+      text: word,
+      enabled: old ? old.enabled !== false : true,
+      route: old ? normRoute(old.route) : ''
+    };
+    if (ex.length) o.exceptions = ex;
+    return o;
+  }).filter(Boolean);
 }
 
 async function load() {
@@ -333,6 +370,8 @@ async function load() {
   s.hashThreshold = numberOr(s.hashThreshold, DEFAULT_SETTINGS.hashThreshold);
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
+  s.allowAll = YB.matcher.normalizeAllowAll(s.allowAll);
+  if ($('allowAll')) $('allowAll').value = s.allowAll.join('\n');
   keywords = normalizeKeywords(data.keywords);
   counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
   lastSemStatus = data.semStatus;
@@ -381,6 +420,7 @@ function renderKeywords() {
 
     const inp = document.createElement('input');
     inp.type = 'text';
+    inp.className = 'kwtext';
     inp.value = kw.text;
     inp.oninput = () => {
       kw.text = inp.value;
@@ -406,13 +446,27 @@ function renderKeywords() {
     del.title = t('del_title');
     del.onclick = () => { keywords.splice(idx, 1); renderKeywords(); schedulePersist(0); };
 
-    row.append(cb, inp, route, del);
+    const exc = document.createElement('input');
+    exc.type = 'text';
+    exc.className = 'kwexcinput';
+    exc.value = YB.matcher.normalizeExceptions(kw.exceptions).join(', ');
+    exc.placeholder = t('kw_exc_ph');
+    exc.title = t('kw_exc_hint');
+    exc.oninput = () => {
+      kw.exceptions = YB.matcher.normalizeExceptions(exc.value);
+      schedulePersist(700);
+    };
+    const excRow = document.createElement('div');
+    excRow.className = 'kwexc';
+    excRow.appendChild(exc);
+
+    row.append(cb, inp, route, del, excRow);
     box.appendChild(row);
   });
   updateCount();
   /* Massenbearbeitungsfeld synchronisieren, wenn es eingeklappt ist */
   const bulk = $('keywordsBulk');
-  if (bulk && !bulk.closest('details').open) bulk.value = keywords.map(k => k.text).join('\n');
+  if (bulk && !bulk.closest('details').open) bulk.value = keywords.map(formatKeywordLine).join('\n');
 }
 
 function addKeyword(text) {
@@ -422,7 +476,7 @@ function addKeyword(text) {
     status(t('kw_dup'), false);
     return false;
   }
-  keywords.push({ text: v, enabled: true, route: '' });
+  keywords.push({ text: v, enabled: true, route: '', exceptions: [] });
   renderKeywords();
   schedulePersist(0);
   return true;
@@ -458,6 +512,7 @@ async function persist() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
+  settings.allowAll = YB.matcher.normalizeAllowAll($('allowAll') ? $('allowAll').value : []);
   const marginRaw = Number(settings.semanticMargin);
   settings.semanticMargin = Number.isFinite(marginRaw) && marginRaw >= 0 && marginRaw <= 1
     ? marginRaw
@@ -480,6 +535,8 @@ async function persist() {
       const o = { text: String(k.text || '').trim(), enabled: k.enabled !== false };
       const r = normRoute(k.route);
       if (r) o.route = r;   /* '' = Auto → Feld weglassen (Altformat-kompatibel) */
+      const ex = YB.matcher.normalizeExceptions(k.exceptions);
+      if (ex.length) o.exceptions = ex;
       return o;
     })
     .filter(k => k.text);
@@ -503,12 +560,12 @@ $('kwInput').onkeydown = (e) => {
   if (e.key === 'Enter') { e.preventDefault(); if (addKeyword($('kwInput').value)) $('kwInput').value = ''; }
 };
 $('kwApplyBulk').onclick = () => {
-  keywords = normalizeKeywords($('keywordsBulk').value.split('\n'));
+  keywords = parseKeywordLines($('keywordsBulk').value);
   renderKeywords();
   schedulePersist(0);
 };
 document.querySelector('#kwBulk').addEventListener('toggle', (e) => {
-  if (e.target.open) $('keywordsBulk').value = keywords.map(k => k.text).join('\n');
+  if (e.target.open) $('keywordsBulk').value = keywords.map(formatKeywordLine).join('\n');
 });
 
 /* Automatisches Speichern der Einstellungen: Häkchen/Auswahl wirken sofort, Text/Zahl mit Debounce */
@@ -556,6 +613,9 @@ VALUE_IDS.forEach(id => {
   const isText = el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number');
   el.addEventListener(isText ? 'input' : 'change', () => schedulePersist(isText ? 700 : 0));
 });
+if ($('allowAll')) {
+  $('allowAll').addEventListener('input', () => schedulePersist(700));
+}
 
 /* Sprachwechsel: Oberfläche sofort umstellen und die Wahl speichern */
 $('uiLang').addEventListener('change', () => {
