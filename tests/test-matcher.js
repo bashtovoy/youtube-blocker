@@ -7,6 +7,17 @@ assert.strictEqual(m.matchKeywords('This is a chair', ['AI'], {fuzzy: true}), nu
 assert.strictEqual(m.matchKeywords('Электромобили и батареи', ['электромобил'], {fuzzy: true}), 'электромобил');
 assert.strictEqual(m.matchKeywords('Новое видео про Claude AI', ['claude ai'], {fuzzy: true}), 'claude ai');
 assert.strictEqual(m.matchKeywords('машины будущего', ['машин'], {fuzzy: true}), 'машин');
+/* Fuzzy-Fallen aus den Kontrollbildern 10/2026: kurze Wörter dürfen keine
+   beliebigen Ersetzungen mehr treffen. Stämme/Mehrzahlformen bleiben erlaubt. */
+assert.strictEqual(m.matchKeywords('Temporary Root', ['robot'], {fuzzy: true}), null, 'root ≠ robot');
+assert.strictEqual(m.matchKeywords('Here is how I hide it (No Root)', ['robot'], {fuzzy: true}), null, 'root ≠ robot (No Root)');
+assert.strictEqual(m.matchKeywords('I drove the car', ['drone'], {fuzzy: true}), null, 'drove ≠ drone');
+assert.strictEqual(m.matchKeywords('2027 Off-Roader', ['roadster'], {fuzzy: true}), null, 'roader ≠ roadster');
+assert.strictEqual(m.matchKeywords('robotic arm', ['robot'], {fuzzy: true}), null, 'robot ≠ robotic');
+assert.strictEqual(m.matchKeywords('Drohne über Kassel', ['drone'], {fuzzy: true}), 'drone', 'Drohne → drone');
+assert.strictEqual(m.matchKeywords('Teslas und Roboter', ['Tesla'], {fuzzy: true}), 'Tesla', 'Teslas → Tesla');
+assert.strictEqual(m.matchKeywords('many robots', ['robot'], {fuzzy: true}), 'robot', 'robots → robot');
+assert.strictEqual(m.matchKeywords('машины', ['машина'], {fuzzy: true}), 'машина', 'машина/машины');
 /* Badge-Texte wie auf youtube.com/@LinusTechTips/videos (17.10.2026). */
 for (const text of [
   'Nur für Kanalmitglieder', 'Nur für Mitglieder', 'Mitglieder',

@@ -3,6 +3,25 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.22] — 2026-10-21
+
+### Behoben
+- **Kurze Suchbegriffe treffen keine ähnlich aussehenden Fremdwörter mehr.**
+  Der unscharfe Vergleich erlaubte bei 5–6 Zeichen eine beliebige Ersetzung.
+  Dadurch wurden „Temporary Root“ als `robot`, „I drove …“ als `drone` und
+  „Off-Roader“ als `roadster` ausgeblendet. Kurze Begriffe akzeptieren jetzt
+  nur noch eine Einfügung/Löschung oder einen Wechsel des letzten Vokals;
+  beliebige Ersetzungen sind gesperrt.
+- **Stämme und Mehrzahlformen bleiben erhalten.** `Drohne` → `drone`,
+  `Teslas` → `Tesla`, `robots` → `robot`, `машины` → `машин` und
+  `машина`/`машины` funktionieren weiterhin. Lange Begriffe erlauben
+  höchstens eine Änderung und einen Zeichen Längenunterschied; zwei
+  Änderungen (`roader` → `roadster`) reichen nicht mehr.
+
+### Tests
+- `test-matcher` deckt die drei Fehlpaare aus den Kontrollbildern 10/2026 ab
+  und prüft, dass Stämme/Mehrzahlformen weiter treffen.
+
 ## [1.5.21] — 2026-10-21
 
 ### Behoben

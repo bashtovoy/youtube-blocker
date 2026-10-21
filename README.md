@@ -8,7 +8,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
-| Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Präfixe) mit der Schlüsselwortliste | nein |
+| Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Stämme/Mehrzahlformen) mit der Schlüsselwortliste | nein |
 | Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, weißer Rand gegen Leptonica-Boxfehler, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung; `debug_file=/dev/null` hält Tesseract-Diagnosen aus dem Erweiterungsprotokoll | `ocr-host.js` + `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
@@ -231,6 +231,10 @@ Erweiterung verwendet deshalb in Chrome die File System Access API:
 
 - `dHash/pHash-Schwelle` — Hamming-Distanz. Kleiner = strenger.
   Für Kopien derselben Vorschaubilder reichen 4–8.
+- `Unscharfer Vergleich` — bei kurzen Wörtern (5–6 Zeichen) nur Stamm/Endung,
+  keine beliebigen Ersetzungen. Das verhindert z. B. `root` → `robot`,
+  `drove` → `drone` und `off-roader` → `roadster`; `Drohne` → `drone`,
+  `Teslas` → `Tesla` und `машины` → `машин` bleiben möglich.
 - `Margin-Schwelle (Semantik)` — kontrastive Margin im Kosinus-Raum
   (Ziel-Kosinus − bester Kosinus der übrigen Konzepte), 0–1. Höher = strenger.
   Default **0.03**, kalibriert 10/2026 an Kontrollbildern (q8): echte Treffer
@@ -272,6 +276,13 @@ Die Route wird im Popup je Zeile gewählt, im JSON-Export/Import (`"route"`)
 mitgeführt und ist ohne Codeänderungen konfigurierbar. Fehlt die Route
 (z. B. in alten Exporten), gilt weiterhin „Auto“ — bestehende Listen
 funktionieren unverändert.
+
+Erfahrung aus den Kontrollbildern 10/2026: Namen und Nachrichtenbegriffe
+sind visuell mehrdeutig. `Tesla` traf eine Blitz-Collage, `Putin` einen
+kahlen Arzt, `Roadster` ein rotes Coupé und `leaked` einen Hackerscreen.
+Für solche Begriffe **Titel** oder **OCR** wählen; `Auto`/`Bild` erzeugt dort
+leicht falsche Treffer. Visuell klare Gegenstände (Drohne, Roboter, Fahrzeug)
+bleiben gute Kandidaten für `Auto`/`Bild`.
 
 Migration aus älteren Versionen:
 

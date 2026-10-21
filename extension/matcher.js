@@ -42,19 +42,44 @@
     return prev[n];
   }
 
-  function maxEditDistance(len) {
-    if (len <= 4) return 0;
-    if (len <= 6) return 1;
-    if (len <= 10) return 2;
-    return 3;
+  /* Kurze Wörter (5–6 Zeichen) sind die gefährlichste Fuzzy-Zone: „root“ liegt
+     eine Einfügung von „robot“ entfernt, „drove“ eine Ersetzung von „drone“.
+     Deshalb dort keine beliebigen Ersetzungen mehr zulassen, sondern nur:
+     - eine Einfügung/Löschung (Drohne → Drone, Teslas → Tesla, машины → машин),
+     - einen Wechsel des letzten Vokals (машина → машины, Tesla → Tesle).
+     Das erhält Stämme/Mehrzahlformen, verhindert aber die falschen Treffer. */
+  const FINAL_VOWEL_RE = /^[aeiouyäöüаеёиоуыэюяіїє]$/i;
+
+  function isShortStemPair(t, k) {
+    if (t.length === k.length) {
+      return t.slice(0, -1) === k.slice(0, -1)
+        && t.slice(-1) !== k.slice(-1)
+        && FINAL_VOWEL_RE.test(t.slice(-1))
+        && FINAL_VOWEL_RE.test(k.slice(-1));
+    }
+    const short = t.length < k.length ? t : k;
+    const long = t.length < k.length ? k : t;
+    if (long.length - short.length !== 1) return false;
+    for (let i = 0; i < long.length; i++) {
+      if (long.slice(0, i) + long.slice(i + 1) === short) return true;
+    }
+    return false;
   }
 
   function tokenMatches(t, k, fuzzy) {
     if (t === k) return true;
-    /* Kurze Wörter werden nur vollständig verglichen: Das senkt falsche Treffer deutlich. */
+    /* Kurze Wörter nur über Stamm/Endung vergleichen: Das senkt falsche Treffer deutlich. */
     if (!fuzzy || k.length < 5 || t.length < 2) return false;
     if (t[0] !== k[0] || t[1] !== k[1]) return false;
-    if (levenshtein(t, k) <= maxEditDistance(k.length)) return true;
+    if (k.length <= 6) {
+      if (t.slice(0, 3) !== k.slice(0, 3)) return false;
+      return isShortStemPair(t, k);
+    }
+    /* Lange Wörter: höchstens eine Änderung und höchstens ein Zeichen
+       Längenunterschied. Zwei Änderungen („roader“ → „roadster“) sind zu viel. */
+    if (Math.abs(t.length - k.length) > 1) return false;
+    if (t.slice(0, 3) !== k.slice(0, 3)) return false;
+    if (levenshtein(t, k) <= 1) return true;
     /* Für den Modus „Absolut kein Interesse“ bewusst kein Prefix-Matching:
        Es erzeugt gefährliche Treffer wie „auto“ → „automatic“. */
     return false;
