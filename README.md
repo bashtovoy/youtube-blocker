@@ -51,6 +51,8 @@ erzeugen — deshalb laufen die Rechen-Hosts (SigLIP, Tesseract) in einem unsich
 Offscreen-Dokument (`offscreen.html`), für Nutzer funktional identisch zu Firefox.
 Der Firefox-Weg (Hintergrundseite) bleibt unverändert; `build-chrome.js` erzeugt das
 MV3-Manifest aus dem Firefox-Manifest, damit beide Pakete aus einem Quellbaum kommen.
+Kontrollbilder schreibt Chrome über die File System Access API in einen einmal
+gewählten Ordner; der native „Speichern unter“-Dialog wird dadurch vermieden.
 Mindestversion: Chrome 116.
 
 ## Verwendung
@@ -141,8 +143,28 @@ aktiv, legt die Erweiterung vor jedem Ausblenden ein kleines JPEG der Karte ab �
 nur der Rahmen der Karte, nicht der ganze Bildschirm:
 
 ```
-Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
+Firefox: Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
+Chrome:  <gewählter Ordner>/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
 ```
+
+### Chrome: Screenshot-Ordner statt „Speichern unter“
+
+Chrome zeigt bei der Einstellung „Fragen, wo jede Datei gespeichert werden soll“
+auch bei `downloads.download({saveAs:false})` einen nativen Dialog. Die
+Erweiterung verwendet deshalb in Chrome die File System Access API:
+
+- Im Popup einmal **„Ordner wählen…“** anklicken und einen Ordner freigeben.
+  Der Verzeichnis-Handle wird lokal in IndexedDB gespeichert; es wird nichts
+  hochgeladen oder an einen Server geschickt.
+- Fehlt der Ordner oder wurde die Freigabe nach einem Browserneustart noch nicht
+  bestätigt, wird das Bild als Blob in einer lokalen Warteschlange vorgemerkt.
+  Die Karte wird trotzdem ausgeblendet. Nach **„Zugriff erneuern“** schreibt die
+  Erweiterung die wartenden Bilder nach.
+- Ein Download-Fallback gibt es in Chrome nicht. Ohne Ordnerfreigabe entsteht
+  kein Systemdialog und keine Datei außerhalb des gewählten Ordners.
+- Die Dateinamen selbst bleiben identisch; vorhandene Namen werden mit `_1`, `_2`, …
+  ergänzt. Die maximal 100 wartenden Bilder liegen nur lokal und werden beim
+  Nachschreiben aus der Warteschlange entfernt.
 
 - Gründe im Dateinamen: `ai`, `members`, `promo`, `title`, `channel`,
   `semantic`, `ocr`, `speech`, `test`; Werbeplätze ohne Video-Kennung erscheinen
@@ -172,11 +194,13 @@ Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
 - Bereits ausgeblendete Karten, die YouTube neu rendert, erzeugen kein zweites
   Bild und keinen zweiten Zähler. Die Zahl „verdächtig“ in der Diagnose ist
   kein Zähler ausgeblendeter Karten.
-- **Berechtigungen:** Beim ersten Einschalten fragt der Browser einmalig nach
+- **Berechtigungen:** Beim ersten Einschalten fragt Firefox einmalig nach
   `downloads` und dem Zugriff auf alle Seiten (für den Bildschirmausschnitt).
-  Beide sind optional und werden **nicht** bei der Installation verlangt;
-  ohne sie bleibt die Funktion aus. Wird die Berechtigung später entzogen,
-  zeigt das Popup einen Hinweis — Häkchen aus- und wieder einschalten.
+  Chrome braucht für den Bildschirmausschnitt nur den Zugriff auf alle Seiten;
+  die Ablage regelt die separate Ordnerfreigabe. Die Berechtigungen sind
+  optional und werden **nicht** bei der Installation verlangt. Wird die
+  Aufnahmeberechtigung später entzogen, zeigt das Popup einen Hinweis —
+  Häkchen aus- und wieder einschalten.
 - Firefox schneidet den Kartenrahmen direkt beim Aufnehmen zu
   (`tabs.captureTab`, `scale: 1`); Chrome nimmt den sichtbaren Tab auf und
   schneidet/verkleinert ihn im Hintergrund (`captureVisibleTab`, höchstens zwei
@@ -322,6 +346,7 @@ extension/
   speech.js       — whisper.cpp im Worker (optional)
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
   shots.js        — Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt (Content + Hintergrund)
+  folder-store.js — Chrome: Screenshot-Ordner, IndexedDB-Warteschlange, File System Access
   ai.js           — offizielle KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
   background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-Routing, Kontrollbilder
   popup/          — Verwaltung von Liste und Einstellungen
@@ -355,9 +380,11 @@ node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
 node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, PSM 11, Sprachwahl, Masken
-node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen)
+node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen / FSA ohne Download)
+node tests/test-folder-store.js  # Chrome-Ordner: IndexedDB-Warteschlange, Freigabe, Kollisionsnamen
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 node tests/test-shots.js         # Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt, sichtbarer Ausschnitt
+node tests/e2e-chrome-fsa.js     # echter Chrome: OPFS-Handle, Service-Worker-Schreiben, captureVisibleTab
 node tests/test-ai.js            # KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
 node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen

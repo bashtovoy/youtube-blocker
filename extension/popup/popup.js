@@ -294,6 +294,20 @@ function prepareOcr() {
    Aufnehmen des Tabs verlangt <all_urls>, Speichern „downloads“. Beide werden
    erst beim Einschalten angefragt — wer die Funktion nie nutzt, sieht keinen
    Hinweis und keine Installationswarnung. */
+function folderApi() {
+  return YB.folder && YB.folder.storeSupported() ? YB.folder : null;
+}
+
+function folderMode() {
+  return !!(folderApi() && YB.folder.pickerSupported());
+}
+
+function shotPermissionRequest() {
+  return folderMode()
+    ? { origins: ['<all_urls>'] }
+    : { permissions: ['downloads'], origins: ['<all_urls>'] };
+}
+
 function renderShotsPerm() {
   const warn = $('shotsPerm');
   if (!warn) return;
@@ -308,13 +322,135 @@ async function checkShotsPermission() {
     return;
   }
   try {
-    shotsPermOk = await api.permissions.contains({ permissions: ['downloads'], origins: ['<all_urls>'] });
+    shotsPermOk = await api.permissions.contains(shotPermissionRequest());
   } catch (e) {
     shotsPermOk = false;
   }
   renderShotsPerm();
   renderStats();
 }
+
+function folderReason(reason) {
+  if (reason === 'no-folder') return t('folder_reason_none');
+  if (reason === 'permission') return t('folder_reason_permission');
+  if (reason === 'write') return t('folder_reason_write');
+  return reason || t('unknown');
+}
+
+/* Status des Chrome-Screenshotordners. Die Wahl selbst läuft direkt im Popup
+   (Nutzergeste für showDirectoryPicker); nur das Nachschreiben wartender Bilder
+   übernimmt der Hintergrund. */
+async function renderFolderStatus(extra) {
+  const box = $('shotsFolder');
+  if (!box) return;
+  const folder = folderApi();
+  if (!folder || !folderMode()) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  let st;
+  try {
+    st = await folder.getStatus();
+  } catch (e) {
+    st = { name: '', permission: 'denied', pending: 0 };
+  }
+  const choose = $('shotsFolderChoose');
+  const grant = $('shotsFolderGrant');
+  const status = $('shotsFolderStatus');
+  if (choose) choose.textContent = st.name ? t('folder_change') : t('folder_choose');
+  if (grant) grant.hidden = !(st.name && st.permission !== 'granted');
+
+  let text;
+  if (!st.name) text = t('folder_none');
+  else if (st.permission === 'granted') text = t('folder_ready', { name: st.name });
+  else if (st.permission === 'prompt') text = t('folder_permission', { name: st.name });
+  else text = t('folder_denied', { name: st.name });
+  if (st.pending) text += ' · ' + t('folder_pending', { n: st.pending });
+  if (extra) text += ' · ' + extra;
+  if (status) status.textContent = text;
+}
+
+async function chooseShotFolder() {
+  const folder = folderApi();
+  if (!folder) return false;
+  try {
+    await folder.chooseFolder();
+    const st = await folder.getStatus();
+    status(t('folder_chosen', { name: st.name }));
+    await renderFolderStatus();
+    return true;
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      status(t('folder_cancelled'), false);
+      return false;
+    }
+    status(t('folder_error', { msg: String((e && e.message) || e) }), false);
+    await renderFolderStatus(folderReason(String((e && e.message) || e)));
+    return false;
+  }
+}
+
+async function grantShotFolder() {
+  const folder = folderApi();
+  if (!folder) return false;
+  try {
+    const ok = await folder.requestStoredPermission();
+    if (!ok) {
+      status(t('folder_error', { msg: t('folder_reason_permission') }), false);
+      await renderFolderStatus();
+      return false;
+    }
+    return true;
+  } catch (e) {
+    status(t('folder_error', { msg: String((e && e.message) || e) }), false);
+    await renderFolderStatus();
+    return false;
+  }
+}
+
+async function ensureFolderForTest() {
+  if (!folderMode()) return true;
+  const st = await folderApi().getStatus();
+  if (st.name && st.permission === 'granted') return true;
+  if (st.name) return grantShotFolder();
+  return chooseShotFolder();
+}
+
+async function flushShotFolder() {
+  try {
+    const res = await api.runtime.sendMessage({ type: 'ybshot-folder-flush' });
+    await renderFolderStatus();
+    if (res && res.saved) status(t('folder_flushed', { n: res.saved }));
+    if (res && res.failed) status(t('folder_error', { msg: t('folder_reason_write') }), false);
+    return res;
+  } catch (e) {
+    await renderFolderStatus();
+    return null;
+  }
+}
+
+$('shotsFolderChoose').onclick = async () => {
+  const btn = $('shotsFolderChoose');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    if (await chooseShotFolder()) await flushShotFolder();
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$('shotsFolderGrant').onclick = async () => {
+  const btn = $('shotsFolderGrant');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    if (await grantShotFolder()) await flushShotFolder();
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 function shortFile(file) {
   return String(file || '').split('/').pop();
@@ -345,6 +481,13 @@ function renderLastShot() {
   const file = shortFile(lastShot.file);
   const privateTag = lastShot.incognito ? ' · ' + t('shots_private') : '';
   const partialTag = lastShot.partial ? ' · ' + t('shots_partial') : '';
+  if (lastShot.status === 'pending') {
+    el.textContent = t('shots_last_pending', {
+      time,
+      msg: folderReason(lastShot.error)
+    }) + partialTag + privateTag;
+    return;
+  }
   if (lastShot.status === 'saved' || lastShot.ok) {
     el.textContent = t('shots_last_saved', { time, file: file || '—' }) + partialTag + privateTag;
     el.title = lastShot.file || '';
@@ -409,6 +552,7 @@ function applyLanguage(lang) {
   renderCounts();
   renderLastShot();
   renderPromoDiag();
+  renderFolderStatus();
 }
 
 function normRoute(r) {
@@ -577,6 +721,14 @@ async function load() {
   if ($('checkSpeech').checked) checkWhisper();
   /* Optionale Berechtigungen der Kontrollbilder prüfen (Häkchen + Warnhinweis) */
   checkShotsPermission();
+  /* Chrome: Ordnerstatus zeigen und bei bereits erteilter Freigabe wartende
+     Bilder ohne weiteren Klick nachschreiben. */
+  if (folderMode()) {
+    renderFolderStatus();
+    folderApi().getStatus().then(st => {
+      if (st.name && st.permission === 'granted' && st.pending) flushShotFolder();
+    }).catch(() => {});
+  }
   /* Läuft in einem offenen YouTube-Tab noch die alte Skript-Instanz? */
   checkStaleTabs();
 }
@@ -780,7 +932,7 @@ $('shotBeforeHide').addEventListener('change', async () => {
   let granted = false;
   try {
     if (api.permissions && api.permissions.request) {
-      granted = await api.permissions.request({ permissions: ['downloads'], origins: ['<all_urls>'] });
+      granted = await api.permissions.request(shotPermissionRequest());
     }
   } catch (e) { granted = false; }
   if (!granted) {
@@ -795,7 +947,8 @@ $('shotBeforeHide').addEventListener('change', async () => {
   renderShotsPerm();
   renderStats();
   schedulePersist(0);
-  status(t('shots_on'));
+  status(folderMode() ? t('shots_on_folder') : t('shots_on'));
+  if (folderMode()) renderFolderStatus();
 });
 
 /* Manuelle Testaufnahme: prüft den kompletten Weg (Berechtigung, Aufnahme,
@@ -810,7 +963,7 @@ $('shotTest').onclick = async () => {
       let granted = false;
       try {
         if (api.permissions && api.permissions.request) {
-          granted = await api.permissions.request({ permissions: ['downloads'], origins: ['<all_urls>'] });
+          granted = await api.permissions.request(shotPermissionRequest());
         }
       } catch (e) { granted = false; }
       shotsPermOk = granted;
@@ -821,10 +974,18 @@ $('shotTest').onclick = async () => {
         return;
       }
     }
+    if (folderMode()) {
+      const ready = await ensureFolderForTest();
+      if (!ready) return;
+      await flushShotFolder();
+    }
     const tabs = await api.tabs.query({ active: true, currentWindow: true });
     const activeTab = tabs && tabs[0];
     const res = await api.runtime.sendMessage({ type: 'ybshot-test', tabId: activeTab && activeTab.id });
-    if (res && res.ok) {
+    if (res && res.ok && res.pending) {
+      status(t('shots_test_pending', { file: shortFile(res.file) || '—' }), false);
+      await renderFolderStatus(folderReason(res.error));
+    } else if (res && res.ok) {
       status(t('shots_test_ok', { file: shortFile(res.file) || '—' }));
     } else {
       status(t('shots_test_failed', { msg: (res && res.error) || t('unknown') }), false);

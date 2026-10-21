@@ -11,6 +11,7 @@ const api = (typeof browser !== 'undefined') ? browser : chrome;
 if (typeof importScripts === 'function') {
   try { importScripts('model-cache.js'); } catch (e) { /* Status bleibt optional */ }
   try { importScripts('shots.js'); } catch (e) { /* Kontrollbilder bleiben optional */ }
+  try { importScripts('folder-store.js'); } catch (e) { /* Chrome-Ordnerwahl bleibt optional */ }
 }
 /* MV3 heißt der Knopf "action", Firefox MV2 "browserAction" — beide Bäume bedienen. */
 const actionApi = api.action || api.browserAction;
@@ -211,9 +212,27 @@ async function downloadShot(dataUrl, file, options) {
   }
 }
 
+function chromeBuild() {
+  try {
+    return !!api.runtime && api.runtime.getManifest &&
+      api.runtime.getManifest().manifest_version === 3;
+  } catch (e) {
+    return false;
+  }
+}
+
+function folderStore() {
+  return chromeBuild() && self.YB && self.YB.folder && self.YB.folder.storeSupported()
+    ? self.YB.folder
+    : null;
+}
+
 async function shotPermission() {
   if (!api.permissions || !api.permissions.contains) return true;
   try {
+    /* Chrome speichert Kontrollbilder in den einmal gewählten Ordner; dort
+       wird „downloads“ nicht mehr benötigt. Firefox braucht es weiterhin. */
+    if (chromeBuild()) return await api.permissions.contains({ origins: ['<all_urls>'] });
     return await api.permissions.contains({ permissions: ['downloads'], origins: ['<all_urls>'] });
   } catch (e) {
     return false;
@@ -251,7 +270,11 @@ async function captureTabShot(tab, lib, msg) {
 
 async function doShot(msg, sender) {
   const lib = shotsLib();
-  if (!lib || !api.downloads) return { ok: false, error: 'downloads-api' };
+  const chrome = chromeBuild();
+  const folder = folderStore();
+  if (!lib || (chrome && !folder) || (!chrome && !api.downloads)) {
+    return { ok: false, error: chrome ? 'folder-api' : 'downloads-api' };
+  }
   const tab = sender && sender.tab;
   if (!tab || tab.id == null) return { ok: false, error: 'kein-tab' };
   if (!(await shotPermission())) return { ok: false, error: 'berechtigung-fehlt' };
@@ -263,18 +286,44 @@ async function doShot(msg, sender) {
   if (!dataUrl) return { ok: false, error: 'nicht-aktiv' };
 
   const file = lib.fileName(new Date(), msg.videoId, msg.reason);
+  if (folder) {
+    const stored = await folder.saveOrQueue(dataUrl, file, {
+      videoId: String(msg.videoId || ''),
+      reason: String(msg.reason || ''),
+      partial: !!msg.partial,
+      incognito: shotTabIsPrivate(tab),
+      source: 'auto'
+    });
+    if (!stored.ok && !stored.pending) return { ok: false, error: stored.error || 'folder-save' };
+    console.log('[YB] Kontrollbild ' + (stored.pending ? 'vorgemerkt:' : 'gespeichert:'), stored.file || file);
+    return {
+      ok: true,
+      file: stored.file || file,
+      target: 'folder',
+      pending: !!stored.pending,
+      pendingId: stored.pending ? stored.id : null,
+      error: stored.pending ? (stored.reason || 'no-folder') : '',
+      incognito: shotTabIsPrivate(tab),
+      downloadId: null
+    };
+  }
+
   const dl = await downloadShot(dataUrl, file, { incognito: shotTabIsPrivate(tab) });
   console.log('[YB] Kontrollbild gestartet:', file);
   /* Der Content wartet nur auf den Start; die Fertigstellung wird im
      Hintergrund überwacht und der Popup-Status danach aktualisiert. */
-  return { ok: true, file, incognito: shotTabIsPrivate(tab), downloadId: dl.id, settle: dl.done };
+  return { ok: true, file, target: 'downloads', incognito: shotTabIsPrivate(tab), downloadId: dl.id, settle: dl.done };
 }
 
 /* Manuelle Testaufnahme aus dem Popup: prüft Rechte und Downloadweg, ohne auf
    eine passende Karte zu warten. Speichert den sichtbaren Tab als JPEG. */
 async function doTestShot(msg) {
   const lib = shotsLib();
-  if (!lib || !api.downloads) return { ok: false, error: 'downloads-api' };
+  const chrome = chromeBuild();
+  const folder = folderStore();
+  if (!lib || (chrome && !folder) || (!chrome && !api.downloads)) {
+    return { ok: false, error: chrome ? 'folder-api' : 'downloads-api' };
+  }
   if (!(await shotPermission())) return { ok: false, error: 'berechtigung-fehlt' };
   let tab = null;
   if (msg && msg.tabId != null) {
@@ -304,6 +353,26 @@ async function doTestShot(msg) {
   }
   if (!dataUrl) return { ok: false, error: 'aufnahme-leer' };
   const file = lib.fileName(new Date(), 'test', 'test');
+  if (folder) {
+    const stored = await folder.saveOrQueue(dataUrl, file, {
+      videoId: 'test',
+      reason: 'test',
+      source: 'manual',
+      incognito: shotTabIsPrivate(tab)
+    });
+    if (!stored.ok && !stored.pending) throw new Error('Ordner: ' + (stored.error || 'Speichern fehlgeschlagen'));
+    console.log('[YB] Test-Kontrollbild ' + (stored.pending ? 'vorgemerkt:' : 'gespeichert:'), stored.file || file);
+    return {
+      ok: true,
+      file: stored.file || file,
+      target: 'folder',
+      pending: !!stored.pending,
+      pendingId: stored.pending ? stored.id : null,
+      error: stored.pending ? (stored.reason || 'no-folder') : '',
+      incognito: shotTabIsPrivate(tab),
+      downloadId: null
+    };
+  }
   const dl = await downloadShot(dataUrl, file, { incognito: shotTabIsPrivate(tab) });
   try {
     await dl.done;
@@ -312,7 +381,41 @@ async function doTestShot(msg) {
     throw new Error('Download: ' + error);
   }
   console.log('[YB] Test-Kontrollbild gespeichert:', file);
-  return { ok: true, file, incognito: shotTabIsPrivate(tab), downloadId: dl.id };
+  return { ok: true, file, target: 'downloads', incognito: shotTabIsPrivate(tab), downloadId: dl.id };
+}
+
+let folderFlushChain = Promise.resolve();
+
+/* Nach der Ordnerfreigabe im Popup werden vorgemerkte Bilder nachgeschrieben.
+   Der letzte „pending“-Status wird danach auf „saved“ gesetzt, damit das Popup
+   nicht dauerhaft auf eine erledigte Freigabe wartet. */
+function flushPendingShots() {
+  const folder = folderStore();
+  if (!folder) return Promise.resolve({ ok: false, error: 'folder-unsupported', saved: 0, pending: 0 });
+  const start = () => folder.flushPending();
+  const result = folderFlushChain.then(start, start);
+  folderFlushChain = result.catch(() => {});
+  return result.then(async res => {
+    if (res && res.saved > 0) {
+      try {
+        const data = await api.storage.local.get('lastShot');
+        const last = data && data.lastShot;
+        const lastWasSaved = !last || last.pendingId == null ||
+          (Array.isArray(res.savedIds) && res.savedIds.indexOf(last.pendingId) >= 0);
+        if (last && last.pending && lastWasSaved) {
+          await recordShot('saved', Object.assign({}, last, {
+            status: 'saved',
+            ok: true,
+            file: res.lastSaved || last.file,
+            error: null,
+            pending: false,
+            pendingId: null
+          }));
+        }
+      } catch (e) { /* Status ist optional */ }
+    }
+    return res;
+  });
 }
 
 async function runShot(msg, sender, run) {
@@ -334,13 +437,18 @@ async function runShot(msg, sender, run) {
       incognito: response.incognito != null ? !!response.incognito : base.incognito,
       file: response.file || null,
       error: response.error || null,
-      downloadId: response.downloadId || null
+      downloadId: response.downloadId || null,
+      target: response.target || (folderStore() ? 'folder' : 'downloads'),
+      pending: !!response.pending,
+      pendingId: response.pendingId || null
     });
     if (settle && typeof settle.then === 'function') {
       settle.then(
         () => recordShot('saved', info),
         e => recordShot('failed', Object.assign({}, info, { error: String((e && e.message) || e) }))
       );
+    } else if (response.pending) {
+      await recordShot('pending', info);
     } else {
       await recordShot(response.ok ? 'saved' : 'failed', info);
     }
@@ -384,6 +492,11 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => api.storage.local.get(kind))
       .then(d => api.storage.local.set({ [kind]: (d[kind] || 0) + by }))
       .catch(() => {});
+  } else if (msg.type === 'ybshot-folder-flush') {
+    flushPendingShots()
+      .then(sendResponse)
+      .catch(e => sendResponse({ ok: false, error: String((e && e.message) || e), saved: 0, pending: 0 }));
+    return true;
   } else if (msg.type === 'ybshot' || msg.type === 'ybshot-test') {
     /* Antwort erst nach Aufnahme und Download-Start; der Content wartet mit dem
        Ausblenden, solange das Bild noch entsteht. Die manuelle Testaufnahme

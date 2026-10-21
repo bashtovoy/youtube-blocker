@@ -3,6 +3,42 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.18] — 2026-10-21
+
+### Behoben
+- **Chrome zeigte für jedes Kontrollbild einen nativen „Speichern unter“-Dialog.**
+  Chrome ignoriert `saveAs:false` bei `downloads.download`, wenn die globale
+  Einstellung „Fragen, wo jede Datei gespeichert werden soll“ aktiv ist. Chrome
+  schreibt Kontrollbilder jetzt über die File System Access API direkt in einen
+  einmal gewählten Ordner. Ein Download-Fallback existiert dort nicht mehr.
+- **Fehlende Ordnerfreigabe blockiert das Ausblenden nicht.** Ohne Ordner oder
+  nach einem Browserneustart ohne bestätigte Freigabe wird das JPEG als Blob
+  lokal in IndexedDB vorgemerkt; die Karte wird trotzdem ausgeblendet. Nach
+  „Zugriff erneuern“ schreibt der Service Worker die Warteschlange nach.
+- **Wartende Bilder aktualisieren den Popup-Status.** Aus `pending` wird nach
+  dem Nachschreiben `saved`; der zuletzt angezeigte Dateiname entspricht der
+  tatsächlich geschriebenen Datei.
+
+### Hinzugefügt
+- Chrome-only-Bereich „Screenshot-Ordner“ im Popup mit Ordnerwahl, Status,
+  Freigabe-Erneuerung und Anzahl wartender Bilder.
+- `folder-store.js` kapselt Verzeichnis-Handle, IndexedDB-Warteschlange,
+  eindeutige Dateinamen und das Schreiben aus dem MV3-Service-Worker.
+- Übersetzungen für Ordnerwahl, Warteschlange und Fehlerzustände in
+  Deutsch, Englisch, Russisch und Ukrainisch.
+
+### Tests
+- `test-folder-store` prüft Warteschlange ohne Ordner, Nachschreiben,
+  Freigabeverlust und Kollisionsnamen mit IndexedDB-/FSA-Attrappen.
+- `test-background-route` prüft den Chrome-Ordnerweg ohne
+  `downloads.download`, den `pending`-Status und das Nachschreiben.
+- `e2e-chrome-fsa` startet ein isoliertes Chrome, legt einen OPFS-Handle in
+  IndexedDB, lässt den Service Worker schreiben und prüft eine echte
+  `captureVisibleTab`-Aufnahme im Ordner.
+- Zusätzlich real geprüft: Chrome 155 mit automatischer YouTube-Aufnahme und
+  Ausblenden im FSA-Ordner; Firefox 158 mit automatischer Aufnahme und
+  Ausblenden über den Downloadweg — jeweils in isolierten Profilen.
+
 ## [1.5.17] — 2026-10-21
 
 ### Behoben

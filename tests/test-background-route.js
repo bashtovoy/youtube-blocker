@@ -15,20 +15,26 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.
    Prototyp — für Vergleiche in die Host-Welt normalisieren. */
 const plain = x => JSON.parse(JSON.stringify(x));
 
-function makeSandbox({ routes, chromeMode, shotApis, shotTab }) {
-  const calls = { offscreen: 0, sends: [], badge: [], storageSets: [], downloads: [] };
+function makeSandbox({ routes, chromeMode, shotApis, shotTab, folderStore }) {
+  const calls = { offscreen: 0, sends: [], badge: [], storageSets: [], downloads: [], permissions: [] };
   const listeners = { message: null, download: null };
+  const state = {};
   let contexts = [];
   const api = {
     runtime: {
       onMessage: { addListener: fn => { listeners.message = fn; } },
       sendMessage: msg => { calls.sends.push(msg); return Promise.resolve({ ok: true, route: msg.route, from: 'offscreen' }); },
-      getContexts: chromeMode ? (() => Promise.resolve(contexts)) : undefined
+      getContexts: chromeMode ? (() => Promise.resolve(contexts)) : undefined,
+      getManifest: () => ({ manifest_version: chromeMode ? 3 : 2 })
     },
     storage: {
       local: {
-        get: () => Promise.resolve({}),
-        set: obj => { calls.storageSets.push(obj); return Promise.resolve(); }
+        get: keys => {
+          if (typeof keys === 'string') return Promise.resolve({ [keys]: state[keys] });
+          if (Array.isArray(keys)) return Promise.resolve(keys.reduce((o, k) => (o[k] = state[k], o), {}));
+          return Promise.resolve(Object.assign({}, state));
+        },
+        set: obj => { calls.storageSets.push(obj); Object.assign(state, obj); return Promise.resolve(); }
       },
       onChanged: { addListener: () => {} }
     },
@@ -37,7 +43,7 @@ function makeSandbox({ routes, chromeMode, shotApis, shotTab }) {
   };
   if (shotApis) {
     const tab = Object.assign({ id: 7, windowId: 1, active: true, cookieStoreId: 'firefox-default' }, shotTab || {});
-    api.permissions = { contains: () => Promise.resolve(true) };
+    api.permissions = { contains: req => { calls.permissions.push(req); return Promise.resolve(true); } };
     api.tabs.query = () => Promise.resolve([tab]);
     api.tabs.get = id => Promise.resolve(Object.assign({}, tab, { id }));
     api.tabs.captureTab = () => Promise.resolve('data:image/jpeg;base64,AAAA');
@@ -60,6 +66,7 @@ function makeSandbox({ routes, chromeMode, shotApis, shotTab }) {
     };
   }
   const sandbox = { self: { YB_ROUTES: routes }, console, setTimeout, clearTimeout, URL };
+  if (folderStore) sandbox.self.YB = { folder: folderStore };
   if (shotApis) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'extension', 'shots.js'), 'utf8'), sandbox);
   if (chromeMode) sandbox.chrome = api; else sandbox.browser = api;
   vm.runInNewContext(SRC, sandbox, { filename: 'background.js' });
@@ -182,6 +189,74 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     assert.ok(shot, 'lastShot für privat gespeichert');
     assert.strictEqual(shot.incognito, true);
     assert.strictEqual(shot.status, 'saved');
+  }
+
+  /* --- Chrome ohne Ordner: Testaufnahme wird vorgemerkt, kein Download --- */
+  {
+    const stored = [];
+    const folder = {
+      storeSupported: () => true,
+      saveOrQueue: async (dataUrl, file, meta) => {
+        stored.push({ file, meta });
+        return { ok: false, pending: true, reason: 'no-folder' };
+      },
+      flushPending: async () => ({ ok: true, saved: 1, failed: 0, lastSaved: 'YouTube Blocker/2026-10-21/neu.jpg', pending: 0 })
+    };
+    const { calls, listener } = makeSandbox({
+      routes: {}, chromeMode: true, shotApis: true, folderStore: folder
+    });
+    const r = await ask(listener, { type: 'ybshot-test', tabId: 7 });
+    assert.strictEqual(r.value.ok, true);
+    assert.strictEqual(r.value.target, 'folder');
+    assert.strictEqual(r.value.pending, true, 'ohne Ordner wird die Aufnahme vorgemerkt');
+    assert.strictEqual(r.value.error, 'no-folder');
+    assert.strictEqual(calls.downloads.length, 0, 'kein downloads.download als Ersatz');
+    assert.deepStrictEqual(plain(calls.permissions[0]), { origins: ['<all_urls>'] },
+      'Chrome fragt nur die Aufnahme-Hostberechtigung ab, nicht downloads');
+    assert.strictEqual(stored.length, 1);
+    assert.strictEqual(stored[0].meta.source, 'manual');
+    const pendingShot = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(pendingShot.status, 'pending');
+    assert.strictEqual(pendingShot.pending, true);
+
+    const flush = await ask(listener, { type: 'ybshot-folder-flush' });
+    assert.strictEqual(flush.value.ok, true);
+    assert.strictEqual(flush.value.saved, 1);
+    const savedShot = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(savedShot.status, 'saved');
+    assert.strictEqual(savedShot.pending, false);
+    assert.strictEqual(savedShot.file, 'YouTube Blocker/2026-10-21/neu.jpg');
+  }
+
+  /* --- Nur der tatsächlich geschriebene Warteeintrag wird „saved“ --- */
+  {
+    const folder = {
+      storeSupported: () => true,
+      saveOrQueue: async () => ({ ok: false, pending: true, reason: 'no-folder', id: 42 }),
+      flushPending: async () => ({
+        ok: true, saved: 1, failed: 0, savedIds: [7],
+        lastSaved: 'YouTube Blocker/2026-10-21/aelter.jpg', pending: 1
+      })
+    };
+    const { calls, listener } = makeSandbox({
+      routes: {}, chromeMode: true, shotApis: true, folderStore: folder
+    });
+    await ask(listener, { type: 'ybshot-test', tabId: 7 });
+    const pendingBefore = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(pendingBefore.pendingId, 42);
+    await ask(listener, { type: 'ybshot-folder-flush' });
+    const stillPending = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(stillPending.status, 'pending', 'fremder Warteeintrag darf den Status nicht überschreiben');
+    assert.strictEqual(stillPending.pendingId, 42);
+  }
+
+  /* --- Chrome ohne folder-store darf niemals auf downloads zurückfallen --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: {}, chromeMode: true, shotApis: true });
+    const r = await ask(listener, { type: 'ybshot-test', tabId: 7 });
+    assert.strictEqual(r.value.ok, false);
+    assert.strictEqual(r.value.error, 'folder-api');
+    assert.strictEqual(calls.downloads.length, 0, 'kein stiller Download-Fallback in Chrome');
   }
 
   /* --- Automatische Aufnahme im privaten Fenster --- */

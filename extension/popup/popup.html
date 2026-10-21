@@ -209,8 +209,15 @@
     <fieldset>
       <legend data-i18n="shots_legend">Kontrolle der Ausblendungen</legend>
       <label class="row"><input type="checkbox" id="shotBeforeHide"> <span data-i18n="check_shots">Screenshot vor dem Ausblenden (nur Kartenbereich)</span> <span class="stat" id="statShots"></span></label>
-      <div class="hint" data-i18n="shots_hint">Speichert ein JPEG unter „Downloads/YouTube Blocker/JJJJ-MM-TT/“ — nur den Bereich der Karte, etwa 3–25 KB. Ein Bild entsteht beim Ausblenden einer neuen Karte: vollständig sichtbar, sonst der sichtbare Ausschnitt. Ganz außerhalb des Fensters wird die Karte erst beim Erscheinen aufgenommen und dann ausgeblendet. Bereits ausgeblendete Karten und die Zahl „verdächtig“ in der Diagnose werden nicht nachträglich aufgenommen.</div>
+      <div class="hint" data-i18n="shots_hint">Speichert ein JPEG im gewählten Ordner unter „YouTube Blocker/JJJJ-MM-TT/“ (Chrome) bzw. unter „Downloads/YouTube Blocker/JJJJ-MM-TT/“ (Firefox) — nur den Bereich der Karte, etwa 3–25 KB. Ein Bild entsteht beim Ausblenden einer neuen Karte: vollständig sichtbar, sonst der sichtbare Ausschnitt. Ganz außerhalb des Fensters wird die Karte erst beim Erscheinen aufgenommen und dann ausgeblendet. Bereits ausgeblendete Karten und die Zahl „verdächtig“ in der Diagnose werden nicht nachträglich aufgenommen.</div>
       <div class="hint err" id="shotsPerm" hidden data-i18n="shots_perm_missing">Die Berechtigung wurde entzogen. Häkchen aus- und wieder einschalten, um sie erneut zu erteilen.</div>
+      <div id="shotsFolder" hidden>
+        <div class="rowbtns">
+          <button id="shotsFolderChoose" class="secondary" data-i18n="folder_choose">Ordner wählen…</button>
+          <button id="shotsFolderGrant" class="secondary" data-i18n="folder_grant" hidden>Zugriff erneuern</button>
+        </div>
+        <div class="hint" id="shotsFolderStatus" aria-live="polite"></div>
+      </div>
       <div class="rowbtns"><button id="shotTest" class="secondary" data-i18n="shots_test">Testaufnahme speichern</button></div>
       <div class="hint" id="lastShotStatus" aria-live="polite"></div>
     </fieldset>
@@ -234,6 +241,7 @@
   <script src="../matcher.js"></script>
   <script src="../image.js"></script>
   <script src="../semantic.js"></script>
+  <script src="../folder-store.js"></script>
   <script src="i18n.js"></script>
   <script src="stale-tabs.js"></script>
   <script src="popup.js"></script>
