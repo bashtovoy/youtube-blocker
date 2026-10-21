@@ -65,9 +65,13 @@ Mindestversion: Chrome 116.
    (siehe „Ausnahmen und globale Freigaben“).
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
-4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv: Karten mit dem
-   YouTube-Hinweis-Badge für KI-erstellte Inhalte („AI“/„KI“/„ИИ“/„ШІ“)
-   verschwinden unabhängig von der Liste; abschaltbar im Popup.
+4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv und nutzt ausschließlich
+   die offizielle YouTube-Kennzeichnung („AI“/„KI“/„ИИ“/„ШІ“). YouTube zeigt
+   sie häufig nur in den Metadaten der Videoseite, nicht auf der Feed-Karte.
+   Beim Öffnen eines so gekennzeichneten Videos blockiert die Erweiterung die
+   Wiedergabe und merkt sich die Video-Kennung lokal; Karten dieses Videos
+   verschwinden danach auch ohne sichtbaren Badge aus Feed und Suche. Nicht
+   gekennzeichnete Videos werden nicht heuristisch als KI eingestuft.
 5. **„Werbekarten ‚YouTube empfiehlt‘ ausblenden“** ist ebenfalls standardmäßig
    aktiv: YouTube-eigene Werbe-/Empfehlungskarten („YouTube empfiehlt“,
    „Sponsored“, „Содержит платную рекламу“, CTA + „0 грн“ u. a.) verschwinden
@@ -149,8 +153,16 @@ Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
   Interesse“ und bei Werbe-Containern.
 - Liegt die Karte noch nicht vollständig im sichtbaren Bereich, wartet das
   Ausblenden bis zu **8 Sekunden**; die Seite wird dabei nicht gescrollt.
-  Wird die Karte in dieser Zeit nicht sichtbar, wird sie ohne Bild ausgeblendet
-  und der Grund im Popup unter dem Häkchen angezeigt.
+  Danach wird bei teilweiser Sichtbarkeit der sichtbare Kartenausschnitt
+  aufgenommen (ohne Masthead/Guide). Ist die Karte ganz außerhalb des Fensters,
+  bleibt sie vorgemerkt: Sie wird beim Erscheinen vollständig aufgenommen und
+  erst dann ausgeblendet. Mehrere vorgemerkte Karten werden nacheinander
+  behandelt; **15 Sekunden nach dem Vormerken** genügt bei teilweiser
+  Sichtbarkeit der sichtbare Ausschnitt, nach **120 Sekunden** ohne Sichtbarkeit wird ohne Bild
+  ausgeblendet und der Grund im Popup angezeigt.
+- Ein Bild entsteht nur unmittelbar vor einem tatsächlichen Ausblenden. Wird
+  eine vorgemerkte Karte inzwischen auf anderem Weg versteckt oder entfernt,
+  entsteht kein nachträgliches Bild.
 - **Status und Test:** Unter dem Häkchen steht der letzte Aufnahmeversuch
   (gespeichert, übersprungen oder Fehler). „Testaufnahme speichern“ prüft den
   kompletten Weg sofort, ohne auf eine Karte zu warten. Einstellungen wirken
@@ -310,6 +322,7 @@ extension/
   speech.js       — whisper.cpp im Worker (optional)
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
   shots.js        — Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt (Content + Hintergrund)
+  ai.js           — offizielle KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
   background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-Routing, Kontrollbilder
   popup/          — Verwaltung von Liste und Einstellungen
   lib/ models/    — externe Bibliotheken; Modelle nur lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
@@ -344,7 +357,8 @@ node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler,
 node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, PSM 11, Sprachwahl, Masken
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen)
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
-node tests/test-shots.js         # Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt
+node tests/test-shots.js         # Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt, sichtbarer Ausschnitt
+node tests/test-ai.js            # KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
 node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen
 node tests/test-ocr-worker.js    # OCR-Worker-Einstieg: Filter lädt vor dem Tesseract-Skript

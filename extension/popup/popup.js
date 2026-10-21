@@ -344,8 +344,9 @@ function renderLastShot() {
   const time = shotTime(lastShot.at);
   const file = shortFile(lastShot.file);
   const privateTag = lastShot.incognito ? ' · ' + t('shots_private') : '';
+  const partialTag = lastShot.partial ? ' · ' + t('shots_partial') : '';
   if (lastShot.status === 'saved' || lastShot.ok) {
-    el.textContent = t('shots_last_saved', { time, file: file || '—' }) + privateTag;
+    el.textContent = t('shots_last_saved', { time, file: file || '—' }) + partialTag + privateTag;
     el.title = lastShot.file || '';
     el.classList.add('ok');
     return;
@@ -357,7 +358,7 @@ function renderLastShot() {
     el.textContent = t('shots_last_skipped', { time, msg: reason }) + privateTag;
     return;
   }
-  el.textContent = t('shots_last_failed', { time, msg: lastShot.error || t('unknown') }) + privateTag;
+  el.textContent = t('shots_last_failed', { time, msg: lastShot.error || t('unknown') }) + partialTag + privateTag;
   el.classList.add('err');
 }
 

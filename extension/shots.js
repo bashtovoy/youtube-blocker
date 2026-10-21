@@ -66,6 +66,37 @@
     return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
   }
 
+  /* Sichtbarer Teil einer Karte, auf das Fenster beschnitten. Feste Balken
+     (Masthead/Guide) werden abgezogen, damit im Notfallbild kein fremder
+     Seiteninhalt landet. Wird nur verwendet, wenn eine Karte nach
+     WAIT_VISIBLE_MS noch teilweise verdeckt/abgeschnitten ist. */
+  function visiblePart(card, viewport, blockers) {
+    if (!card || !viewport) return null;
+    let x = Math.max(0, card.x);
+    let y = Math.max(0, card.y);
+    let right = Math.min(viewport.w, card.x + card.w);
+    let bottom = Math.min(viewport.h, card.y + card.h);
+    if (!(right - x >= 8) || !(bottom - y >= 8)) return null;
+    for (const b of (blockers || [])) {
+      if (!b || !(b.w > 0) || !(b.h > 0)) continue;
+      if (!overlaps({ x, y, w: right - x, h: bottom - y }, b)) continue;
+      const candidates = [
+        { x, y, w: right - x, h: Math.min(bottom, b.y) - y },
+        { x, y: Math.max(y, b.y + b.h), w: right - x, h: bottom - Math.max(y, b.y + b.h) },
+        { x, y, w: Math.min(right, b.x) - x, h: bottom - y },
+        { x: Math.max(x, b.x + b.w), y, w: right - Math.max(x, b.x + b.w), h: bottom - y }
+      ].filter(r => r.w >= 8 && r.h >= 8);
+      if (!candidates.length) return null;
+      candidates.sort((a, c) => (c.w * c.h) - (a.w * a.h));
+      const best = candidates[0];
+      x = best.x;
+      y = best.y;
+      right = best.x + best.w;
+      bottom = best.y + best.h;
+    }
+    return { x, y, w: right - x, h: bottom - y };
+  }
+
   /* Vollständig sichtbar heißt: die ganze Karte liegt im Fenster und wird von
      keinem festen Balken (Masthead) verdeckt. Nur dann ist der Screenshot ein
      vollständiges Bild der Karte. card/blocker: {x,y,w,h} in Fensterkoordinaten. */
@@ -113,6 +144,7 @@
     reasonCode,
     sanitizeId,
     fileName,
+    visiblePart,
     fullyVisible,
     cropPixels,
     outputSize

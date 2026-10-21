@@ -189,7 +189,7 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     const { calls, listener } = makeSandbox({ routes: {}, chromeMode: false, shotApis: true });
     const sender = { tab: { id: 9, windowId: 1, active: false, cookieStoreId: 'firefox-private', incognito: true } };
     const r = await ask(listener, {
-      type: 'ybshot', videoId: 'privabc1234', reason: 'title', visible: true,
+      type: 'ybshot', videoId: 'privabc1234', reason: 'title', visible: true, partial: true,
       rect: { x: 10, y: 20, w: 300, h: 170 }, scroll: { x: 0, y: 0 }, viewport: { w: 1280, h: 900 }
     }, 2000, sender);
     assert.strictEqual(r.value.ok, true);
@@ -201,6 +201,7 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     assert.strictEqual(shot.incognito, true);
     assert.strictEqual(shot.videoId, 'privabc1234');
     assert.strictEqual(shot.status, 'saved');
+    assert.strictEqual(shot.partial, true, 'teilweise sichtbarer Ausschnitt wird markiert');
   }
 
   console.log('test-background-route: OK');

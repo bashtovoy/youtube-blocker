@@ -321,6 +321,7 @@ async function runShot(msg, sender, run) {
     reason: String(msg.reason || ''),
     source: (msg.test || msg.type === 'ybshot-test') ? 'manual' : 'auto',
     visible: msg.visible !== false,
+    partial: !!msg.partial,
     incognito: shotTabIsPrivate(sender && sender.tab)
   };
   try {

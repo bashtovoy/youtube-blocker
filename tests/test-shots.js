@@ -57,6 +57,23 @@ assert.strictEqual(s.fullyVisible({ x: 100, y: 60, w: 360, h: 200 }, vp,
 assert.strictEqual(s.fullyVisible(card, vp, [{ x: 0, y: 0, w: 80, h: 800 }]), true);
 assert.strictEqual(s.fullyVisible(card, vp, [{ x: 0, y: 0, w: 120, h: 800 }]), false);
 
+/* ---- 2b) Teilweise sichtbar: sichtbarer Ausschnitt für die Notlösung ---- */
+assert.deepStrictEqual(Object.assign({}, s.visiblePart({ x: -10, y: 700, w: 400, h: 200 }, vp)),
+  { x: 0, y: 700, w: 390, h: 100 }, 'links und unten beschnitten');
+assert.deepStrictEqual(Object.assign({}, s.visiblePart({ x: 900, y: 60, w: 300, h: 200 }, vp)),
+  { x: 900, y: 60, w: 100, h: 200 }, 'rechts beschnitten');
+assert.strictEqual(s.visiblePart({ x: 100, y: 900, w: 360, h: 200 }, vp), null, 'ganz unterhalb');
+assert.strictEqual(s.visiblePart({ x: 1200, y: 100, w: 360, h: 200 }, vp), null, 'ganz rechts');
+assert.strictEqual(s.visiblePart({ x: 0, y: 0, w: 7, h: 200 }, vp), null, 'zu schmal');
+assert.strictEqual(s.visiblePart(card, vp).y, 100);
+/* Masthead und Guide werden aus dem Notfallbild herausgeschnitten. */
+assert.deepStrictEqual(Object.assign({}, s.visiblePart({ x: 100, y: 20, w: 360, h: 200 }, vp,
+  [{ x: 0, y: 0, w: 1000, h: 56 }])), { x: 100, y: 56, w: 360, h: 164 }, 'Masthead oben');
+assert.deepStrictEqual(Object.assign({}, s.visiblePart({ x: 100, y: 100, w: 360, h: 200 }, vp,
+  [{ x: 0, y: 0, w: 120, h: 800 }])), { x: 120, y: 100, w: 340, h: 200 }, 'Guide links');
+assert.strictEqual(s.visiblePart({ x: 100, y: 60, w: 360, h: 200 }, vp,
+  [{ x: 0, y: 0, w: 1000, h: 800 }]), null, 'vollständig verdeckt');
+
 /* ---- 3) Zuschnitt des Chrome-Bildes (Gerätepixel → CSS-Pixel) ---- */
 const crop = s.cropPixels({ x: 100, y: 50, w: 200, h: 120 }, vp, 2000, 1600);   /* 2 Gerätepixel je CSS-Pixel */
 assert.deepStrictEqual(Object.assign({}, crop), { sx: 200, sy: 100, sw: 400, sh: 240 });

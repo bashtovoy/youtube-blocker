@@ -3,6 +3,46 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.17] — 2026-10-21
+
+### Behoben
+- **Automatische Kontrollbilder auf echten YouTube-Seiten.** Karten außerhalb
+  des sichtbaren Bereichs wurden zwar über `rootMargin` erkannt, aber nach dem
+  Warten auf volle Sichtbarkeit still ohne Bild ausgeblendet. Jetzt bleiben sie
+  vorgemerkt und werden beim Erscheinen aufgenommen und erst dann ausgeblendet.
+  Teilweise sichtbare Karten liefern den sichtbaren Ausschnitt; nach 120
+  Sekunden ohne Sichtbarkeit wird mit Diagnose im Popup ausgeblendet. Die Seite
+  wird weiterhin nicht automatisch gescrollt.
+- **Scan wurde auf belebten YouTube-Seiten nicht ausgeführt.** Der
+  MutationObserver setzte den 350-ms-Scan-Timer bei jeder Änderung zurück;
+  YouTube mutiert große Teile der Seite oft häufiger, sodass der Timer nie
+  feuerte. Der Scan ist jetzt gedrosselt statt entprellt.
+- **Offizieller KI-Badge auf der Videoseite.** Der Badge wird in den
+  Watch-Metadaten erkannt (`badge-shape`, u. a. `aria-label="AI: Content was
+  made with AI"`). Die Wiedergabe wird blockiert und die Video-Kennung lokal
+  gemerkt; Feed- und Suchkarten dieses Videos werden danach auch ohne Badge
+  ausgeblendet. Es gibt keine Titel- oder sonstige Heuristik für KI-Inhalte.
+- **KI-Kennung wird nur bei aktiver Einstellung angewendet.** Gemerkte
+  Kennungen blenden Karten ausschließlich aus, solange „KI-Inhalte ausblenden“
+  aktiv ist.
+
+### Geändert
+- Vorgemerkte Kontrollbilder werden seriell behandelt: vollständig sichtbar
+  sofort, bei teilweiser Sichtbarkeit 15 Sekunden nach dem Vormerken als
+  Ausschnitt, sonst nach 120 Sekunden ohne Bild mit `lastShot`-Diagnose.
+- Popup-Hinweise erklären die Watch-Seiten-Erkennung und den sichtbaren
+  Ausschnitt; der Status kennzeichnet teilweise Aufnahmen.
+
+### Tests
+- `test-ai` prüft Watch-/Live-Links, die Badge-Suche und die Sperrtexte in
+  allen vier Oberflächensprachen.
+- `test-shots` prüft `visiblePart` inklusive Masthead/Guide und
+  `test-background-route` übernimmt `partial` in `lastShot`.
+- Zusätzlich im isolierten Firefox-Profil geprüft: automatische Aufnahme einer
+  sichtbaren YouTube-Sucherkarte, Vormerkung einer Offscreen-Karte bis zum
+  Scrollen, KI-Sperrbildschirm auf `watch?v=wFAvZSefhnE` und Ausblenden der
+  zugehörigen Feed-Karte über die gemerkte Kennung.
+
 ## [1.5.16] — 2026-10-21
 
 ### Hinzugefügt

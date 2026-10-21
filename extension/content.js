@@ -56,7 +56,21 @@
     imageListeners: new WeakSet(),
     scanTimer: null,
     imageCache: new Map(),
-    shotShown: new WeakMap(),   /* Karte → „videoId|Grund“: nur ein Bild je Ausblendung */
+    shotShown: new WeakMap(),   /* Karte → „videoId|Grund“: Ausblendung abgeschlossen */
+    shotWaiting: new WeakSet(), /* Karte wartet gerade auf Sichtbarkeit/Aufnahme */
+    pending: new Map(),         /* noch nicht sichtbare Karten, die auf Aufnahme warten */
+    pendingTimer: null,
+    pendingChain: Promise.resolve(),
+    pendingRuns: 0,
+    lastPendingError: '',
+    ioSeen: 0,
+    ioExtractNull: 0,
+    processStarted: 0,
+    lastProcessError: '',
+    aiBlockedIds: new Set(),    /* lokal erkannte, offiziell KI-gekennzeichnete Videos */
+    aiOverlay: null,
+    aiOverlayId: '',
+    watchAiTimer: null,
     titleKeywords: [],
     imageKeywords: [],
     ocrKeywords: [],
@@ -129,6 +143,139 @@
     return null;
   }
 
+  /* ---- KI-Kennzeichnung auf der Videoseite ---------------------------------
+     Der offizielle KI-Badge erscheint bei YouTube oft nur in den Metadaten der
+     Videoseite, nicht auf der Feed-Karte. Dort erkennen, die Video-Kennung
+     lokal merken und die Wiedergabe blockieren. Feed-Karten mit bekannter
+     Kennung werden anschließend auch ohne sichtbaren Badge ausgeblendet. */
+  function currentWatchId() {
+    return (window.YB.ai && window.YB.ai.watchId(location.href)) || '';
+  }
+
+  function removeAiOverlay() {
+    if (state.aiOverlay && state.aiOverlay.parentNode) {
+      state.aiOverlay.parentNode.removeChild(state.aiOverlay);
+    }
+    state.aiOverlay = null;
+    state.aiOverlayId = '';
+  }
+
+  function showAiOverlay(id) {
+    if (state.aiOverlay && state.aiOverlayId === id) {
+      if (state.aiOverlay.isConnected) {
+        const video = document.querySelector('video');
+        if (video) { try { video.pause(); } catch (e) { /* Video noch nicht bereit */ } }
+        return;
+      }
+      state.aiOverlay = null;
+      state.aiOverlayId = '';
+    }
+    removeAiOverlay();
+    const ai = window.YB.ai;
+    if (!ai) return;
+    const text = ai.overlayText(state.settings.uiLang || document.documentElement.lang);
+    const wrap = document.createElement('div');
+    wrap.id = 'yb-ai-block';
+    wrap.setAttribute('role', 'alertdialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:2147483647',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'padding:24px', 'box-sizing:border-box',
+      'background:#0f0f0f', 'color:#f1f1f1',
+      'font:16px/1.5 Roboto,Arial,sans-serif', 'text-align:center'
+    ].join(';');
+    const box = document.createElement('div');
+    box.style.cssText = 'max-width:560px;width:100%;background:#212121;border:1px solid #3f3f3f;border-radius:12px;padding:24px;box-sizing:border-box';
+    const title = document.createElement('h1');
+    title.textContent = text.title;
+    title.style.cssText = 'margin:0 0 12px;font-size:20px;line-height:1.3;color:#fff';
+    const body = document.createElement('p');
+    body.textContent = text.body;
+    body.style.cssText = 'margin:0 0 20px;color:#d0d0d0';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.textContent = text.back;
+    back.style.cssText = 'padding:10px 18px;border:0;border-radius:20px;background:#f1f1f1;color:#0f0f0f;font:inherit;font-weight:600;cursor:pointer';
+    back.addEventListener('click', () => {
+      if (history.length > 1) history.back();
+      else location.assign('https://www.youtube.com/');
+    });
+    box.appendChild(title);
+    box.appendChild(body);
+    box.appendChild(back);
+    wrap.appendChild(box);
+    (document.body || document.documentElement).appendChild(wrap);
+    state.aiOverlay = wrap;
+    state.aiOverlayId = id;
+    const video = document.querySelector('video');
+    if (video) {
+      try { video.pause(); } catch (e) { /* Video noch nicht bereit */ }
+    }
+    log('AI video blocked', id);
+  }
+
+  function rememberAiVideo(id) {
+    if (!id || state.aiBlockedIds.has(id)) return;
+    state.aiBlockedIds.add(id);
+    const ids = Array.from(state.aiBlockedIds).slice(-500);
+    state.aiBlockedIds = new Set(ids);
+    api.storage.local.set({ aiBlockedIds: ids }).catch(() => {});
+    log('AI video remembered', id);
+  }
+
+  function checkWatchAi() {
+    if (state.disposed || !window.YB.ai || !window.YB.matcher) return;
+    if (!state.settings.enabled || !state.settings.hideAiGenerated) {
+      removeAiOverlay();
+      return;
+    }
+    const id = currentWatchId();
+    if (!id) {
+      removeAiOverlay();
+      return;
+    }
+    if (state.aiBlockedIds.has(id)) {
+      showAiOverlay(id);
+      return;
+    }
+    /* Bei SPA-Navigation kann der alte Badge noch kurz im DOM stehen. Nur
+       verwenden, wenn die Metadaten bereits zum aktuellen Video gehören. */
+    const meta = document.querySelector('ytd-watch-metadata[video-id], ytd-watch-flexy[video-id]');
+    const metaId = meta && meta.getAttribute('video-id');
+    if (metaId !== id) {
+      if (state.aiOverlayId && state.aiOverlayId !== id) removeAiOverlay();
+      return;
+    }
+    const badge = window.YB.ai.findBadge(document, text => window.YB.matcher.isAiBadgeText(text));
+    if (badge) {
+      rememberAiVideo(id);
+      showAiOverlay(id);
+      return;
+    }
+    /* Beim Wechsel auf ein anderes Video den alten Sperrbildschirm entfernen. */
+    if (state.aiOverlayId && state.aiOverlayId !== id) removeAiOverlay();
+  }
+
+  function scheduleWatchAiCheck(delay) {
+    if (state.watchAiTimer || state.disposed) return;
+    state.watchAiTimer = setTimeout(() => {
+      state.watchAiTimer = null;
+      checkWatchAi();
+    }, delay == null ? 250 : delay);
+  }
+
+  /* Ein während der Sperre neu gestartetes Video sofort wieder anhalten. */
+  document.addEventListener('play', event => {
+    if (!state.aiOverlayId) return;
+    const target = event.target;
+    if (target && target.tagName === 'VIDEO') {
+      try { target.pause(); } catch (e) { /* bereits beendet */ }
+    }
+  }, true);
+  document.addEventListener('yt-navigate-finish', () => scheduleWatchAiCheck(0));
+  window.addEventListener('popstate', () => scheduleWatchAiCheck(0));
+
   /* ---- Werbekarten („YouTube empfiehlt“) -------------------------------------
      Mehrstufige Erkennung statt fester DOM-Selektoren: Textmarker, Struktur
      und bekannte Werbe-Container zählen zusammen; erst ab der Regelschwelle
@@ -187,8 +334,19 @@
     return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
   }
 
+  function aiIdSet(value) {
+    return new Set(
+      (Array.isArray(value) ? value : [])
+        .map(id => String(id || ''))
+        .filter(id => /^[A-Za-z0-9_-]{11}$/.test(id))
+        .slice(-500)
+    );
+  }
+
   async function loadConfig() {
-    const data = await api.storage.local.get({ settings: DEFAULTS, keywords: [], promoSuspects: [] });
+    const data = await api.storage.local.get({
+      settings: DEFAULTS, keywords: [], promoSuspects: [], aiBlockedIds: []
+    });
     const s = Object.assign({}, DEFAULTS, data.settings || {});
     /* Alte Importe können Zahlfelder als leere Strings enthalten; sonst würde
        z. B. actionDelayMs die Pause zwischen Signalen stillschweigend abschalten. */
@@ -203,6 +361,7 @@
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && String(k.text || '').trim() && k.enabled !== false);
     state.suspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
+    state.aiBlockedIds = aiIdSet(data.aiBlockedIds);
     /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelEntries):
        ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. Einträge
        tragen ihre Freigaben mit; state.*Keywords bleibt für Host/Debug. */
@@ -354,9 +513,14 @@
   /* ---- Kontrollbilder -----------------------------------------------------
      Nur wenn die Einstellung aktiv ist, wird vor dem Ausblenden der Kartenrahmen
      aufgenommen. Der Browser liefert ausschließlich den sichtbaren Bereich —
-     deshalb wartet das Ausblenden, bis die Karte vollständig im Fenster liegt
-     (ohne Scrollen, höchstens WAIT_VISIBLE_MS). Danach wird gespeichert und erst
-     dann ausgeblendet; ein Fehler verhindert das Ausblenden nie. */
+     deshalb wartet das Ausblenden zunächst bis zu WAIT_VISIBLE_MS auf eine
+     vollständig sichtbare Karte. Ist sie danach nur teilweise sichtbar, wird
+     der sichtbare Teil aufgenommen; ist sie ganz außerhalb des Fensters, bleibt
+     sie vorgemerkt und wird erst beim Erscheinen aufgenommen und ausgeblendet.
+     Ein Aufnahmefehler verhindert das Ausblenden nie. */
+  const PENDING_POLL_MS = 500;
+  const PENDING_PARTIAL_MS = 15000;
+  const PENDING_EXPIRE_MS = 120000;
   function shotsOn() {
     return !!(state.settings.shotBeforeHide && window.YB.shots);
   }
@@ -442,56 +606,59 @@
     api.storage.local.set({ lastShot: payload }).catch(() => {});
   }
 
-  async function captureBeforeHide(v, reason) {
-    const shots = window.YB.shots;
-    const item = v.item;
-    if (!shots || !item) return false;
-    if (!(await waitForCardVisible(item, shots.WAIT_VISIBLE_MS))) {
-      log('shot skipped (card not fully visible)', v.videoId || 'slot', '←', reason);
-      reportShot('skipped', v, reason, { error: 'nicht-sichtbar', visible: false });
-      return false;
-    }
+  function fullCardRect(item) {
     const r = item.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+
+  /* Sichtbarer Kartenausschnitt. Nur bei sichtbarer Registerkarte; im
+     Hintergrund würde ein Screenshot ohnehin die falsche Seite zeigen. */
+  function visibleCardRect(item) {
+    if (document.visibilityState !== 'visible') return null;
+    const shots = window.YB.shots;
+    if (!shots || typeof shots.visiblePart !== 'function') return null;
+    return shots.visiblePart(
+      fullCardRect(item),
+      { w: window.innerWidth, h: window.innerHeight },
+      fixedBlockers()
+    );
+  }
+
+  /* Nimmt einen bereits geprüften Ausschnitt auf. Die Sichtbarkeit wird vom
+     Aufrufer geprüft; so kann eine außerhalb des Fensters liegende Karte später
+     ohne zweiten 8-Sekunden-Block aufgenommen werden. */
+  async function captureBeforeHide(v, reason, rect, partial) {
+    const item = v.item;
+    if (!window.YB.shots || !item || !rect) return false;
     const msg = {
       type: 'ybshot',
       videoId: v.videoId || '',
       reason,
       visible: true,
-      rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+      partial: !!partial,
+      rect: {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        w: Math.round(rect.w),
+        h: Math.round(rect.h)
+      },
       scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
       viewport: { w: window.innerWidth, h: window.innerHeight }
     };
     try {
       const res = await withTimeout(api.runtime.sendMessage(msg), 6000);
       if (res && res.ok) {
-        log('shot saved', res.file);
+        log(partial ? 'partial shot saved' : 'shot saved', res.file);
         return true;
       }
       const error = (res && res.error) || 'keine Antwort';
-      reportShot('failed', v, reason, { error, visible: true });
+      reportShot('failed', v, reason, { error, visible: true, partial: !!partial });
       log('shot failed', v.videoId || 'slot', error);
     } catch (e) {
-      reportShot('failed', v, reason, { error: e.message, visible: true });
+      reportShot('failed', v, reason, { error: e.message, visible: true, partial: !!partial });
       log('shot failed', v.videoId || 'slot', e.message);
     }
     return false;
-  }
-
-  /* Wrapper: ohne Einstellung sofort ausblenden; sonst erst das Bild versuchen.
-     Die Buchung im WeakMap verhindert Doppelbilder, wenn mehrere Pfade dieselbe
-     Karte treffen (Badge + spätes Signal + Dismiss-Rückfall). */
-  function hideLocally(v, reason) {
-    const item = v.item;
-    const stamp = shotStamp(v, reason);
-    if (!shotsOn() || !item || state.shotShown.get(item) === stamp) {
-      hideLocallyNow(v, reason);
-      return;
-    }
-    state.shotShown.set(item, stamp);
-    captureBeforeHide(v, reason).then(
-      () => hideLocallyNow(v, reason),
-      () => hideLocallyNow(v, reason)
-    );
   }
 
   function hideLocallyNow(v, reason) {
@@ -502,15 +669,7 @@
     api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
   }
 
-  async function applyAction(v, reason) {
-    /* Bild vor dem „Kein Interesse“-Klick: Das Menü darf den Rahmen nicht verdecken.
-       Das Warten auf die sichtbare Karte liegt außerhalb der Aktionswarteschlange,
-       damit andere Karten nicht blockiert werden. */
-    const stamp = shotStamp(v, reason);
-    if (shotsOn() && v.item && state.shotShown.get(v.item) !== stamp) {
-      state.shotShown.set(v.item, stamp);
-      await captureBeforeHide(v, reason);
-    }
+  function enqueueAction(v, reason) {
     return actionQueue.push(async () => {
       if (state.disposed) return false;
       await throttleAction();
@@ -532,6 +691,186 @@
       return false;
     });
   }
+
+  function executeHide(kind, v, reason) {
+    if (kind === 'action') return enqueueAction(v, reason);
+    hideLocallyNow(v, reason);
+    return Promise.resolve(false);
+  }
+
+  /* Ein Pfad für alle Ausblendungen: erst Aufnahme, dann Ausblenden. Ist die
+     Karte (noch) nicht sichtbar, wird sie vorgemerkt statt still ohne Bild
+     ausgeblendet. Mehrere Trefferpfade (Badge, spätes Signal, Dismiss-Rückfall)
+     buchen dieselbe Karte nur einmal. */
+  async function requestHide(v, reason, kind) {
+    const item = v && v.item;
+    if (!item) return executeHide(kind, v, reason);
+    if (!shotsOn()) {
+      state.pending.delete(item);
+      return executeHide(kind, v, reason);
+    }
+    const stamp = shotStamp(v, reason);
+    if (state.pending.has(item) || state.shotWaiting.has(item)) return false;
+    if (state.shotShown.get(item) === stamp) {
+      if (kind === 'local') hideLocallyNow(v, reason);
+      return false;
+    }
+    state.shotWaiting.add(item);
+    try {
+      const full = await waitForCardVisible(item, window.YB.shots.WAIT_VISIBLE_MS);
+      if (!shotsOn()) {
+        state.pending.delete(item);
+        return executeHide(kind, v, reason);
+      }
+      if (full) {
+        await captureBeforeHide(v, reason, fullCardRect(item), false);
+        state.shotShown.set(item, stamp);
+        return executeHide(kind, v, reason);
+      }
+      /* Teilweise sichtbar: nach dem Warten den sichtbaren Teil aufnehmen,
+         statt die Karte ohne Kontrollbild auszublenden. */
+      const part = visibleCardRect(item);
+      if (part) {
+        await captureBeforeHide(v, reason, part, true);
+        state.shotShown.set(item, stamp);
+        return executeHide(kind, v, reason);
+      }
+      if (item.isConnected) queuePending(v, reason, kind, stamp);
+      return false;
+    } finally {
+      state.shotWaiting.delete(item);
+    }
+  }
+
+  function hideLocally(v, reason) {
+    requestHide(v, reason, 'local').catch(e => log('hide failed:', e.message));
+  }
+
+  async function applyAction(v, reason) {
+    try {
+      return await requestHide(v, reason, 'action');
+    } catch (e) {
+      log('action failed:', e.message);
+      return false;
+    }
+  }
+
+  function schedulePendingCheck(delay) {
+    if (state.pendingTimer || state.disposed || !state.pending.size) return;
+    state.pendingTimer = setTimeout(() => {
+      state.pendingTimer = null;
+      checkPending();
+    }, delay == null ? PENDING_POLL_MS : delay);
+  }
+
+  function queuePending(v, reason, kind, stamp) {
+    const item = v.item;
+    if (!item || state.pending.has(item)) return;
+    state.pending.set(item, { item, v, reason, kind, stamp, at: Date.now() });
+    schedulePendingCheck(200);
+    log('shot deferred until visible', v.videoId || 'slot', '←', reason);
+  }
+
+  function runPending(entry) {
+    state.pendingChain = state.pendingChain.then(async () => {
+      state.pendingRuns += 1;
+      if (state.disposed || !entry.item.isConnected || entry.item.classList.contains('yb-hidden')) {
+        if (!state.disposed && !entry.item.isConnected) state.lastPendingError = 'disconnected';
+        return;
+      }
+      state.shotWaiting.add(entry.item);
+      try {
+        /* Zwischen Prüfung und serieller Aufnahme kann gescrollt worden sein.
+           Deshalb den Ausschnitt unmittelbar vor dem Bild neu bestimmen; ist die
+           Karte inzwischen ganz weg, bleibt sie erneut vorgemerkt. */
+        if (shotsOn()) {
+          let rect = null;
+          let partial = false;
+          if (cardVisibleNow(entry.item)) {
+            rect = fullCardRect(entry.item);
+          } else {
+            const part = visibleCardRect(entry.item);
+            if (part) {
+              rect = part;
+              partial = true;
+            }
+          }
+          if (!rect) {
+            state.pending.set(entry.item, entry);
+            schedulePendingCheck(200);
+            return;
+          }
+          await captureBeforeHide(entry.v, entry.reason, rect, partial);
+        }
+        await executeHide(entry.kind, entry.v, entry.reason);
+        state.shotShown.set(entry.item, entry.stamp);
+      } finally {
+        state.shotWaiting.delete(entry.item);
+      }
+    }).catch(e => {
+      state.lastPendingError = e.message;
+      log('pending hide failed:', e.message);
+    });
+    return state.pendingChain;
+  }
+
+  function flushPending() {
+    const entries = Array.from(state.pending.values());
+    state.pending.clear();
+    for (const entry of entries) runPending(entry);
+  }
+
+  function checkPending() {
+    if (state.disposed) {
+      state.pending.clear();
+      return;
+    }
+    if (!state.pending.size) return;
+    if (!state.settings.enabled) {
+      state.pending.clear();
+      return;
+    }
+    if (!shotsOn()) {
+      flushPending();
+      return;
+    }
+    if (document.visibilityState !== 'visible') {
+      schedulePendingCheck(1000);
+      return;
+    }
+    for (const [item, entry] of Array.from(state.pending)) {
+      if (!item.isConnected || item.classList.contains('yb-hidden')) {
+        state.pending.delete(item);
+        continue;
+      }
+      if (cardVisibleNow(item)) {
+        state.pending.delete(item);
+        runPending(entry);
+        continue;
+      }
+      const age = Date.now() - entry.at;
+      if (age >= PENDING_PARTIAL_MS) {
+        const part = visibleCardRect(item);
+        if (part) {
+          state.pending.delete(item);
+          runPending(entry);
+          continue;
+        }
+      }
+      if (age >= PENDING_EXPIRE_MS) {
+        state.pending.delete(item);
+        reportShot('skipped', entry.v, entry.reason, {
+          error: 'nicht-sichtbar', visible: false, deferred: true
+        });
+        executeHide(entry.kind, entry.v, entry.reason);
+      }
+    }
+    if (state.pending.size) schedulePendingCheck(PENDING_POLL_MS);
+  }
+
+  window.addEventListener('scroll', () => schedulePendingCheck(80), true);
+  window.addEventListener('resize', () => schedulePendingCheck(80));
+  document.addEventListener('visibilitychange', () => schedulePendingCheck(80));
 
   function matchTitle(v) {
     if (!state.settings.checkTitle) return null;
@@ -660,6 +999,11 @@
     if (!v || state.disposed) return;
     await waitForImage(v.img).catch(() => false);
     const current = extract(v.item) || v;
+    if (state.settings.hideAiGenerated && state.aiBlockedIds.has(current.videoId)) {
+      hideLocally(current, 'ai-generated');
+      if (state.io && current.item) state.io.unobserve(current.item);
+      return;
+    }
     const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
     if (state.inFlight.has(key)) return;
     if (state.processed.has(key)) {
@@ -689,8 +1033,10 @@
         state.badgeWatched.add(current.item);
       }
       if (reason && !current.item.classList.contains('yb-hidden')) {
-        window.YB.dismiss.hideItem(current.item);
-        log('re-hidden (re-render)', current.videoId, '←', reason);
+        /* Neuer Knoten nach YouTube-Re-Render: die Aufnahme muss noch einmal
+           versucht werden, statt den Rahmen ohne Kontrollbild zu verstecken. */
+        requestHide(current, reason, 'local').catch(e => log('re-hide failed:', e.message));
+        log('re-hide (re-render)', current.videoId, '←', reason);
       }
       if (state.io && current.item) state.io.unobserve(current.item);
       return;
@@ -765,8 +1111,10 @@
     state.io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (!e.isIntersecting) continue;
+        state.ioSeen += 1;
         const v = extract(e.target);
         if (!v) {
+          state.ioExtractNull += 1;
           /* Die Karten-Metadaten (Titel/videoId) sind von YouTube noch nicht gerendert.
              Die Karte nicht „verbrennen“: aus observed entlassen und Beobachtung abmelden,
              damit scanNow es erneut versucht, sobald eine DOM-Mutation durch die
@@ -779,7 +1127,11 @@
           if (tries <= 8) scheduleScan();
           continue;
         }
-        processVideo(v);
+        state.processStarted += 1;
+        processVideo(v).catch(e => {
+          state.lastProcessError = e.message;
+          log('process failed:', e.message);
+        });
       }
     }, { root: null, rootMargin: '600px 0px 900px 0px', threshold: 0.01 });
     return state.io;
@@ -808,6 +1160,16 @@
     const obs = ensureIO();
     for (const item of document.querySelectorAll(ITEM_SELECTOR)) {
       if (item.classList.contains('yb-hidden')) continue;
+      /* Lokal bekannte KI-Kennung: nach dem Besuch der Videoseite wird die
+         Karte auch dann ausgeblendet, wenn YouTube den Badge im Feed nicht
+         rendert (das ist bei YouTube häufig der Fall). */
+      if (state.settings.hideAiGenerated && state.aiBlockedIds.size) {
+        const knownAi = quickVideoId(item);
+        if (knownAi && state.aiBlockedIds.has(knownAi)) {
+          hideLocally({ item, videoId: knownAi }, 'ai-generated');
+          continue;
+        }
+      }
       /* Bereits getroffene Videos: YouTube kann Karten neu rendern oder Klassen zurücksetzen
          (Attribute-Mutation, kein childList) — dann fehlt yb-hidden, obwohl das Video schon
          ausgeblendet war. Lokal erneut ausblenden: ohne Signal, ohne Zähler. */
@@ -849,13 +1211,20 @@
   }
 
   function scheduleScan() {
-    clearTimeout(state.scanTimer);
-    state.scanTimer = setTimeout(scanNow, 350);
+    /* Throttle statt Debounce: YouTube mutiert große Teile der Seite oft
+       häufiger als alle 350 ms. Ein immer wieder zurückgesetzter Timer würde
+       dann nie feuern und neue Karten blieben ungeprüft. */
+    if (state.scanTimer) return;
+    state.scanTimer = setTimeout(() => {
+      state.scanTimer = null;
+      scanNow();
+    }, 350);
   }
 
   function startObservers() {
     if (state.observer) { scanNow(); return; }
     state.observer = new MutationObserver(muts => {
+      scheduleWatchAiCheck();
       for (const m of muts) {
         if (m.type === 'childList' && m.addedNodes && m.addedNodes.length) { scheduleScan(); return; }
         /* class-Attribut einer Karte geändert (z. B. YouTube setzt Klassen neu) */
@@ -885,12 +1254,22 @@
            sichtbaren Karten geprüft und neue beim Scrollen nie erreicht. */
         if (state.settings.enabled && hasDetectionTargets()) startObservers();
         else scheduleScan();
+        /* Kontrollbilder ausgeschaltet: vorgemerkte Karten sofort ausblenden,
+           statt sie weiter auf eine Aufnahme warten zu lassen. */
+        if (!state.settings.enabled) state.pending.clear();
+        else if (!shotsOn()) flushPending();
+        scheduleWatchAiCheck(0);
       }).catch(e => log('config reload failed', e.message));
     }, delay == null ? 30 : delay);
   }
 
   api.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !changes.settings) return;
+    if (areaName !== 'local') return;
+    if (changes.aiBlockedIds) {
+      state.aiBlockedIds = aiIdSet(changes.aiBlockedIds.newValue);
+      scheduleScan();
+    }
+    if (!changes.settings) return;
     reloadConfigSoon();
   });
 
@@ -944,6 +1323,15 @@
       semanticFailed: state.semanticFailed,
       processedCount: state.processed.size,
       hiddenIds: state.hiddenIds.size,
+      pendingShots: state.pending.size,
+      pendingRuns: state.pendingRuns,
+      lastPendingError: state.lastPendingError,
+      ioSeen: state.ioSeen,
+      ioExtractNull: state.ioExtractNull,
+      processStarted: state.processStarted,
+      lastProcessError: state.lastProcessError,
+      aiBlockedIds: state.aiBlockedIds.size,
+      aiOverlay: !!state.aiOverlay,
       promoSuspects: state.suspects.length
     }),
     scan: () => {
@@ -1007,6 +1395,7 @@
 
   loadConfig().then(() => {
     if (state.settings.enabled && hasDetectionTargets()) startObservers();
+    scheduleWatchAiCheck(0);
   });
 
   /* Übergabe-Handle für die nächste Version (siehe Kopf dieses Skripts): Eine
@@ -1020,6 +1409,10 @@
       try { if (state.observer) state.observer.disconnect(); } catch (e) { /* bereits getrennt */ }
       try { if (state.io) { state.io.disconnect(); state.io = null; } } catch (e) { /* bereits getrennt */ }
       clearTimeout(state.scanTimer);
+      clearTimeout(state.pendingTimer);
+      clearTimeout(state.watchAiTimer);
+      state.pending.clear();
+      removeAiOverlay();
       state.observer = null;
     }
   };
