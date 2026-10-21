@@ -337,9 +337,9 @@ function folderReason(reason) {
   return reason || t('unknown');
 }
 
-/* Status des Chrome-Screenshotordners. Wahl, Freigabe und das Nachschreiben
-   wartender Bilder laufen direkt im Popup (Nutzergeste für showDirectoryPicker;
-   die Freigabe gilt in diesem Kontext). Der Hintergrund pflegt nur den Status. */
+/* Status des Chrome-Screenshotordners. Wahl und Freigabe laufen auf
+   folder-access.html (nur ein echter Tab zeigt den Chrome-Dialog); das Popup
+   zeigt den Status, schreibt wartende Bilder nach und öffnet die Einrichtung. */
 async function renderFolderStatus(extra) {
   const box = $('shotsFolder');
   if (!box) return;
@@ -373,50 +373,22 @@ async function renderFolderStatus(extra) {
   if (status) status.textContent = text;
 }
 
-async function chooseShotFolder() {
-  const folder = folderApi();
-  if (!folder) return false;
-  try {
-    await folder.chooseFolder();
-    const st = await folder.getStatus();
-    status(t('folder_chosen', { name: st.name }));
-    await renderFolderStatus();
-    return true;
-  } catch (e) {
-    if (e && e.name === 'AbortError') {
-      status(t('folder_cancelled'), false);
-      return false;
-    }
-    status(t('folder_error', { msg: String((e && e.message) || e) }), false);
-    await renderFolderStatus(folderReason(String((e && e.message) || e)));
-    return false;
-  }
-}
-
-async function grantShotFolder() {
-  const folder = folderApi();
-  if (!folder) return false;
-  try {
-    const ok = await folder.requestStoredPermission();
-    if (!ok) {
-      status(t('folder_error', { msg: t('folder_reason_permission') }), false);
-      await renderFolderStatus();
-      return false;
-    }
-    return true;
-  } catch (e) {
-    status(t('folder_error', { msg: String((e && e.message) || e) }), false);
-    await renderFolderStatus();
-    return false;
-  }
+/* Ordnerwahl und Freigabe laufen auf folder-access.html: Nur ein echter Tab
+   zeigt den Chrome-Dialog, und nur dort lässt sich „Bei jedem Besuch
+   erlauben“ wählen. Das Popup zeigt den Status und öffnet für die Einrichtung
+   die Seite; wartende Bilder schreibt es weiterhin selbst nach. */
+function openFolderAccess() {
+  return Promise.resolve(api.tabs.create({ url: api.runtime.getURL('folder-access.html') }))
+    .catch(() => null);
 }
 
 async function ensureFolderForTest() {
   if (!folderMode()) return true;
   const st = await folderApi().getStatus();
   if (st.name && st.permission === 'granted') return true;
-  if (st.name) return grantShotFolder();
-  return chooseShotFolder();
+  status(t('folder_setup_needed'), false);
+  await openFolderAccess();
+  return false;
 }
 
 /* Wartende Bilder werden direkt im Popup nachgeschrieben: Nur hier gilt die
@@ -463,26 +435,12 @@ async function flushShotFolder() {
   }
 }
 
-$('shotsFolderChoose').onclick = async () => {
-  const btn = $('shotsFolderChoose');
-  if (btn.disabled) return;
-  btn.disabled = true;
-  try {
-    if (await chooseShotFolder()) await flushShotFolder();
-  } finally {
-    btn.disabled = false;
-  }
+$('shotsFolderChoose').onclick = () => {
+  openFolderAccess();
 };
 
-$('shotsFolderGrant').onclick = async () => {
-  const btn = $('shotsFolderGrant');
-  if (btn.disabled) return;
-  btn.disabled = true;
-  try {
-    if (await grantShotFolder()) await flushShotFolder();
-  } finally {
-    btn.disabled = false;
-  }
+$('shotsFolderGrant').onclick = () => {
+  openFolderAccess();
 };
 
 function shortFile(file) {

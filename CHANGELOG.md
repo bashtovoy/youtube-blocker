@@ -3,6 +3,39 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.21] — 2026-10-21
+
+### Behoben
+- **Chrome fragt den Ordnerzugriff nicht mehr bei jedem Öffnen erneut ab.**
+  Bisher wurde die Freigabe im Popup erteilt. Chrome zeigt dort keinen
+  Berechtigungsdialog: Für das Popup gilt der Zugriff still und nur für den
+  Augenblick; nach dem Schließen war er fort. Deshalb stand beim nächsten
+  Öffnen wieder „Zugriff bestätigen“, und der Service Worker konnte wartende
+  Bilder nicht schreiben. Die Einrichtung läuft jetzt auf der neuen Seite
+  **Ordnerzugriff** in einem echten Tab. Dort zeigt Chrome den Dialog; nach
+  „Bei jedem Besuch erlauben“ bleibt der Zugriff dauerhaft — auch für den
+  Service Worker und nach einem Browserneustart.
+- **Die Seite prüft das Ergebnis selbst.** Nach der Freigabe schließt der
+  Hintergrund den Tab und öffnet die Seite mit `?verify=1` neu. Ist der
+  Zugriff dann ohne Klick „granted“, ist er dauerhaft; andernfalls erklärt
+  die Seite den zweiten Schritt und öffnet den Dialog erneut. Erst danach
+  werden wartende Bilder geschrieben.
+
+### Geändert
+- **Popup:** „Ordner wählen…“ und „Zugriff einrichten…“ öffnen die neue
+  Seite. Der irreführende Hinweis, im Popup „Bei jedem Besuch erlauben“ zu
+  wählen, ist ersetzt und nennt jetzt den echten Weg.
+- **Testaufnahme:** Fehlt der Ordnerzugriff, öffnet sie die Einrichtungsseite
+  und meldet das im Popup, statt einen wirkungslosen Einmal-Zugriff zu holen.
+
+### Tests
+- `e2e-chrome-fsa` prüft, dass der Popup-Knopf die Einrichtungsseite öffnet,
+  die Seite mit erteiltem Zugriff den dauerhaften Zustand zeigt und die
+  Warteschlange selbst nachschreibt.
+- `test-background-route` prüft `ybfolder-reopen`: Tab schließen, Prüfseite
+  genau einmal mit `?verify=1&n=…` öffnen und ohne Absender-Tab sauber
+  ablehnen.
+
 ## [1.5.20] — 2026-10-21
 
 ### Behoben

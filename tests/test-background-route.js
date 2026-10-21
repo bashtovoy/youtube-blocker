@@ -16,14 +16,15 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.
 const plain = x => JSON.parse(JSON.stringify(x));
 
 function makeSandbox({ routes, chromeMode, shotApis, shotTab, folderStore }) {
-  const calls = { offscreen: 0, sends: [], badge: [], storageSets: [], downloads: [], permissions: [] };
-  const listeners = { message: null, download: null };
+  const calls = { offscreen: 0, sends: [], badge: [], storageSets: [], downloads: [], permissions: [], tabsCreated: [], tabsRemoved: [] };
+  const listeners = { message: null, download: null, tabRemoved: null };
   const state = {};
   let contexts = [];
   const api = {
     runtime: {
       onMessage: { addListener: fn => { listeners.message = fn; } },
       sendMessage: msg => { calls.sends.push(msg); return Promise.resolve({ ok: true, route: msg.route, from: 'offscreen' }); },
+      getURL: p => 'chrome-extension://test/' + String(p).replace(/^\//, ''),
       getContexts: chromeMode ? (() => Promise.resolve(contexts)) : undefined,
       getManifest: () => ({ manifest_version: chromeMode ? 3 : 2 })
     },
@@ -38,7 +39,21 @@ function makeSandbox({ routes, chromeMode, shotApis, shotTab, folderStore }) {
       },
       onChanged: { addListener: () => {} }
     },
-    tabs: { onUpdated: { addListener: () => {} }, sendMessage: () => Promise.resolve() },
+    tabs: {
+      onUpdated: { addListener: () => {} },
+      sendMessage: () => Promise.resolve(),
+      create: opts => { calls.tabsCreated.push(opts); return Promise.resolve({ id: 99 }); },
+      get: id => Promise.resolve({ id }),
+      remove: id => {
+        calls.tabsRemoved.push(id);
+        if (listeners.tabRemoved) listeners.tabRemoved(id);
+        return Promise.resolve();
+      },
+      onRemoved: {
+        addListener: fn => { listeners.tabRemoved = fn; },
+        removeListener: fn => { if (listeners.tabRemoved === fn) listeners.tabRemoved = null; }
+      }
+    },
     browserAction: { setBadgeText: o => calls.badge.push(o) }
   };
   if (shotApis) {
@@ -324,6 +339,28 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     assert.strictEqual(shot.videoId, 'privabc1234');
     assert.strictEqual(shot.status, 'saved');
     assert.strictEqual(shot.partial, true, 'teilweise sichtbarer Ausschnitt wird markiert');
+  }
+
+  /* --- ybfolder-reopen: Tab schließen, Prüfseite danach neu öffnen --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: {}, chromeMode: true });
+    const r = await ask(listener, { type: 'ybfolder-reopen', n: 2 }, 2000, { tab: { id: 7 } });
+    assert.strictEqual(r.ret, true, 'Kanal bleibt für die Antwort offen');
+    assert.deepStrictEqual(plain(r.value), { ok: true });
+    assert.deepStrictEqual(calls.tabsRemoved, [7], 'Einrichtungs-Tab wird geschlossen');
+    await new Promise(res => setTimeout(res, 500));
+    assert.strictEqual(calls.tabsCreated.length, 1, 'Prüfseite genau einmal geöffnet');
+    assert.strictEqual(calls.tabsCreated[0].url, 'chrome-extension://test/folder-access.html?verify=1&n=2');
+    assert.strictEqual(calls.tabsCreated[0].active, true);
+  }
+
+  /* --- ybfolder-reopen ohne Absender-Tab: nichts schließen, klar ablehnen --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: {}, chromeMode: true });
+    const r = await ask(listener, { type: 'ybfolder-reopen', n: 1 });
+    assert.strictEqual(r.value.ok, false);
+    assert.deepStrictEqual(calls.tabsRemoved, []);
+    assert.deepStrictEqual(calls.tabsCreated, []);
   }
 
   console.log('test-background-route: OK');

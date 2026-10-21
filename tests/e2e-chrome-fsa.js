@@ -319,6 +319,75 @@ async function main() {
       throw new Error('Vom Popup geschriebene Datei fehlt: ' + JSON.stringify({ wanted: pendingShot.file, localFile }));
     }
 
+    /* Einrichtung: Der Popup-Knopf öffnet die neue Seite, statt den im Popup
+       unsichtbaren Chrome-Dialog anzustoßen. */
+    const openedPage = await evaluate(`(() => {
+      window.__ybOpened = null;
+      chrome.tabs.create = opts => { window.__ybOpened = opts; return Promise.resolve({ id: 1 }); };
+      document.getElementById('shotsFolderChoose').click();
+      return window.__ybOpened;
+    })()`);
+    if (!openedPage || !/\/folder-access\.html$/.test(openedPage.url)) {
+      throw new Error('Popup öffnet die Einrichtungsseite nicht: ' + JSON.stringify(openedPage));
+    }
+
+    /* Einrichtungsseite mit OPFS-Handle: „granted“ gilt als dauerhaft, und
+       wartende Bilder werden dort nachgeschrieben. Für den Warteeintrag wird
+       der Handle kurz entfernt und danach wieder eingesetzt. */
+    const pageQueued = await evaluate(`(async () => {
+      const db = await new Promise((res, rej) => {
+        const r = indexedDB.open('youtube-blocker-shots', 1);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+      await new Promise((res, rej) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').delete('shotsDir');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      const r = await self.YB.folder.saveOrQueue(${JSON.stringify(DATA)}, '2026-10-21/121500_page.jpg', { source: 'e2e-page' });
+      const pending = await self.YB.folder.pendingCount();
+      const root = await navigator.storage.getDirectory();
+      const sub = await root.getDirectoryHandle('E2E Shots', { create: true });
+      await new Promise((res, rej) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(sub, 'shotsDir');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      return { r, pending };
+    })()`);
+    if (!pageQueued.r.pending || pageQueued.pending !== 1) {
+      throw new Error('Warteschlange für die Einrichtungsseite fehlgeschlagen: ' + JSON.stringify(pageQueued));
+    }
+    const access = await send('Target.createTarget', {
+      url: 'chrome-extension://' + loaded.id + '/folder-access.html'
+    });
+    const accessAttach = await send('Target.attachToTarget', { targetId: access.targetId, flatten: true });
+    const accessSid = accessAttach.sessionId;
+    await waitFor('document.readyState === "complete" && document.body.dataset.state === "ready"', accessSid, 15000);
+    await waitFor('document.getElementById("faMsg").textContent.length > 0', accessSid, 10000);
+    const accessUi = await evaluate(`({
+      status: document.getElementById('faStatus').textContent,
+      msg: document.getElementById('faMsg').textContent,
+      ok: document.getElementById('faMsg').classList.contains('ok'),
+      grantHidden: document.getElementById('faGrant').hidden,
+      closeHidden: document.getElementById('faClose').hidden
+    })`, accessSid);
+    if (!accessUi.status.includes('E2E Shots') || accessUi.grantHidden !== true ||
+        accessUi.closeHidden !== false || accessUi.ok !== true) {
+      throw new Error('Einrichtungsseite zeigt keinen dauerhaften Zugriff: ' + JSON.stringify(accessUi));
+    }
+    const pageFile = await evaluate(`(async () => {
+      const root = await navigator.storage.getDirectory();
+      const base = await root.getDirectoryHandle('E2E Shots');
+      const dir = await base.getDirectoryHandle('2026-10-21');
+      const fh = await dir.getFileHandle('121500_page.jpg');
+      return { size: (await fh.getFile()).size };
+    })()`, accessSid);
+    if (!pageFile.size) throw new Error('Einrichtungsseite hat die Warteschlange nicht geschrieben');
+
     console.log('e2e-chrome-fsa: OK');
   } finally {
     closing = true;

@@ -510,6 +510,43 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }))
       .catch(() => sendResponse({ ok: false }));
     return true;
+  } else if (msg.type === 'ybfolder-reopen') {
+    /* Die Einrichtungsseite hat gerade den Ordnerzugriff erteilt. Ob er
+       dauerhaft ist, lässt sich nur auf einer frischen Seite ohne aktiven
+       Grant erkennen: Der Hintergrund schließt den Tab und öffnet ihn nach
+       dem Schließen erneut (dann ist der Grant ruhend, nicht flüchtig). */
+    const n = Math.max(1, Math.min(3, Number(msg.n) || 1));
+    const tabId = sender && sender.tab && sender.tab.id;
+    if (tabId == null || !api.tabs || !api.tabs.create || !api.tabs.remove) {
+      sendResponse({ ok: false, error: 'tab-unsupported' });
+      return;
+    }
+    const url = api.runtime.getURL('folder-access.html?verify=1&n=' + n);
+    let opened = false;
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      setTimeout(() => {
+        try {
+          Promise.resolve(api.tabs.create({ url, active: true })).catch(() => { /* Tab weg */ });
+        } catch (e) { /* nichts mehr möglich */ }
+      }, 350);
+    };
+    const onRemoved = id => {
+      if (id !== tabId) return;
+      if (api.tabs.onRemoved && api.tabs.onRemoved.removeListener) api.tabs.onRemoved.removeListener(onRemoved);
+      open();
+    };
+    if (api.tabs.onRemoved && api.tabs.onRemoved.addListener) api.tabs.onRemoved.addListener(onRemoved);
+    sendResponse({ ok: true });
+    Promise.resolve(api.tabs.remove(tabId)).catch(() => {
+      if (api.tabs.onRemoved && api.tabs.onRemoved.removeListener) api.tabs.onRemoved.removeListener(onRemoved);
+      /* Nur öffnen, wenn der Tab wirklich zu ist; sonst bliebe ein zweiter
+         Ursprungs-Dokument offen und die Prüfung wäre wertlos. */
+      if (api.tabs.get) Promise.resolve(api.tabs.get(tabId)).then(() => {}, open);
+      else open();
+    });
+    return true;
   } else if (msg.type === 'ybshot' || msg.type === 'ybshot-test') {
     /* Antwort erst nach Aufnahme und Download-Start; der Content wartet mit dem
        Ausblenden, solange das Bild noch entsteht. Die manuelle Testaufnahme

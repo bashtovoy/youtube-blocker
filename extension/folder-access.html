@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="fa_page_title">Ordnerzugriff — Youtube Blocker</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: #f7f4fb; color: #2b2440;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body.loading main { visibility: hidden; }
+  main { width: 100%; max-width: 560px; background: #fff; border: 1px solid #eadfe9; border-radius: 18px;
+    padding: 24px 26px 20px; box-shadow: 0 10px 30px rgba(120, 90, 160, .10); }
+  h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.25; color: #6b3fd6; }
+  .intro { margin: 0 0 16px; color: #6f6785; }
+  .status { padding: 10px 12px; border-radius: 12px; background: #f3edff; border: 1px solid #e2d4fb;
+    font-weight: 600; color: #4c3a7a; overflow-wrap: anywhere; }
+  .help { min-height: 42px; color: #6f6785; margin: 12px 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; border-radius: 10px; padding: 9px 16px; cursor: pointer; border: 1px solid #d9c9f5; }
+  button.primary { background: #6b3fd6; color: #fff; border-color: #6b3fd6; font-weight: 700; }
+  button.primary:hover { background: #5a31bd; }
+  button.secondary { background: #fff; color: #4c3a7a; }
+  button.secondary:hover { background: #f7f2ff; }
+  button:disabled { opacity: .55; cursor: default; }
+  .msg { min-height: 20px; margin: 12px 0 0; font-size: 12px; color: #8a839c; }
+  .msg.ok { color: #12a150; font-weight: 600; }
+  .msg.err { color: #e0356a; font-weight: 600; }
+  .foot { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid #f2ecf6; font-size: 11px; color: #a49bb5; }
+</style>
+</head>
+<body class="loading">
+<main>
+  <h1 data-i18n="fa_h1">Ordnerzugriff</h1>
+  <p class="intro" data-i18n="fa_intro">Chrome erlaubt den Zugriff auf einen Ordner nur für den Moment. Damit Kontrollbilder dauerhaft ohne Nachfrage geschrieben werden, wird der Zugriff hier einmal eingerichtet.</p>
+  <div id="faStatus" class="status" aria-live="polite"></div>
+  <p id="faHelp" class="help"></p>
+  <div class="actions">
+    <button id="faGrant" class="primary" hidden></button>
+    <button id="faChoose" class="secondary" hidden></button>
+    <button id="faClose" class="secondary" hidden data-i18n="fa_close">Seite schließen</button>
+  </div>
+  <p id="faMsg" class="msg" aria-live="polite"></p>
+  <p class="foot" data-i18n="fa_foot">Alles bleibt lokal auf diesem Rechner — es wird nichts hochgeladen.</p>
+</main>
+<script src="folder-store.js"></script>
+<script src="popup/i18n.js"></script>
+<script src="folder-access.js"></script>
+</body>
+</html>
