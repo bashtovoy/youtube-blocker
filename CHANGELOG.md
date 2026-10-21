@@ -3,6 +3,53 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.19] — 2026-10-21
+
+### Geändert
+- **Der vollständige Grund steht jetzt im Dateinamen jedes Kontrollbilds.**
+  Bisher enthielt der Name nur den kurzen Kanal (`_ai`, `_title`, `_semantic`);
+  jetzt steht dort der ausgeschriebene Grund: `_ai-generated`, `_members-only`,
+  `_promo`, `_test` sowie mit Suchbegriff `_title_<begriff>`,
+  `_channel_<begriff>`, `_semantic-image_<begriff>`, `_ocr_<begriff>` und
+  `_speech_<begriff>`. Unbekannte Gründe werden als `_other_<grund>` abgelegt.
+  Kyrillische und deutsche Begriffe werden für den Dateinamen in ASCII
+  umgeschrieben (`война` → `voyna`, `Müller` → `mueller`); Pfadtrenner und
+  Sonderzeichen werden zu `_`. Der Name bleibt dadurch auf allen Systemen
+  gültig, und die Kontrolle braucht kein zusätzliches Protokoll.
+
+### Behoben
+- **Chrome: „Failed to create WebGPU Context Provider“ im Fehlerprotokoll.**
+  Ohne GPU-Adapter protokolliert Chrome jede WebGPU-Anfrage als Warnung — auch
+  die bloße Geräteprobe der Semantik, und nach jedem Update erneut. Chrome nutzt
+  die Semantik jetzt ohne WebGPU direkt in Wasm (`YB_FORCE_WASM` im
+  Offscreen-Dokument); Firefox behält die Probe samt versionsgebundenem
+  Fallback. Dadurch bleibt das Protokoll in Chrome frei von dieser Warnung.
+- **Chrome: „Detected N diacritics“ und Leptonica-Boxmeldungen aus dem
+  Fehlerprotokoll.** Der OCR-Host setzt `debug_file=/dev/null`; Tesseracts
+  `tprintf`-Diagnosen landen damit nicht mehr in der Konsole. Gegen die
+  upstreambekannten Meldungen „Error in boxClipToRectangle: box outside
+  rectangle“ und „Error in pixScanForForeground: invalid box“ bekommt jedes
+  OCR-Bild einen weißen Rand; komplett leere oder komplett gefüllte Masken
+  werden vor Tesseract verworfen. Der Log-Filter (`quiet-warn.js`) deckt die
+  beiden Leptonica-Texte und die exakte Diacritics-Zeile zusätzlich als
+  letzte Absicherung ab.
+- **OCR-Cache auf `ocr-v3` angehoben.** Alte Texte aus der Pipeline ohne Rand
+  dürfen einen erneuten Lauf nicht verhindern.
+
+### Tests
+- `test-shots` prüft den vollständigen Grund im Dateinamen, kyrillische und
+  deutsche Umschrift, Pfadtrenner im Suchbegriff und die Längenbegrenzung.
+- `test-ocr-host-image` prüft `debug_file=/dev/null`, den weißen Rand im
+  schnellen und tiefen Lauf sowie das Überspringen leerer Graustufenmasken.
+- `test-quiet-warn` und `test-ocr-worker` decken die Leptonica-Meldungen und
+  die exakte Diacritics-Zeile ab.
+- `test-sem-gpu-fallback` prüft, dass Chrome ohne WebGPU-Anfrage startet und
+  kein Fallback-Merkmal mehr schreibt; Firefox-Tests bleiben erhalten.
+- `e2e-chrome-ocr` lädt die Erweiterung in echtem Chrome, lässt den
+  Offscreen-Host ein PNG mit Diacritics und Text an Ober-/Unterkante erkennen
+  und prüft, dass die Konsole von Offscreen-Dokument und OCR-Worker frei von
+  Diacritics-, Leptonica- und WebGPU-Meldungen bleibt.
+
 ## [1.5.18] — 2026-10-21
 
 ### Behoben

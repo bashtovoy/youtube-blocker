@@ -47,9 +47,10 @@ function fakeFetch(url, opts) {
 
 /* createImageBitmap/Canvas-Fakes: merken sich, was konvertiert wurde. */
 let bitmapFails = false;
-let lastBitmapBlob = null;
+const bitmapBlobs = [];
+let pixelMode = 'mix';   /* 'mix' = Testmuster, 'white' = leere Fläche */
 async function fakeCreateImageBitmap(blob) {
-  lastBitmapBlob = blob;
+  bitmapBlobs.push(blob);
   if (bitmapFails) throw new Error('Bild nicht dekodierbar');
   return { width: 4, height: 2, closed: false, close() { this.closed = true; } };
 }
@@ -60,7 +61,8 @@ function makePixels(w, h) {
     const band = ((i / 4) % 4);
     /* Dunkelrot mit weicher Kante: die frühere strenge Rot-Schwelle hat
        genau solche Pixel verworfen; die lockere Maske muss sie behalten. */
-    const rgb = band === 0 ? [100, 70, 70] : band === 1 ? [240, 240, 240] : band === 2 ? [10, 10, 10] : [128, 128, 128];
+    const rgb = pixelMode === 'white' ? [255, 255, 255]
+      : band === 0 ? [100, 70, 70] : band === 1 ? [240, 240, 240] : band === 2 ? [10, 10, 10] : [128, 128, 128];
     data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = 255;
   }
   return { data, width: w, height: h };
@@ -72,6 +74,7 @@ function makeCanvas() {
       canvasCalls.push(kind);
       return {
         drawImage() {},
+        fillRect() {},
         getImageData(x, y, w, h) { return makePixels(w, h); },
         createImageData(w, h) { return makePixels(w, h); },
         putImageData(image) { canvas.lastImage = image; }
@@ -138,34 +141,37 @@ const plain = o => JSON.parse(JSON.stringify(o));
   assert.strictEqual(st.state, 'off', 'vor dem ersten Lauf ist der Host aus');
   assert.deepStrictEqual(plain(st.langs), []);
 
-  /* 1) AVIF (echte ytimg-Lieferung): wird über Canvas zu PNG gewandelt. */
+  /* 1) AVIF (echte ytimg-Lieferung): wird über Canvas zu PNG gewandelt und
+     bekommt vor dem Kern den weißen Rand. */
   nextResponse = () => okResponse('image/avif', AVIF_BYTES);
   let out = await host.recognize('https://i.ytimg.com/vi/x/hq720.jpg?sqp=1&rs=2', 'eng+rus');
   assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT', 'Text kommt durch');
   assert.ok(Number.isFinite(out.ms), 'Laufzeit wird gemeldet');
   assert.strictEqual(recognized.length, 1, 'der Kern bekam genau ein Bild');
-  assert.deepStrictEqual(arr(recognized[0]), arr(PNG_BYTES), 'AVIF → PNG-Bytes für Tesseract');
-  assert.strictEqual(lastBitmapBlob.type, 'image/avif', 'Browser dekodiert die Original-Bytes');
+  assert.strictEqual(recognized[0].width, 24, 'AVIF → PNG → Rand (4 + 2×10)');
+  assert.strictEqual(recognized[0].height, 22, 'Höhe mit Rand (2 + 2×10)');
+  assert.ok(bitmapBlobs.some(b => b.type === 'image/avif'), 'Browser dekodiert die Original-Bytes');
   assert.ok(canvasCalls.includes('2d') && canvasCalls.includes('toBlob:image/png'), 'Canvas-Weg wurde benutzt');
   assert.ok(createWorkerOpts && String(createWorkerOpts.workerPath).endsWith('/ocr-worker.js'),
     'Worker startet über den Filter-Einstieg ocr-worker.js');
   assert.ok(String(createWorkerOpts.corePath).endsWith('/lib/'), 'Kern kommt aus lib/');
   assert.strictEqual(paramCalls[0].tessedit_pageseg_mode, '11', 'PSM 11 wird gesetzt');
+  assert.strictEqual(paramCalls[0].debug_file, '/dev/null', 'Tesseract-Debugausgabe wird umgeleitet');
   assert.deepStrictEqual(loadedLangs, ['eng'], 'ohne kyrillischen Hinweis nur eng');
   assert.deepStrictEqual(initializedLangs, ['eng']);
 
-  /* 2) JPEG: geht unverändert (ohne Canvas) an den Kern. */
+  /* 2) JPEG: wird für den Rand dekodiert; der Kern sieht die Fassung mit Rand. */
   const canvasBefore = canvasCalls.length;
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/y/hqdefault.jpg', 'eng+rus');
   assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT');
-  assert.deepStrictEqual(arr(recognized[recognized.length - 1]), arr(JPEG_BYTES), 'JPEG bleibt unverändert');
-  assert.strictEqual(canvasCalls.length, canvasBefore, 'keine Konvertierung nötig');
+  assert.strictEqual(recognized[recognized.length - 1].width, 24, 'JPEG mit Rand');
+  assert.ok(canvasCalls.length > canvasBefore, 'Rand wird über Canvas erzeugt');
 
-  /* 3) WebP: ebenfalls direkt lesbar. */
+  /* 3) WebP: ebenfalls mit Rand. */
   nextResponse = () => okResponse('image/webp', WEBP_BYTES);
   await host.recognize('https://i.ytimg.com/vi_webp/z/hqdefault.webp', 'eng+rus');
-  assert.deepStrictEqual(arr(recognized[recognized.length - 1]), arr(WEBP_BYTES), 'WebP bleibt unverändert');
+  assert.strictEqual(recognized[recognized.length - 1].width, 24, 'WebP mit Rand');
 
   /* 4) 404: stiller Skip, kein Aufruf des Kerns, kein Cache. */
   const recognizedBefore = recognized.length;
@@ -211,8 +217,21 @@ const plain = o => JSON.parse(JSON.stringify(o));
   assert.strictEqual(out.text, '10 iLvs?', 'tiefer Lauf liefert den erkannten Text');
   assert.strictEqual(recognized.length - recognizedBeforeDeep, 6,
     'schneller Lauf + fünf Varianten (grau, rot, hell, invertiert, dunkel)');
-  assert.strictEqual(recognized[recognized.length - 1].width, 8, 'Varianten sind 2× skaliert');
-  assert.strictEqual(recognized[recognized.length - 1].height, 4);
+  assert.strictEqual(recognized[recognized.length - 1].width, 28,
+    'Varianten sind 2× skaliert und bekommen den Rand (8 + 2×10)');
+  assert.strictEqual(recognized[recognized.length - 1].height, 24, 'Höhe mit Rand (4 + 2×10)');
+
+  /* 9b) Komplett leere Fläche: keine Varianten mit voller/leerer Maske an
+     Tesseract — genau diese Bilder erzeugten die Leptonica-Meldungen. */
+  recognizeResult = { data: { text: 'x', confidence: 10 } };
+  pixelMode = 'white';
+  const recognizedBlank = recognized.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/blank/hq720.jpg', 'eng+rus');
+  assert.strictEqual(out.text, 'x', 'schneller Lauf bleibt erhalten');
+  assert.strictEqual(recognized.length - recognizedBlank, 1,
+    'leere Fläche überspringt alle fünf Varianten');
+  pixelMode = 'mix';
 
   /* 10) Popup-Vorwärmen: „eng+rus“ initialisiert beide Modelle wirklich
      und meldet danach einen belastbaren Bereit-Status. */

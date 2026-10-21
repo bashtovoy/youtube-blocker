@@ -11,13 +11,18 @@
   const api = (typeof browser !== 'undefined') ? browser : chrome;
   const WORKER_URL = api.runtime.getURL('semantic-worker.js');
   const STATUS_KEY = 'semStatus';
-  /* Merkmal „kein GPU-Adapter“: Chrome protokolliert jede WebGPU-Anfrage als
-     Warnung („Failed to create WebGPU Context Provider“) ins Fehlerprotokoll
-     der Erweiterung, wenn das System keinen Adapter bereitstellt (etwa ohne
-     Grafikbeschleunigung). Einmal versucht, dann gemerkt: Danach startet die
-     Semantik direkt in Wasm, ohne das Protokoll erneut zu füllen. Der Wert
-     trägt die Erweiterungsversion („wasm@1.5.7“): Nach einem Update gilt das
-     Merkmal als verfallen und WebGPU wird einmal neu probiert — ohne auf
+  /* Chrome setzt das im Offscreen-Dokument (offscreen.js): WebGPU wird dort
+     gar nicht erst angefragt, weil Chrome jeden Versuch ohne GPU-Adapter als
+     Warnung ins Fehlerprotokoll der Erweiterung schreibt. Firefox behält die
+     Probe samt versionsgebundenem Fallback (`semGpuFallback`). */
+  const FORCE_WASM = self.YB_FORCE_WASM === true;
+  /* Merkmal „kein GPU-Adapter“ (Firefox): Fehlt ein Adapter (etwa ohne
+     Grafikbeschleunigung), wird WebGPU genau einmal probiert und der
+     Fehlschlag gemerkt. Danach startet die Semantik direkt in Wasm. In Chrome
+     greift das Merkmal nicht mehr, weil FORCE_WASM die Probe überspringt und
+     Chrome jeden Versuch ohne Adapter ins Fehlerprotokoll schreiben würde. Der
+     Wert trägt die Erweiterungsversion („wasm@1.5.7“): Nach einem Update gilt
+     das Merkmal als verfallen und WebGPU wird einmal neu probiert — ohne auf
      onInstalled angewiesen zu sein, das Merkmal übersteht also auch normale
      Browser-Neustarts. */
   const GPU_FALLBACK_KEY = 'semGpuFallback';
@@ -255,7 +260,7 @@
     const t0 = Date.now();
     initPromise = (async () => {
       await loadGpuFallback();
-      const guess = (!gpuFallback && self.navigator && self.navigator.gpu) ? 'webgpu' : 'wasm';
+      const guess = (!FORCE_WASM && !gpuFallback && self.navigator && self.navigator.gpu) ? 'webgpu' : 'wasm';
       let res;
       try {
         res = await request('init', { device: guess });
@@ -323,7 +328,7 @@
               textsKey = lastKey;
             }));
           } else {
-            const runSetTexts = () => request('set-texts', { texts: lastTexts, noWebgpu: gpuFallback }).then(res => {
+            const runSetTexts = () => request('set-texts', { texts: lastTexts, noWebgpu: FORCE_WASM || gpuFallback }).then(res => {
               textCache = {
                 key: lastKey,
                 embeds: res.embeds,

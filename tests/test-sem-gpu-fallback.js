@@ -1,9 +1,13 @@
-/* test-sem-gpu-fallback.js — WebGPU-Fallback-Merkmal des Semantik-Hosts
-   (extension/semantic-host.js). Ohne Browser, mit Fake-Worker und Fake-Storage:
-   Beim ersten Lauf (GPU-Adapter fehlt) wird genau einmal WebGPU probiert, der
-   Fehlschlag gemerkt und auf Wasm gewechselt; danach startet die Semantik direkt
-   in Wasm — auch in einem frischen Host (Neustart), ohne erneute WebGPU-Anfrage.
-   Der gemerkte Wert trägt die Erweiterungsversion („wasm@1.5.7“): Ein Update
+/* test-sem-gpu-fallback.js — Gerätewahl des Semantik-Hosts
+   (extension/semantic-host.js). Ohne Browser, mit Fake-Worker und Fake-Storage.
+   Chrome (Offscreen) setzt YB_FORCE_WASM und fragt WebGPU gar nicht erst an —
+   dort schreibt Chrome jeden Versuch ohne Adapter als Warnung
+   („Failed to create WebGPU Context Provider“) ins Erweiterungsprotokoll.
+   Firefox behält die WebGPU-Probe mit versionsgebundenem Fallback: Beim ersten
+   Lauf (GPU-Adapter fehlt) wird genau einmal WebGPU probiert, der Fehlschlag
+   gemerkt und auf Wasm gewechselt; danach startet die Semantik direkt in Wasm —
+   auch in einem frischen Host (Neustart), ohne erneute WebGPU-Anfrage. Der
+   gemerkte Wert trägt die Erweiterungsversion („wasm@1.5.7“): Ein Update
    (andere Version) verwirft das Merkmal automatisch und WebGPU wird einmal neu
    probiert. Deckt beide Speicherwege ab: Chrome-Offscreen (über den Service
    Worker) und Firefox-Background (storage.local direkt). */
@@ -84,6 +88,8 @@ function makeHost(store, mode, opts) {
   if (mode === 'chrome') {
     sandbox.chrome = { runtime, storage: { local: storageLocal } };
     sandbox.YB_STATUS_SINK = (k, p) => sink.push([k, p]);
+    /* Offscreen.js setzt das vor semantic-host.js. */
+    sandbox.YB_FORCE_WASM = true;
   } else {
     sandbox.browser = { runtime, storage: { local: storageLocal } };
   }
@@ -94,31 +100,31 @@ function makeHost(store, mode, opts) {
 }
 
 (async () => {
-  /* 1) Chrome/Offscreen, kalter Zustand: genau eine WebGPU-Probe, dann Wasm,
-     Fehlschlag wird über den Service Worker gemerkt. */
+  /* 1) Chrome/Offscreen, kalter Zustand: YB_FORCE_WASM verhindert die
+     WebGPU-Anfrage vollständig, kein Fehlschlag wird gemerkt. */
   const store1 = {};
   const a = makeHost(store1, 'chrome');
   await a.host.ensure(['drone', 'nvidia'], 'k1');
-  assert.deepStrictEqual(a.initDevices, ['webgpu', 'wasm'], 'erst WebGPU-Probe, dann Wasm');
-  assert.strictEqual(store1.semGpuFallback, 'wasm@1.5.7', 'Fehlschlag gemerkt (storage, mit Version)');
-  assert.ok(a.swCalls.set.some(c => c[0] === 'semGpuFallback' && c[1] === 'wasm@1.5.7'), 'Merkmal über den SW geschrieben');
+  assert.deepStrictEqual(a.initDevices, ['wasm'], 'Chrome fragt WebGPU gar nicht erst an');
+  assert.strictEqual(store1.semGpuFallback, undefined, 'kein Fallback-Merkmal nötig');
+  assert.strictEqual(a.swCalls.set.length, 0, 'kein Merkmal über den SW geschrieben');
   assert.strictEqual(a.host.status().device, 'wasm', 'Gerät ist Wasm');
+  assert.ok(a.textOpts.length >= 1 && a.textOpts.every(o => o.noWebgpu), 'auch der Text-Turm bleibt in Wasm');
   const ready = a.sink.filter(s => s[1] && s[1].state === 'ready').pop();
   assert.ok(ready && ready[1].device === 'wasm', 'Status zeigt Wasm');
 
-  /* 2) Neustart (frischer Host, gemerktes Merkmal): sofort Wasm, keine
-     WebGPU-Anfrage mehr — auch der parallele Text-Turm bleibt in Wasm. */
-  const b = makeHost(store1, 'chrome');
+  /* 2) Chrome-Neustart: bleibt bei Wasm, auch wenn ein altes Merkmal im
+     Speicher liegt — es wird nicht mehr ausgewertet. */
+  const b = makeHost({ semGpuFallback: 'wasm@1.5.7' }, 'chrome');
   await b.host.ensure(['drone', 'nvidia'], 'k1');
-  assert.deepStrictEqual(b.initDevices, ['wasm'], 'keine erneute WebGPU-Anfrage');
-  assert.ok(b.swCalls.get > 0, 'Merkmal wurde aus dem Speicher gelesen');
-  assert.ok(b.textOpts.length >= 1 && b.textOpts.every(o => o.noWebgpu), 'Text-Turm startet ohne WebGPU');
+  assert.deepStrictEqual(b.initDevices, ['wasm'], 'keine WebGPU-Anfrage nach Neustart');
+  assert.ok(b.textOpts.every(o => o.noWebgpu), 'Text-Turm startet ohne WebGPU');
   assert.strictEqual(b.host.status().device, 'wasm');
 
   /* 3) Firefox-Background (storage.local direkt), Merkmal gesetzt: sofort Wasm. */
   const c = makeHost({ semGpuFallback: 'wasm@1.5.7' }, 'firefox');
   await c.host.ensure(['drone'], 'k2');
-  assert.deepStrictEqual(c.initDevices, ['wasm'], 'Firefox nutzt das Merkmal ebenfalls');
+  assert.deepStrictEqual(c.initDevices, ['wasm'], 'Firefox nutzt das Merkmal');
   assert.ok(c.textOpts.every(o => o.noWebgpu), 'Text-Turm ohne WebGPU (Firefox)');
 
   /* 4) Firefox, kalt: Probe einmal, danach Merkmal in storage.local. */
@@ -128,9 +134,9 @@ function makeHost(store, mode, opts) {
   assert.deepStrictEqual(d.initDevices, ['webgpu', 'wasm']);
   assert.strictEqual(store4.semGpuFallback, 'wasm@1.5.7', 'Firefox merkt den Fehlschlag in storage.local');
 
-  /* 4b) Update (andere Version): Das alte Merkmal zählt nicht mehr, WebGPU wird
-     genau einmal neu probiert und mit der neuen Version gemerkt. */
-  const e = makeHost({ semGpuFallback: 'wasm@1.5.6' }, 'chrome');
+  /* 4b) Firefox-Update (andere Version): Das alte Merkmal zählt nicht mehr,
+     WebGPU wird genau einmal neu probiert und mit der neuen Version gemerkt. */
+  const e = makeHost({ semGpuFallback: 'wasm@1.5.6' }, 'firefox');
   await e.host.ensure(['drone'], 'k3b');
   assert.deepStrictEqual(e.initDevices, ['webgpu', 'wasm'], 'veraltetes Merkmal → neue WebGPU-Probe');
   assert.strictEqual(e.host.status().device, 'wasm');
@@ -152,20 +158,18 @@ function makeHost(store, mode, opts) {
   assert.deepStrictEqual(devices5, ['wasm'], 'ohne navigator.gpu nur Wasm');
   assert.strictEqual(sandbox6.YB_SEM_HOST.status().device, 'wasm', 'ohne navigator.gpu direkt Wasm');
 
-  /* 6) Chrome/Offscreen OHNE runtime.getManifest (dort nicht verfügbar): Die
-     Version kommt aus dem manifest.json der Erweiterung — das Merkmal gilt
-     damit weiterhin, kein erneuter WebGPU-Versuch. */
+  /* 6) Chrome/Offscreen OHNE runtime.getManifest (dort nicht verfügbar):
+     bleibt bei Wasm, unabhängig von einem alten Merkmal. */
   const f = makeHost({ semGpuFallback: 'wasm@1.5.7' }, 'chrome', { noManifest: true });
   await f.host.ensure(['drone'], 'k5');
-  assert.deepStrictEqual(f.initDevices, ['wasm'], 'Version aus manifest.json → Merkmal gültig');
+  assert.deepStrictEqual(f.initDevices, ['wasm'], 'kein WebGPU trotz Version aus manifest.json');
 
-  /* 7) Kaltstart ohne getManifest: Merkmal wird mit der Version aus
-     manifest.json geschrieben. */
+  /* 7) Kaltstart ohne getManifest: kein Merkmal wird geschrieben. */
   const store7 = {};
   const g = makeHost(store7, 'chrome', { noManifest: true });
   await g.host.ensure(['drone'], 'k6');
-  assert.deepStrictEqual(g.initDevices, ['webgpu', 'wasm']);
-  assert.strictEqual(store7.semGpuFallback, 'wasm@1.5.7', 'Version aus manifest.json im Merkmal');
+  assert.deepStrictEqual(g.initDevices, ['wasm']);
+  assert.strictEqual(store7.semGpuFallback, undefined, 'Chrome schreibt kein Merkmal');
 
   process.stdout.write('sem gpu fallback tests: OK\n');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -1,7 +1,8 @@
 /* test-shots.js — Kontrollbilder vor dem Ausblenden (extension/shots.js).
-   Prüft: Dateiname (Datum/Uhrzeit/Kennung/Grund, ASCII), Sichtbarkeit der Karte
-   inklusive verdeckendem Masthead, Zuschnitt des Chrome-Screenshots und die
-   Ausgabegröße. Kein Browser, kein Netz, keine Dateien. */
+   Prüft: Dateiname (Datum/Uhrzeit/Kennung/vollständiger Grund, ASCII),
+   Sichtbarkeit der Karte inklusive verdeckendem Masthead, Zuschnitt des
+   Chrome-Screenshots und die Ausgabegröße. Kein Browser, kein Netz,
+   keine Dateien. */
 'use strict';
 const fs = require('fs'), vm = require('vm'), assert = require('assert'), path = require('path');
 
@@ -13,32 +14,58 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'extension', 'shots.j
 const s = sandbox.YB && sandbox.YB.shots;
 assert.ok(s, 'shots.js muss YB.shots exportieren');
 
-/* ---- 1) Dateiname: lokale Zeit, Unterordner je Tag, ASCII-Kennung ---- */
+/* ---- 1) Dateiname: lokale Zeit, Unterordner je Tag, vollständiger Grund ---- */
 const d = new Date(2026, 9, 20, 16, 30, 15);
 assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'ai-generated'),
-  'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_ai.jpg');
+  'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_ai-generated.jpg');
 assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'members-only'),
-  'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_members.jpg');
+  'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_members-only.jpg');
 assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'promo'),
   'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_promo.jpg');
 assert.strictEqual(s.fileName(new Date(2026, 0, 2, 3, 4, 5), '', 'promo'),
   'YouTube Blocker/2026-01-02/030405_slot_promo.jpg', 'Werbeplatz ohne Video-Kennung');
 
-/* Gründe tragen teils einen Suchbegriff („title:…“) — im Namen steht nur der Kanal. */
-assert.strictEqual(s.fileName(d, 'abcdefghijk', 'title:foo'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_title.jpg');
-assert.strictEqual(s.fileName(d, 'abcdefghijk', 'channel:bar'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_channel.jpg');
-assert.strictEqual(s.fileName(d, 'abcdefghijk', 'semantic-image:baz'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_semantic.jpg');
-assert.strictEqual(s.fileName(d, 'abcdefghijk', 'ocr:x'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_ocr.jpg');
-assert.strictEqual(s.fileName(d, 'abcdefghijk', 'speech:y'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_speech.jpg');
+/* Gründe mit Suchbegriff: Der Begriff steht jetzt im Namen. */
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'title:foo'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_title_foo.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'channel:bar'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_channel_bar.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'semantic-image:baz'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_semantic-image_baz.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'ocr:x'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_ocr_x.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'speech:y'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_speech_y.jpg');
 assert.strictEqual(s.fileName(d, 'test', 'test'), 'YouTube Blocker/2026-10-20/163015_test_test.jpg');
-assert.strictEqual(s.fileName(d, 'abcdefghijk', 'unknown'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_other.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'unknown'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_other_unknown.jpg',
+  'unbekannter Grund wird ausgeschrieben');
+
+/* Kyrillisch und deutsche Umlaute werden für den Dateinamen umgeschrieben. */
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'title:война'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_title_voyna.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'title:ПВО'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_title_pvo.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'channel:Müller'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_channel_mueller.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'title:ракеты и дроны'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_title_rakety_i_drony.jpg');
 
 /* Fremde Zeichen (Pfadtrenner, Punkte, Leerzeichen) dürfen nicht in den Namen. */
 assert.strictEqual(s.sanitizeId('../../etc/passwd'), 'etcpasswd');
 assert.strictEqual(s.sanitizeId('a b/c'), 'abc');
 assert.strictEqual(s.sanitizeId(''), 'slot');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'title:../../etc/passwd'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_title_etc_passwd.jpg',
+  'Pfadtrenner im Suchbegriff werden zu Unterstrichen');
 assert.ok(s.fileName(d, 'a/b\\c:d*e?f', 'ai-generated').indexOf('a/b') === -1, 'keine Pfadtrenner in der Kennung');
 assert.ok(/^[\x20-\x7E]+$/.test(s.fileName(d, 'ümlaut', 'ai-generated')), 'Dateiname bleibt ASCII');
+assert.ok(/^[\x20-\x7E]+$/.test(s.fileName(d, 'ümlaut', 'title:война')), 'auch kyrillische Gründe bleiben ASCII');
+/* Sehr langer Suchbegriff wird gedeckelt, aber nicht abgeschnitten mitten im Nichts. */
+const longReason = s.fileName(d, 'abcdefghijk', 'title:' + 'x'.repeat(200));
+assert.ok(longReason.length < 120, 'Dateiname bleibt kurz genug: ' + longReason);
+assert.strictEqual(s.reasonPart(''), 'other');
+assert.strictEqual(s.reasonCode('title:foo'), 'title', 'Kurzcode bleibt für die Diagnose erhalten');
 
 /* ---- 2) Vollständig sichtbar: Fenster plus verdeckende Balken ---- */
 const vp = { w: 1000, h: 800 };

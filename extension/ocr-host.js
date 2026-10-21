@@ -30,15 +30,25 @@
 
   /* Cache-Schlüssel mit Pipeline-Version: alte, schlechte OCR-Texte aus einer
      früheren Sitzung dürfen einen erneuten Lauf nicht verhindern. */
-  const CACHE_VERSION = 'ocr-v2';
+  const CACHE_VERSION = 'ocr-v3'; /* Rand + debug_file ändern das Erkennungsergebnis */
   const OCR_PSM = '11';          /* SPARSE_TEXT: mehrere getrennte Textblöcke */
   const OCR_DPI = '300';
   const FAST_MIN_CHARS = 16;     /* darunter lohnt der tiefe Lauf fast immer */
   const FAST_MIN_CONFIDENCE = 55;
   const DEEP_SCALE = 2;
   const DEEP_MAX_SIDE = 2600;    /* 1280×720 → 2560×1440, danach Speicherdeckel */
+  /* Tesseract/Leptonica meldet bei Text am Bildrand „Error in
+     boxClipToRectangle: box outside rectangle“ und „Error in
+     pixScanForForeground: invalid box“ (upstream bekannt). Ein Rand um das
+     Bild hält die Boxen innerhalb der Fläche, ohne den Text zu verändern. */
+  const OCR_BORDER = 10;
   const MASK_MIN_COVERAGE = 0.0015;
   const MASK_MAX_COVERAGE = 0.70;
+  /* Graustufen-Masken haben konstruktiv ~50 % Fläche; nur komplett leere oder
+     komplett gefüllte Bilder bringen Tesseract zum Rechnen und erzeugen die
+     Leptonica-Meldungen. */
+  const GRAY_MIN_COVERAGE = 0.0005;
+  const GRAY_MAX_COVERAGE = 0.9995;
 
   /* Ein Tesseract-Worker je Sprache: „eng+rus“ soll beide Modelle wirklich
      vorbereiten können, ohne sie in einem gemeinsamen Modell zu mischen.
@@ -226,6 +236,30 @@
     }
   }
 
+  /* Weißer Rand vor dem schnellen Lauf. Der tiefe Lauf bekommt denselben Rand
+     direkt in variantCanvas(); der Rand ist der upstream empfohlene Schutz
+     gegen Leptonica-Boxfehler an der Bildkante. */
+  async function padBytesForOcr(bytes) {
+    const bitmap = await decodeBitmap(bytes);
+    if (!bitmap) return null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width + OCR_BORDER * 2;
+      canvas.height = bitmap.height + OCR_BORDER * 2;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, OCR_BORDER, OCR_BORDER);
+      return canvas;
+    } catch (e) {
+      dlog('ocr host: Rand für Tesseract fehlgeschlagen (' + ((e && e.message) || e) + ')');
+      return null;
+    } finally {
+      if (typeof bitmap.close === 'function') bitmap.close();
+    }
+  }
+
   function pixelLuma(r, g, b) {
     return (r * 299 + g * 587 + b * 114) / 1000;
   }
@@ -279,47 +313,56 @@
 
   function variantCanvas(base, mode, threshold) {
     const { data, width, height } = base;
-    const out = new Uint8ClampedArray(data.length);
+    const outW = width + OCR_BORDER * 2;
+    const outH = height + OCR_BORDER * 2;
+    const out = new Uint8ClampedArray(outW * outH * 4);
+    out.fill(255);   /* weißer Rand und weißer Hintergrund */
     let foreground = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
-      let on = false;
-      if (a >= 32) {
-        const l = pixelLuma(r, g, b);
-        if (mode === 'gray') on = l <= threshold;
-        else if (mode === 'gray-inv') on = l > threshold;
-        else if (mode === 'red') {
-          /* Bewusst locker: die dicken Buchstaben haben weiche Kanten und
-             werden bei einer strengen Rot-Schwelle zerteilt. Der Test mit
-             „RIP“ auf der Referenzkarte liest nur mit dieser Maske exakt. */
-          on = r >= 70 && r - Math.max(g, b) >= 20;
-        } else if (mode === 'bright') {
-          on = l >= 175 && (Math.max(r, g, b) - Math.min(r, g, b)) <= 90;
-        } else if (mode === 'dark') {
-          on = l <= 75;
+    let i = 0;
+    for (let y = 0; y < height; y++) {
+      let o = ((y + OCR_BORDER) * outW + OCR_BORDER) * 4;
+      for (let x = 0; x < width; x++, i += 4, o += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        let on = false;
+        if (a >= 32) {
+          const l = pixelLuma(r, g, b);
+          if (mode === 'gray') on = l <= threshold;
+          else if (mode === 'gray-inv') on = l > threshold;
+          else if (mode === 'red') {
+            /* Bewusst locker: die dicken Buchstaben haben weiche Kanten und
+               werden bei einer strengen Rot-Schwelle zerteilt. Der Test mit
+               „RIP“ auf der Referenzkarte liest nur mit dieser Maske exakt. */
+            on = r >= 70 && r - Math.max(g, b) >= 20;
+          } else if (mode === 'bright') {
+            on = l >= 175 && (Math.max(r, g, b) - Math.min(r, g, b)) <= 90;
+          } else if (mode === 'dark') {
+            on = l <= 75;
+          }
+        }
+        if (on) {
+          foreground++;
+          out[o] = 0;
+          out[o + 1] = 0;
+          out[o + 2] = 0;
         }
       }
-      const v = on ? 0 : 255;
-      out[i] = v;
-      out[i + 1] = v;
-      out[i + 2] = v;
-      out[i + 3] = 255;
-      if (on) foreground++;
     }
 
     /* Masken, die fast nichts oder fast das ganze Bild als Text markieren,
-       sind für Tesseract nur Rauschen. Graustufen bleiben immer drin. */
-    if (mode === 'red' || mode === 'bright' || mode === 'dark') {
-      const coverage = foreground / (width * height);
-      if (coverage < MASK_MIN_COVERAGE || coverage > MASK_MAX_COVERAGE) return null;
-    }
+       sind für Tesseract nur Rauschen und erzeugen die Leptonica-Meldungen.
+       Für Graustufen gilt eine weitere Grenze, weil dort konstruktiv rund die
+       Hälfte der Fläche markiert ist. */
+    const coverage = foreground / (width * height);
+    const min = (mode === 'gray' || mode === 'gray-inv') ? GRAY_MIN_COVERAGE : MASK_MIN_COVERAGE;
+    const max = (mode === 'gray' || mode === 'gray-inv') ? GRAY_MAX_COVERAGE : MASK_MAX_COVERAGE;
+    if (coverage < min || coverage > max) return null;
 
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = outW;
+    canvas.height = outH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    const image = ctx.createImageData(width, height);
+    const image = ctx.createImageData(outW, outH);
     image.data.set(out);
     ctx.putImageData(image, 0, 0);
     return canvas;
@@ -455,7 +498,11 @@
         await w.setParameters({
           tessedit_pageseg_mode: OCR_PSM,
           user_defined_dpi: OCR_DPI,
-          preserve_interword_spaces: '1'
+          preserve_interword_spaces: '1',
+          /* Tesseract schreibt „Detected N diacritics“ und andere
+             tprintf-Diagnosen sonst nach stderr; /dev/null hält das
+             Erweiterungsprotokoll frei, ohne die Erkennung zu ändern. */
+          debug_file: '/dev/null'
         });
       } catch (e) {
         try { w.terminate(); } catch (e2) { /* schon tot */ }
@@ -534,7 +581,10 @@
 
         const primary = primaryLang(lang, hintText);
         const w = await ensureWorker(primary);
-        const fast = await recognizePass(w, bytes);
+        /* Rand vor dem schnellen Lauf: verhindert die Leptonica-Boxfehler an
+           der Bildkante. Scheitert die Umwandlung, bleibt der direkte Weg. */
+        const padded = await padBytesForOcr(bytes);
+        const fast = padded ? await recognizeCanvas(w, padded) : await recognizePass(w, bytes);
         failChain = 0;
 
         const texts = [fast.text];

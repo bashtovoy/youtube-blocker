@@ -7,6 +7,13 @@
 (function () {
   const api = (typeof browser !== 'undefined') ? browser : chrome;
 
+  /* Chrome protokolliert jede WebGPU-Anfrage als Warnung
+     („Failed to create WebGPU Context Provider“), wenn kein GPU-Adapter
+     bereitsteht — auch die bloße Geräteprobe. Chrome nutzt die Semantik
+     deshalb ohne WebGPU direkt in Wasm; Firefox behält die WebGPU-Probe mit
+     versionsgebundenem Fallback. */
+  self.YB_FORCE_WASM = true;
+
   /* semantic-host.js ruft das bei jedem Statuswechsel auf; der Service Worker
      schreibt den Wert nach storage.local. */
   self.YB_STATUS_SINK = (key, payload) => {

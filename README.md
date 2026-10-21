@@ -9,7 +9,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
 | Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Präfixe) mit der Schlüsselwortliste | nein |
-| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung | `ocr-host.js` + `lib/tesseract.min.js` |
+| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, weißer Rand gegen Leptonica-Boxfehler, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung; `debug_file=/dev/null` hält Tesseract-Diagnosen aus dem Erweiterungsprotokoll | `ocr-host.js` + `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
@@ -147,6 +147,13 @@ Firefox: Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
 Chrome:  <gewählter Ordner>/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
 ```
 
+`<Grund>` ist seit 1.5.19 der vollständige Ausblendegrund, nicht mehr nur der
+kurze Kanal: `ai-generated`, `members-only`, `promo`, `test` oder mit
+Suchbegriff `title_<begriff>`, `channel_<begriff>`, `semantic-image_<begriff>`,
+`ocr_<begriff>`, `speech_<begriff>`; unbekannte Gründe als `other_<grund>`.
+Nicht-ASCII-Begriffe werden umgeschrieben (`война` → `voyna`, `Müller` →
+`mueller`). So lässt sich jede Datei ohne Zusatzdatei dem Auslöser zuordnen.
+
 ### Chrome: Screenshot-Ordner statt „Speichern unter“
 
 Chrome zeigt bei der Einstellung „Fragen, wo jede Datei gespeichert werden soll“
@@ -271,8 +278,10 @@ wiegen schwerer) und hier dokumentiert.
 
 Die SigLIP-Modelle (Bild-Turm ~52–95 MB, Text-Turm ~94–106 MB, je nach
 Gerät/Quantisierung: WebGPU q4f16, WASM q8) liegen **nicht** im ausgelieferten
-Paket — das
-AMO-Uploadlimit von 200 MB erlaubt das nicht. Die kleinen OCR-Sprachdaten
+Paket — das AMO-Uploadlimit von 200 MB erlaubt das nicht. Chrome nutzt bewusst
+WASM (q8): Ohne GPU-Adapter schreibt Chrome jede WebGPU-Anfrage als Warnung ins
+Erweiterungsprotokoll. Firefox wählt WebGPU, wenn verfügbar, und merkt sich
+einen Fehlschlag versionsgebunden. Die kleinen OCR-Sprachdaten
 (`lib/eng.traineddata.gz`, `lib/rus.traineddata.gz`) sind dagegen im Paket
 enthalten und werden beim Öffnen des Popups lokal vorgeladen. Die Erweiterung
 sucht die SigLIP-Modelle in dieser Reihenfolge:
@@ -379,19 +388,21 @@ node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
-node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, PSM 11, Sprachwahl, Masken
+node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, PSM 11, debug_file, weißer Rand, Sprachwahl, Masken
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen / FSA ohne Download)
 node tests/test-folder-store.js  # Chrome-Ordner: IndexedDB-Warteschlange, Freigabe, Kollisionsnamen
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
-node tests/test-shots.js         # Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt, sichtbarer Ausschnitt
+node tests/test-shots.js         # Kontrollbilder: Dateiname mit vollständigem Grund, Sichtbarkeit, Zuschnitt
 node tests/e2e-chrome-fsa.js     # echter Chrome: OPFS-Handle, Service-Worker-Schreiben, captureVisibleTab
+node tests/e2e-chrome-ocr.js     # echter Chrome: Offscreen-OCR, WASM-Zwang, leere Konsole (Rand/debug_file)
 node tests/test-ai.js            # KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
+node tests/test-sem-gpu-fallback.js # Gerätewahl: Chrome ohne WebGPU-Anfrage, Firefox mit versionsgebundenem Fallback
 node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen
 node tests/test-ocr-worker.js    # OCR-Worker-Einstieg: Filter lädt vor dem Tesseract-Skript
 node tests/test-reinject-health.js # Selbstheilung verwaister Content-Scripts (Drossel, Sitzungs-Marker, Versionswechsel)
 node build-chrome.js             # Chrome-MV3-Sammlung → dist-chrome/ + web-ext-artifacts/*-chrome.zip
-npx web-ext lint --source-dir extension
+npx web-ext lint --source-dir extension --ignore-files "models/**" "models" "devreport.js"
 npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 ```
 
