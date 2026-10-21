@@ -45,6 +45,7 @@
     #status { color: #12a150; min-height: 16px; font-size: 12px; font-weight: 600; }
     .hint { color: #8a839c; font-size: 11px; }
     .hint.err { color: #e0356a; font-weight: 600; }
+    .hint.ok { color: #12a150; font-weight: 600; }
     /* Statusindikatoren der Erkennungskanäle (rechts in jeder Zeile) */
     .stat { margin-left: auto; font-weight: 800; font-size: 12px; line-height: 1; cursor: default; user-select: none; }
     .stat.ok { color: #12a150; }
@@ -207,13 +208,15 @@
     <fieldset>
       <legend data-i18n="shots_legend">Kontrolle der Ausblendungen</legend>
       <label class="row"><input type="checkbox" id="shotBeforeHide"> <span data-i18n="check_shots">Screenshot vor dem Ausblenden (nur Kartenbereich)</span> <span class="stat" id="statShots"></span></label>
-      <div class="hint" data-i18n="shots_hint">Speichert ein JPEG unter „Downloads/YouTube Blocker/JJJJ-MM-TT/“ — nur den Bereich der Karte, etwa 3–25 KB. Beim ersten Einschalten fragt der Browser einmalig nach der Erlaubnis für Bildschirmausschnitte und Downloads.</div>
+      <div class="hint" data-i18n="shots_hint">Speichert ein JPEG unter „Downloads/YouTube Blocker/JJJJ-MM-TT/“ — nur den Bereich der Karte, etwa 3–25 KB. Ein Bild entsteht nur beim Ausblenden einer neuen, vollständig sichtbaren Karte. Bereits ausgeblendete Karten und die Zahl „verdächtig“ in der Diagnose werden nicht nachträglich aufgenommen.</div>
       <div class="hint err" id="shotsPerm" hidden data-i18n="shots_perm_missing">Die Berechtigung wurde entzogen. Häkchen aus- und wieder einschalten, um sie erneut zu erteilen.</div>
+      <div class="rowbtns"><button id="shotTest" class="secondary" data-i18n="shots_test">Testaufnahme speichern</button></div>
+      <div class="hint" id="lastShotStatus" aria-live="polite"></div>
     </fieldset>
 
     <details class="bulk" id="promoDiag">
       <summary><span data-i18n="promo_diag_summary">Diagnose der Werbeformate</span> <span id="promoDiagCount" class="hint"></span></summary>
-      <div class="hint" data-i18n="promo_diag_hint">Verdächtige Karten, die noch keiner Regel entsprechen, werden nur lokal gespeichert. Bericht kopieren und schicken — daraus wird eine neue Regel.</div>
+      <div class="hint" data-i18n="promo_diag_hint">Verdächtige Karten, die noch keiner Regel entsprechen, werden nur lokal gespeichert und nicht ausgeblendet; die Zahl ist kein Zähler verborgener Karten. Bericht kopieren und schicken — daraus wird eine neue Regel.</div>
       <div class="rowbtns">
         <button id="promoDiagCopy" class="secondary" data-i18n="promo_diag_copy">Bericht kopieren</button>
         <button id="promoDiagClear" class="secondary" data-i18n="promo_diag_clear">Leeren</button>

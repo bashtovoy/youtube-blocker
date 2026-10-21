@@ -56,6 +56,7 @@ const ROUTE_OPTIONS = [
 let keywords = [];   /* [{ text, enabled, route? }] */
 let lastSemStatus = null;   /* für Neu-Beschriftung beim Sprachwechsel */
 let counts = { dis: 0, hid: 0 };   /* Kopfzeile: YouTube-Signale / lokale Ausblendungen */
+let lastShot = null;  /* letzter Aufnahmeversuch aus storage.local */
 
 /* Status des Semantik-Hosts (semantic-host.js speichert unter „semStatus“):
    zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft.
@@ -163,10 +164,15 @@ function renderStats() {
   else if (whisperState === 'missing') sp = ['pending', 'stat_speech_missing'];
   setStat('statSpeech', sp[0], sp[1]);
 
-  /* Kontrollbilder: eingeschaltet, aber Berechtigung fehlt/entzogen → rot */
+  /* Kontrollbilder: eingeschaltet, aber Berechtigung fehlt/entzogen → rot;
+     solange die Prüfung läuft, nicht vorschnell grün anzeigen. */
   if ($('statShots')) {
     let sh = ['off', 'stat_off'];
-    if (on('shotBeforeHide')) sh = shotsPermOk === false ? ['err', 'shots_perm_missing'] : ['ok', 'stat_ok'];
+    if (on('shotBeforeHide')) {
+      if (shotsPermOk === false) sh = ['err', 'shots_perm_missing'];
+      else if (shotsPermOk === null) sh = ['pending', 'stat_pending'];
+      else sh = ['ok', 'stat_ok'];
+    }
     setStat('statShots', sh[0], sh[1]);
   }
 }
@@ -310,6 +316,51 @@ async function checkShotsPermission() {
   renderStats();
 }
 
+function shortFile(file) {
+  return String(file || '').split('/').pop();
+}
+
+function shotTime(ts) {
+  const d = new Date(Number(ts));
+  if (!Number.isFinite(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : d.toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+/* Letzten Aufnahmeversuch im Popup anzeigen. Damit sind auch stille Fälle
+   sichtbar: Karte nicht vollständig im Bild, fehlende Rechte, Downloadfehler. */
+function renderLastShot() {
+  const el = $('lastShotStatus');
+  if (!el) return;
+  el.className = 'hint';
+  el.title = '';
+  if (!lastShot) {
+    el.textContent = t('shots_last_none');
+    return;
+  }
+  const time = shotTime(lastShot.at);
+  const file = shortFile(lastShot.file);
+  const privateTag = lastShot.incognito ? ' · ' + t('shots_private') : '';
+  if (lastShot.status === 'saved' || lastShot.ok) {
+    el.textContent = t('shots_last_saved', { time, file: file || '—' }) + privateTag;
+    el.title = lastShot.file || '';
+    el.classList.add('ok');
+    return;
+  }
+  if (lastShot.status === 'skipped') {
+    const reason = lastShot.error === 'nicht-sichtbar' || !lastShot.error
+      ? t('shots_skip_not_visible')
+      : lastShot.error;
+    el.textContent = t('shots_last_skipped', { time, msg: reason }) + privateTag;
+    return;
+  }
+  el.textContent = t('shots_last_failed', { time, msg: lastShot.error || t('unknown') }) + privateTag;
+  el.classList.add('err');
+}
+
 /* Whisper-Bibliothek einmalig prüfen: setup.sh setzt ohne Download nur eine
    Platzhalterdatei mit wenigen Zeilen ab; eine echte Bibliothek ist viel größer. */
 function checkWhisper() {
@@ -326,6 +377,17 @@ api.storage.onChanged.addListener(changes => {
   if (changes.promoSuspects) {
     promoSuspects = Array.isArray(changes.promoSuspects.newValue) ? changes.promoSuspects.newValue : [];
     renderPromoDiag();
+  }
+  if (changes.lastShot) {
+    lastShot = changes.lastShot.newValue || null;
+    renderLastShot();
+  }
+  if (changes.hiddenCount || changes.dismissedCount) {
+    counts = {
+      dis: changes.dismissedCount ? (changes.dismissedCount.newValue || 0) : counts.dis,
+      hid: changes.hiddenCount ? (changes.hiddenCount.newValue || 0) : counts.hid
+    };
+    renderCounts();
   }
 });
 
@@ -344,6 +406,7 @@ function applyLanguage(lang) {
   renderSemStatus(lastSemStatus);
   renderOcrStatus();
   renderCounts();
+  renderLastShot();
   renderPromoDiag();
 }
 
@@ -480,7 +543,7 @@ function parseKeywordLines(text) {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, promoSuspects: []
+    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, promoSuspects: [], lastShot: null
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   s.actionDelayMs = numberOr(s.actionDelayMs, DEFAULT_SETTINGS.actionDelayMs);
@@ -495,6 +558,7 @@ async function load() {
   counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
   lastSemStatus = data.semStatus;
   promoSuspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
+  lastShot = data.lastShot || null;
   /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
   applyLanguage(i18n.normalize(s.uiLang) || i18n.detect(api));
   /* Live-Status beim Host erfragen: der gespeicherte semStatus kann fehlen oder
@@ -732,6 +796,44 @@ $('shotBeforeHide').addEventListener('change', async () => {
   schedulePersist(0);
   status(t('shots_on'));
 });
+
+/* Manuelle Testaufnahme: prüft den kompletten Weg (Berechtigung, Aufnahme,
+   Download) ohne auf eine passende Karte warten zu müssen. Die Berechtigung
+   wird direkt in der Nutzergeste angefragt. */
+$('shotTest').onclick = async () => {
+  const btn = $('shotTest');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    if (shotsPermOk !== true) {
+      let granted = false;
+      try {
+        if (api.permissions && api.permissions.request) {
+          granted = await api.permissions.request({ permissions: ['downloads'], origins: ['<all_urls>'] });
+        }
+      } catch (e) { granted = false; }
+      shotsPermOk = granted;
+      renderShotsPerm();
+      renderStats();
+      if (!granted) {
+        status(t('shots_perm_denied'), false);
+        return;
+      }
+    }
+    const tabs = await api.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs && tabs[0];
+    const res = await api.runtime.sendMessage({ type: 'ybshot-test', tabId: activeTab && activeTab.id });
+    if (res && res.ok) {
+      status(t('shots_test_ok', { file: shortFile(res.file) || '—' }));
+    } else {
+      status(t('shots_test_failed', { msg: (res && res.error) || t('unknown') }), false);
+    }
+  } catch (e) {
+    status(t('shots_test_failed', { msg: String((e && e.message) || e) }), false);
+  } finally {
+    btn.disabled = false;
+  }
+};
 VALUE_IDS.forEach(id => {
   const el = $(id);
   if (!el || id === 'uiLang') return;   /* uiLang: eigener Listener unten (Sprache sofort anwenden) */

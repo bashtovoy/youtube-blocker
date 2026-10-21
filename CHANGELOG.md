@@ -3,6 +3,39 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.16] — 2026-10-21
+
+### Hinzugefügt
+- **Status des letzten Kontrollbilds im Popup.** Jeder Aufnahmeversuch
+  hinterlässt `lastShot` mit Zeitpunkt, Datei, Grund, Video-Kennung,
+  Sichtbarkeit, Privatfenster-Kennzeichen und Status (`saved`, `skipped`,
+  `failed`). Das Popup zeigt die letzte Aufnahme samt Fehlertext und
+  aktualisiert sich über `storage.onChanged` — auch wenn der Versuch nur
+  wegen einer nicht vollständig sichtbaren Karte übersprungen wurde.
+- **Knopf „Testaufnahme speichern“.** Er prüft Berechtigungen, Aufnahme und
+  Download ohne auf eine passende Karte zu warten und speichert den sichtbaren
+  Tab als JPEG (`..._test_test.jpg`). Fehler erscheinen direkt im Popup.
+- **Erklärung der Diagnosezahl:** Die Zahl „verdächtig“ zählt nur lokal
+  gespeicherte Werbe-Verdachtsfälle, keine ausgeblendeten Karten.
+
+### Geändert
+- **Einstellungen wirken ohne Neuladen.** Das Content-Skript hört auf
+  `storage.onChanged` und übernimmt insbesondere `shotBeforeHide` sofort,
+  setzt die Aufnahme-Markierungen zurück und scannt die Seite neu.
+- **Downloaderfolg wird tatsächlich geprüft.** Nach `downloads.download`
+  wartet der Hintergrund auf `downloads.onChanged`/`downloads.search` und
+  meldet abgebrochene Downloads oder Zeitüberschreitungen im Popup. Der
+  Content wartet weiterhin nur auf den Aufnahmestart, damit das Ausblenden
+  nicht durch den Download blockiert wird.
+- **Privatfenster:** Bei Firefox-Privatfenstern wird `incognito` an den
+  Download übergeben; die Statusanzeige kennzeichnet den Kontext.
+
+### Tests
+- `test-shots` deckt den Dateinamen der manuellen Testaufnahme ab;
+  `test-background-route` prüft manuelle und automatische Aufnahmen im
+  Privatfenster samt `lastShot`; `test-i18n` prüft die neuen Status- und
+  Testmeldungen in allen vier Oberflächensprachen.
+
 ## [1.5.15] — 2026-10-20
 
 ### Hinzugefügt

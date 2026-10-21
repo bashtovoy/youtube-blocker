@@ -141,8 +141,8 @@ Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
 ```
 
 - Gründe im Dateinamen: `ai`, `members`, `promo`, `title`, `channel`,
-  `semantic`, `ocr`, `speech`; Werbeplätze ohne Video-Kennung erscheinen als
-  `slot`.
+  `semantic`, `ocr`, `speech`, `test`; Werbeplätze ohne Video-Kennung erscheinen
+  als `slot`.
 - JPEG-Qualität 30: Firefox speichert 1 CSS-Pixel je Bildpunkt, Chrome
   verkleinert auf höchstens 480 Pixel Breite — je nach Karte etwa 3–25 KB.
 - Das Bild entsteht **vor** der Aktion — auch vor dem Klick auf „Kein
@@ -150,9 +150,16 @@ Downloads/YouTube Blocker/JJJJ-MM-TT/HHMMSS_<videoId>_<Grund>.jpg
 - Liegt die Karte noch nicht vollständig im sichtbaren Bereich, wartet das
   Ausblenden bis zu **8 Sekunden**; die Seite wird dabei nicht gescrollt.
   Wird die Karte in dieser Zeit nicht sichtbar, wird sie ohne Bild ausgeblendet
-  (Hinweis in der Konsole des Content-Skripts).
+  und der Grund im Popup unter dem Häkchen angezeigt.
+- **Status und Test:** Unter dem Häkchen steht der letzte Aufnahmeversuch
+  (gespeichert, übersprungen oder Fehler). „Testaufnahme speichern“ prüft den
+  kompletten Weg sofort, ohne auf eine Karte zu warten. Einstellungen wirken
+  über `storage.onChanged` ohne Neuladen der YouTube-Seite.
+- In Firefox-Privatfenstern wird der Download dem privaten Kontext zugeordnet;
+  der Status zeigt das Privatfenster-Kennzeichen.
 - Bereits ausgeblendete Karten, die YouTube neu rendert, erzeugen kein zweites
-  Bild und keinen zweiten Zähler.
+  Bild und keinen zweiten Zähler. Die Zahl „verdächtig“ in der Diagnose ist
+  kein Zähler ausgeblendeter Karten.
 - **Berechtigungen:** Beim ersten Einschalten fragt der Browser einmalig nach
   `downloads` und dem Zugriff auf alle Seiten (für den Bildschirmausschnitt).
   Beide sind optional und werden **nicht** bei der Installation verlangt;

@@ -130,38 +130,97 @@ async function cropShot(dataUrl, msg) {
 /* Firefox lehnt data:-URLs in downloads.download ab („Access denied for URL“).
    Dort eine Blob-URL der Hintergrundseite verwenden; Chrome akzeptiert data:-URLs,
    kennt aber im Service Worker kein URL.createObjectURL. */
-async function downloadShot(dataUrl, file) {
+function shotTabIsPrivate(tab) {
+  return !!(tab && (tab.incognito || tab.cookieStoreId === 'firefox-private'));
+}
+
+/* Persistenter Status des letzten Kontrollbilds. Das Popup liest ihn über
+   storage.onChanged; so bleiben stille Fehlschläge (Rechte, Sichtbarkeit,
+   abgebrochener Download) sichtbar, ohne die Konsole zu öffnen. */
+async function recordShot(status, info) {
+  const payload = Object.assign({
+    at: Date.now(),
+    status,
+    ok: status === 'saved'
+  }, info || {});
+  try {
+    await api.storage.local.set({ lastShot: payload });
+  } catch (e) { /* Diagnose ist optional */ }
+}
+
+/* downloads.download() meldet nur den Start. Erst downloads.onChanged/search
+   zeigt, ob die Datei wirklich geschrieben oder vom Browser abgebrochen wurde. */
+function waitForDownload(id, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    let timer = null;
+    const finish = (err, item) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { api.downloads.onChanged.removeListener(onChanged); } catch (e) { /* optional */ }
+      if (err) reject(err); else resolve(item);
+    };
+    const inspect = async () => {
+      if (done) return;
+      try {
+        const items = await api.downloads.search({ id });
+        const item = items && items[0];
+        if (!item) return;
+        if (item.state === 'complete') finish(null, item);
+        else if (item.state === 'interrupted') finish(new Error(item.error || 'download-interrupted'));
+      } catch (e) { /* search ist nur eine Zusatzprüfung */ }
+    };
+    const onChanged = delta => {
+      if (!delta || delta.id !== id) return;
+      if (delta.state && delta.state.current === 'complete') inspect();
+      else if (delta.state && delta.state.current === 'interrupted') {
+        finish(new Error((delta.error && delta.error.current) || 'download-interrupted'));
+      }
+    };
+    try { api.downloads.onChanged.addListener(onChanged); } catch (e) { /* optional */ }
+    timer = setTimeout(() => {
+      inspect().then(() => {
+        if (!done) finish(new Error('download-timeout'));
+      }, () => finish(new Error('download-timeout')));
+    }, timeoutMs || 20000);
+    inspect();
+  });
+}
+
+async function downloadShot(dataUrl, file, options) {
+  const opts = { filename: file, conflictAction: 'uniquify', saveAs: false };
+  /* Private Firefox-Fenster brauchen die Zuordnung zum privaten Download-
+     Kontext; sonst kann der Blob-Download am Kontext scheitern. Chrome kennt
+     dieses Feld nicht und ignoriert es. */
+  if (options && options.incognito && typeof browser !== 'undefined') opts.incognito = true;
   const canBlob = typeof document !== 'undefined' &&
     typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
   if (!canBlob) {
-    await api.downloads.download({ url: dataUrl, filename: file, conflictAction: 'uniquify', saveAs: false });
-    return;
+    const id = await api.downloads.download(Object.assign({ url: dataUrl }, opts));
+    return { id, done: waitForDownload(id) };
   }
   const blob = await (await fetch(dataUrl)).blob();
   const url = URL.createObjectURL(blob);
   try {
-    await api.downloads.download({ url, filename: file, conflictAction: 'uniquify', saveAs: false });
+    const id = await api.downloads.download(Object.assign({ url }, opts));
+    return { id, done: waitForDownload(id) };
   } finally {
     /* Der Download liest die Blob-URL asynchron; deshalb erst später freigeben. */
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 }
 
-async function doShot(msg, sender) {
-  const lib = shotsLib();
-  if (!lib || !api.downloads) return { ok: false, error: 'downloads-api' };
-  const tab = sender && sender.tab;
-  if (!tab || tab.id == null) return { ok: false, error: 'kein-tab' };
-  /* Beide optionalen Berechtigungen werden erst beim Einschalten im Popup erteilt. */
-  if (api.permissions && api.permissions.contains) {
-    const allowed = await api.permissions.contains({ permissions: ['downloads'], origins: ['<all_urls>'] });
-    if (!allowed) return { ok: false, error: 'berechtigung-fehlt' };
+async function shotPermission() {
+  if (!api.permissions || !api.permissions.contains) return true;
+  try {
+    return await api.permissions.contains({ permissions: ['downloads'], origins: ['<all_urls>'] });
+  } catch (e) {
+    return false;
   }
-  const wait = lib.SHOT_GAP_MS - (Date.now() - lastShotAt);
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  lastShotAt = Date.now();
+}
 
-  let dataUrl;
+async function captureTabShot(tab, lib, msg) {
   if (api.tabs.captureTab) {
     /* Firefox: rect ist relativ zur Seite (nicht zum Fenster); scale 1 liefert
        CSS-Pixel statt Gerätepixel — kleinste Datei ohne Nachbearbeitung. */
@@ -171,36 +230,132 @@ async function doShot(msg, sender) {
       width: Math.max(1, Math.round(msg.rect.w)),
       height: Math.max(1, Math.round(msg.rect.h))
     };
-    dataUrl = await api.tabs.captureTab(tab.id, {
+    return api.tabs.captureTab(tab.id, {
       rect, scale: 1, format: 'jpeg', quality: lib.QUALITY
     });
+  }
+  /* captureVisibleTab nimmt den aktiven Tab des Fensters auf, nicht gezielt den
+     Absender. Wechselt der Nutzer während der Warteschlange den Tab, entstünde
+     ein Bild der falschen Seite — daher unmittelbar vorher prüfen. */
+  try {
+    const current = await api.tabs.get(tab.id);
+    if (!current || !current.active) return null;
+  } catch (e) {
+    return null;
+  }
+  const raw = await api.tabs.captureVisibleTab(tab.windowId, {
+    format: 'jpeg', quality: lib.CAPTURE_QUALITY
+  });
+  return cropShot(raw, msg);
+}
+
+async function doShot(msg, sender) {
+  const lib = shotsLib();
+  if (!lib || !api.downloads) return { ok: false, error: 'downloads-api' };
+  const tab = sender && sender.tab;
+  if (!tab || tab.id == null) return { ok: false, error: 'kein-tab' };
+  if (!(await shotPermission())) return { ok: false, error: 'berechtigung-fehlt' };
+  const wait = lib.SHOT_GAP_MS - (Date.now() - lastShotAt);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastShotAt = Date.now();
+
+  const dataUrl = await captureTabShot(tab, lib, msg);
+  if (!dataUrl) return { ok: false, error: 'nicht-aktiv' };
+
+  const file = lib.fileName(new Date(), msg.videoId, msg.reason);
+  const dl = await downloadShot(dataUrl, file, { incognito: shotTabIsPrivate(tab) });
+  console.log('[YB] Kontrollbild gestartet:', file);
+  /* Der Content wartet nur auf den Start; die Fertigstellung wird im
+     Hintergrund überwacht und der Popup-Status danach aktualisiert. */
+  return { ok: true, file, incognito: shotTabIsPrivate(tab), downloadId: dl.id, settle: dl.done };
+}
+
+/* Manuelle Testaufnahme aus dem Popup: prüft Rechte und Downloadweg, ohne auf
+   eine passende Karte zu warten. Speichert den sichtbaren Tab als JPEG. */
+async function doTestShot(msg) {
+  const lib = shotsLib();
+  if (!lib || !api.downloads) return { ok: false, error: 'downloads-api' };
+  if (!(await shotPermission())) return { ok: false, error: 'berechtigung-fehlt' };
+  let tab = null;
+  if (msg && msg.tabId != null) {
+    /* Das Popup kann den gewünschten YouTube-Tab explizit mitgeben; das macht
+       die Testaufnahme unabhängig vom gerade fokussierten Tab. */
+    try { tab = await api.tabs.get(msg.tabId); } catch (e) { tab = null; }
   } else {
-    /* captureVisibleTab nimmt den aktiven Tab des Fensters auf, nicht gezielt den
-       Absender. Wechselt der Nutzer während der Warteschlange den Tab, entstünde
-       ein Bild der falschen Seite — daher unmittelbar vorher prüfen. */
+    const tabs = await api.tabs.query({ active: true, lastFocusedWindow: true });
+    tab = tabs && tabs[0];
+  }
+  if (!tab || tab.id == null) return { ok: false, error: 'kein-tab' };
+  let dataUrl;
+  if (api.tabs.captureTab) {
+    dataUrl = await api.tabs.captureTab(tab.id, { format: 'jpeg', quality: lib.QUALITY });
+  } else {
+    /* Chrome nimmt immer den aktiven Tab des Fensters auf. Nicht still den
+       falschen Tab fotografieren, wenn der Nutzer inzwischen gewechselt hat. */
     try {
       const current = await api.tabs.get(tab.id);
       if (!current || !current.active) return { ok: false, error: 'nicht-aktiv' };
     } catch (e) {
-      return { ok: false, error: 'tab-weg' };
+      return { ok: false, error: 'nicht-aktiv' };
     }
-    const raw = await api.tabs.captureVisibleTab(tab.windowId, {
+    dataUrl = await api.tabs.captureVisibleTab(tab.windowId, {
       format: 'jpeg', quality: lib.CAPTURE_QUALITY
     });
-    dataUrl = await cropShot(raw, msg);
   }
   if (!dataUrl) return { ok: false, error: 'aufnahme-leer' };
-
-  const file = lib.fileName(new Date(), msg.videoId, msg.reason);
-  await downloadShot(dataUrl, file);
-  console.log('[YB] Kontrollbild gespeichert:', file);
-  return { ok: true, file };
+  const file = lib.fileName(new Date(), 'test', 'test');
+  const dl = await downloadShot(dataUrl, file, { incognito: shotTabIsPrivate(tab) });
+  try {
+    await dl.done;
+  } catch (e) {
+    const error = String((e && e.message) || e);
+    throw new Error('Download: ' + error);
+  }
+  console.log('[YB] Test-Kontrollbild gespeichert:', file);
+  return { ok: true, file, incognito: shotTabIsPrivate(tab), downloadId: dl.id };
 }
 
-function enqueueShot(msg, sender) {
-  const run = shotChain.then(() => doShot(msg, sender), () => doShot(msg, sender));
-  shotChain = run.catch(() => {});
-  return run;
+async function runShot(msg, sender, run) {
+  const base = {
+    videoId: String(msg.videoId || ''),
+    reason: String(msg.reason || ''),
+    source: (msg.test || msg.type === 'ybshot-test') ? 'manual' : 'auto',
+    visible: msg.visible !== false,
+    incognito: shotTabIsPrivate(sender && sender.tab)
+  };
+  try {
+    const res = await run(msg, sender);
+    const settle = res && res.settle;
+    /* Promises dürfen nicht in der Nachrichtenantwort landen. */
+    const response = Object.assign({}, res);
+    if (settle) delete response.settle;
+    const info = Object.assign(base, {
+      incognito: response.incognito != null ? !!response.incognito : base.incognito,
+      file: response.file || null,
+      error: response.error || null,
+      downloadId: response.downloadId || null
+    });
+    if (settle && typeof settle.then === 'function') {
+      settle.then(
+        () => recordShot('saved', info),
+        e => recordShot('failed', Object.assign({}, info, { error: String((e && e.message) || e) }))
+      );
+    } else {
+      await recordShot(response.ok ? 'saved' : 'failed', info);
+    }
+    return response;
+  } catch (e) {
+    const error = String((e && e.message) || e);
+    await recordShot('failed', Object.assign(base, { error }));
+    throw e;
+  }
+}
+
+function enqueueShot(msg, sender, run) {
+  const start = () => runShot(msg, sender, run || doShot);
+  const result = shotChain.then(start, start);
+  shotChain = result.catch(() => {});
+  return result;
 }
 
 /* ---------- Nachrichtenrouting ---------- */
@@ -228,10 +383,12 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => api.storage.local.get(kind))
       .then(d => api.storage.local.set({ [kind]: (d[kind] || 0) + by }))
       .catch(() => {});
-  } else if (msg.type === 'ybshot') {
-    /* Antwort erst nach Aufnahme und Download; der Content wartet mit dem
-       Ausblenden, solange das Bild noch entsteht. */
-    enqueueShot(msg, sender)
+  } else if (msg.type === 'ybshot' || msg.type === 'ybshot-test') {
+    /* Antwort erst nach Aufnahme und Download-Start; der Content wartet mit dem
+       Ausblenden, solange das Bild noch entsteht. Die manuelle Testaufnahme
+       wartet zusätzlich auf die fertige Datei, damit das Popup den echten
+       Downloadfehler zeigen kann. */
+    enqueueShot(msg, sender, msg.type === 'ybshot-test' ? doTestShot : doShot)
       .then(sendResponse)
       .catch(e => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;

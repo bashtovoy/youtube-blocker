@@ -15,9 +15,9 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.
    Prototyp — für Vergleiche in die Host-Welt normalisieren. */
 const plain = x => JSON.parse(JSON.stringify(x));
 
-function makeSandbox({ routes, chromeMode }) {
-  const calls = { offscreen: 0, sends: [], badge: [], storageSets: [] };
-  const listeners = { message: null };
+function makeSandbox({ routes, chromeMode, shotApis, shotTab }) {
+  const calls = { offscreen: 0, sends: [], badge: [], storageSets: [], downloads: [] };
+  const listeners = { message: null, download: null };
   let contexts = [];
   const api = {
     runtime: {
@@ -35,6 +35,21 @@ function makeSandbox({ routes, chromeMode }) {
     tabs: { onUpdated: { addListener: () => {} }, sendMessage: () => Promise.resolve() },
     browserAction: { setBadgeText: o => calls.badge.push(o) }
   };
+  if (shotApis) {
+    const tab = Object.assign({ id: 7, windowId: 1, active: true, cookieStoreId: 'firefox-default' }, shotTab || {});
+    api.permissions = { contains: () => Promise.resolve(true) };
+    api.tabs.query = () => Promise.resolve([tab]);
+    api.tabs.get = id => Promise.resolve(Object.assign({}, tab, { id }));
+    api.tabs.captureTab = () => Promise.resolve('data:image/jpeg;base64,AAAA');
+    api.downloads = {
+      download: opts => { calls.downloads.push(opts); return Promise.resolve(41); },
+      search: () => Promise.resolve([{ id: 41, state: 'complete' }]),
+      onChanged: {
+        addListener: fn => { listeners.download = fn; },
+        removeListener: () => {}
+      }
+    };
+  }
   if (chromeMode) {
     api.offscreen = {
       createDocument: () => {
@@ -45,6 +60,7 @@ function makeSandbox({ routes, chromeMode }) {
     };
   }
   const sandbox = { self: { YB_ROUTES: routes }, console, setTimeout, clearTimeout, URL };
+  if (shotApis) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'extension', 'shots.js'), 'utf8'), sandbox);
   if (chromeMode) sandbox.chrome = api; else sandbox.browser = api;
   vm.runInNewContext(SRC, sandbox, { filename: 'background.js' });
   assert.strictEqual(typeof listeners.message, 'function', 'onMessage wurde registriert');
@@ -53,11 +69,11 @@ function makeSandbox({ routes, chromeMode }) {
 
 /* Ruft den Listener wie der Browser: sendResponse kommt synchron oder später
    (return true hält den Kanal offen). */
-function ask(listener, msg, timeoutMs = 2000) {
+function ask(listener, msg, timeoutMs = 2000, sender = {}) {
   return new Promise((resolve, reject) => {
     let answered = false;
     const timer = setTimeout(() => { if (!answered) reject(new Error('keine Antwort auf ' + msg.type)); }, timeoutMs);
-    const ret = listener(msg, {}, value => { answered = true; clearTimeout(timer); resolve({ ret: true, value }); });
+    const ret = listener(msg, sender, value => { answered = true; clearTimeout(timer); resolve({ ret: true, value }); });
     if (ret !== true) { clearTimeout(timer); resolve({ ret, value: undefined }); }
   });
 }
@@ -131,6 +147,60 @@ function ask(listener, msg, timeoutMs = 2000) {
     const { calls } = makeSandbox({ routes: {}, chromeMode: false });
     await new Promise(r => setTimeout(r, 10));
     assert.deepStrictEqual(plain(calls.badge[0]), { text: '' });
+  }
+
+  /* --- Manuelle Testaufnahme: Aufnahme, Download, letzter Status --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: {}, chromeMode: false, shotApis: true });
+    const r = await ask(listener, { type: 'ybshot-test', tabId: 7 });
+    assert.strictEqual(r.ret, true, 'Testaufnahme antwortet asynchron');
+    assert.strictEqual(r.value.ok, true);
+    assert.match(r.value.file, /^YouTube Blocker\/\d{4}-\d{2}-\d{2}\/\d{6}_test_test\.jpg$/);
+    assert.strictEqual(r.value.incognito, false);
+    assert.strictEqual(calls.downloads.length, 1);
+    assert.match(calls.downloads[0].url, /^data:image\/jpeg;base64,/);
+    assert.strictEqual(calls.downloads[0].incognito, undefined, 'normaler Kontext ohne incognito');
+    const shot = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.ok(shot, 'lastShot wurde gespeichert');
+    assert.strictEqual(shot.status, 'saved');
+    assert.strictEqual(shot.source, 'manual');
+    assert.strictEqual(shot.file, r.value.file);
+  }
+
+  /* --- Privates Fenster: Download und Status als incognito markieren --- */
+  {
+    const { calls, listener } = makeSandbox({
+      routes: {}, chromeMode: false, shotApis: true,
+      shotTab: { id: 8, cookieStoreId: 'firefox-private', incognito: true }
+    });
+    const r = await ask(listener, { type: 'ybshot-test', tabId: 8 });
+    assert.strictEqual(r.value.ok, true);
+    assert.strictEqual(r.value.incognito, true);
+    assert.strictEqual(calls.downloads.length, 1);
+    assert.strictEqual(calls.downloads[0].incognito, true, 'privater Download');
+    const shot = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.ok(shot, 'lastShot für privat gespeichert');
+    assert.strictEqual(shot.incognito, true);
+    assert.strictEqual(shot.status, 'saved');
+  }
+
+  /* --- Automatische Aufnahme im privaten Fenster --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: {}, chromeMode: false, shotApis: true });
+    const sender = { tab: { id: 9, windowId: 1, active: false, cookieStoreId: 'firefox-private', incognito: true } };
+    const r = await ask(listener, {
+      type: 'ybshot', videoId: 'privabc1234', reason: 'title', visible: true,
+      rect: { x: 10, y: 20, w: 300, h: 170 }, scroll: { x: 0, y: 0 }, viewport: { w: 1280, h: 900 }
+    }, 2000, sender);
+    assert.strictEqual(r.value.ok, true);
+    assert.strictEqual(r.value.incognito, true);
+    assert.strictEqual(calls.downloads[0].incognito, true, 'privater Auto-Download');
+    const shot = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.ok(shot, 'lastShot für private Auto-Aufnahme gespeichert');
+    assert.strictEqual(shot.source, 'auto');
+    assert.strictEqual(shot.incognito, true);
+    assert.strictEqual(shot.videoId, 'privabc1234');
+    assert.strictEqual(shot.status, 'saved');
   }
 
   console.log('test-background-route: OK');

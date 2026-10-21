@@ -425,12 +425,30 @@
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
+  /* Letzten Aufnahmeversuch auch dann sichtbar machen, wenn das Bild gar nicht
+     erst an den Hintergrund geht (z. B. Karte außerhalb des Viewports). */
+  function reportShot(status, v, reason, extra) {
+    const payload = Object.assign({
+      at: Date.now(),
+      status,
+      ok: status === 'saved',
+      videoId: (v && v.videoId) || '',
+      reason: reason || '',
+      source: 'auto',
+      /* Auch ein übersprungener Versuch soll im Popup erkennen lassen, dass
+         er aus einem Privatfenster kam. */
+      incognito: !!(api.extension && api.extension.inIncognitoContext)
+    }, extra || {});
+    api.storage.local.set({ lastShot: payload }).catch(() => {});
+  }
+
   async function captureBeforeHide(v, reason) {
     const shots = window.YB.shots;
     const item = v.item;
     if (!shots || !item) return false;
     if (!(await waitForCardVisible(item, shots.WAIT_VISIBLE_MS))) {
       log('shot skipped (card not fully visible)', v.videoId || 'slot', '←', reason);
+      reportShot('skipped', v, reason, { error: 'nicht-sichtbar', visible: false });
       return false;
     }
     const r = item.getBoundingClientRect();
@@ -438,6 +456,7 @@
       type: 'ybshot',
       videoId: v.videoId || '',
       reason,
+      visible: true,
       rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
       scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
       viewport: { w: window.innerWidth, h: window.innerHeight }
@@ -448,8 +467,11 @@
         log('shot saved', res.file);
         return true;
       }
-      log('shot failed', v.videoId || 'slot', (res && res.error) || 'keine Antwort');
+      const error = (res && res.error) || 'keine Antwort';
+      reportShot('failed', v, reason, { error, visible: true });
+      log('shot failed', v.videoId || 'slot', error);
     } catch (e) {
+      reportShot('failed', v, reason, { error: e.message, visible: true });
       log('shot failed', v.videoId || 'slot', e.message);
     }
     return false;
@@ -845,6 +867,33 @@
     scanNow();
   }
 
+  /* Einstellungen können auch aus einem anderen Fenster (oder direkt über
+     storage) geändert werden. storage.onChanged hält den Content dann ohne
+     Neuladen aktuell — wichtig für „Screenshot vor dem Ausblenden“. */
+  let configReloadTimer = null;
+  function reloadConfigSoon(delay) {
+    if (configReloadTimer) clearTimeout(configReloadTimer);
+    configReloadTimer = setTimeout(() => {
+      configReloadTimer = null;
+      state.processed.clear();
+      state.shotShown = new WeakMap();
+      speechInitTried = false;
+      resetIO();
+      loadConfig().then(() => {
+        /* Wurde die Seite mit leerer Liste geöffnet, existiert noch kein
+           MutationObserver. Ohne startObservers würden nur die bereits
+           sichtbaren Karten geprüft und neue beim Scrollen nie erreicht. */
+        if (state.settings.enabled && hasDetectionTargets()) startObservers();
+        else scheduleScan();
+      }).catch(e => log('config reload failed', e.message));
+    }, delay == null ? 30 : delay);
+  }
+
+  api.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes.settings) return;
+    reloadConfigSoon();
+  });
+
   api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
     /* Lebenszeichen: Popup und Hintergrund erkennen damit Tabs, in denen nach
@@ -855,16 +904,7 @@
       return;
     }
     if (msg.type === 'config-changed') {
-      state.processed.clear();
-      speechInitTried = false;
-      resetIO();
-      loadConfig().then(() => {
-        /* Wurde die Seite mit leerer Liste geöffnet, existiert noch kein
-           MutationObserver. Ohne startObservers würden nur die bereits
-           sichtbaren Karten geprüft und neue beim Scrollen nie erreicht. */
-        if (state.settings.enabled && hasDetectionTargets()) startObservers();
-        else scheduleScan();
-      });
+      reloadConfigSoon(0);
     } else if (msg.type === 'rescan' || msg.type === 'dev-rescan') {
       state.processed.clear();
       resetIO();
@@ -886,6 +926,10 @@
       hideAiGenerated: state.settings.hideAiGenerated,
       hidePromoted: state.settings.hidePromoted,
       shotBeforeHide: state.settings.shotBeforeHide,
+      shotLibrary: !!(window.YB && window.YB.shots),
+      shotWaitVisibleMs: (window.YB && window.YB.shots && window.YB.shots.WAIT_VISIBLE_MS) || 0,
+      documentVisibility: document.visibilityState,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
       actionDelayMs: state.settings.actionDelayMs,
       checkTitle: state.settings.checkTitle,
       checkThumbOcr: state.settings.checkThumbOcr,

@@ -30,6 +30,7 @@ assert.strictEqual(s.fileName(d, 'abcdefghijk', 'channel:bar'), 'YouTube Blocker
 assert.strictEqual(s.fileName(d, 'abcdefghijk', 'semantic-image:baz'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_semantic.jpg');
 assert.strictEqual(s.fileName(d, 'abcdefghijk', 'ocr:x'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_ocr.jpg');
 assert.strictEqual(s.fileName(d, 'abcdefghijk', 'speech:y'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_speech.jpg');
+assert.strictEqual(s.fileName(d, 'test', 'test'), 'YouTube Blocker/2026-10-20/163015_test_test.jpg');
 assert.strictEqual(s.fileName(d, 'abcdefghijk', 'unknown'), 'YouTube Blocker/2026-10-20/163015_abcdefghijk_other.jpg');
 
 /* Fremde Zeichen (Pfadtrenner, Punkte, Leerzeichen) dürfen nicht in den Namen. */

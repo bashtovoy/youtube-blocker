@@ -25,7 +25,8 @@
     'semantic-image': 'semantic',
     semantic: 'semantic',
     ocr: 'ocr',
-    speech: 'speech'
+    speech: 'speech',
+    test: 'test'
   };
 
   function pad2(n) {
