@@ -250,6 +250,53 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     assert.strictEqual(stillPending.pendingId, 42);
   }
 
+  /* --- Popup schreibt selbst: ybshot-folder-note zieht nur den Status nach --- */
+  {
+    const folder = {
+      storeSupported: () => true,
+      saveOrQueue: async () => ({ ok: false, pending: true, reason: 'no-folder', id: 42 }),
+      flushPending: async () => ({ ok: false, reason: 'permission', saved: 0, failed: 0, pending: 1 })
+    };
+    const { calls, listener } = makeSandbox({
+      routes: {}, chromeMode: true, shotApis: true, folderStore: folder
+    });
+    await ask(listener, { type: 'ybshot-test', tabId: 7 });
+    const before = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(before.status, 'pending');
+    assert.strictEqual(before.pendingId, 42);
+    const r = await ask(listener, {
+      type: 'ybshot-folder-note', saved: 1, savedIds: [42],
+      lastSaved: 'YouTube Blocker/2026-10-21/frisch.jpg'
+    });
+    assert.strictEqual(r.value.ok, true, 'Statusmeldung des Popups wird bestätigt');
+    const after = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(after.status, 'saved');
+    assert.strictEqual(after.pending, false);
+    assert.strictEqual(after.pendingId, null);
+    assert.strictEqual(after.file, 'YouTube Blocker/2026-10-21/frisch.jpg');
+  }
+
+  /* --- ybshot-folder-note ohne passende Kennung lässt den Status stehen --- */
+  {
+    const folder = {
+      storeSupported: () => true,
+      saveOrQueue: async () => ({ ok: false, pending: true, reason: 'no-folder', id: 42 }),
+      flushPending: async () => ({ ok: true, saved: 0, failed: 0, pending: 1 })
+    };
+    const { calls, listener } = makeSandbox({
+      routes: {}, chromeMode: true, shotApis: true, folderStore: folder
+    });
+    await ask(listener, { type: 'ybshot-test', tabId: 7 });
+    const r = await ask(listener, {
+      type: 'ybshot-folder-note', saved: 1, savedIds: [7],
+      lastSaved: 'YouTube Blocker/2026-10-21/fremd.jpg'
+    });
+    assert.strictEqual(r.value.ok, true);
+    const shot = calls.storageSets.map(x => x.lastShot).filter(Boolean).pop();
+    assert.strictEqual(shot.status, 'pending', 'fremder Eintrag darf den Status nicht zu „saved“ machen');
+    assert.strictEqual(shot.pendingId, 42);
+  }
+
   /* --- Chrome ohne folder-store darf niemals auf downloads zurückfallen --- */
   {
     const { calls, listener } = makeSandbox({ routes: {}, chromeMode: true, shotApis: true });

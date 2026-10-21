@@ -337,9 +337,9 @@ function folderReason(reason) {
   return reason || t('unknown');
 }
 
-/* Status des Chrome-Screenshotordners. Die Wahl selbst läuft direkt im Popup
-   (Nutzergeste für showDirectoryPicker); nur das Nachschreiben wartender Bilder
-   übernimmt der Hintergrund. */
+/* Status des Chrome-Screenshotordners. Wahl, Freigabe und das Nachschreiben
+   wartender Bilder laufen direkt im Popup (Nutzergeste für showDirectoryPicker;
+   die Freigabe gilt in diesem Kontext). Der Hintergrund pflegt nur den Status. */
 async function renderFolderStatus(extra) {
   const box = $('shotsFolder');
   if (!box) return;
@@ -360,6 +360,8 @@ async function renderFolderStatus(extra) {
   const status = $('shotsFolderStatus');
   if (choose) choose.textContent = st.name ? t('folder_change') : t('folder_choose');
   if (grant) grant.hidden = !(st.name && st.permission !== 'granted');
+  const hint = $('shotsFolderHint');
+  if (hint) hint.hidden = !(st.name && st.permission !== 'granted');
 
   let text;
   if (!st.name) text = t('folder_none');
@@ -417,15 +419,46 @@ async function ensureFolderForTest() {
   return chooseShotFolder();
 }
 
+/* Wartende Bilder werden direkt im Popup nachgeschrieben: Nur hier gilt die
+   soeben erteilte Ordnerfreigabe sicher; der Service Worker sieht sie womöglich
+   nicht. Parallele Aufrufe (Klick und Auto-Nachschreiben beim Öffnen) laufen
+   über eine Kette, damit die Warteschlange nicht doppelt abgearbeitet wird. */
+let folderFlushChain = Promise.resolve();
+
+function queueLocalFlush(folder) {
+  const start = () => folder.flushPending();
+  const result = folderFlushChain.then(start, start);
+  folderFlushChain = result.catch(() => {});
+  return result;
+}
+
 async function flushShotFolder() {
+  const folder = folderApi();
   try {
-    const res = await api.runtime.sendMessage({ type: 'ybshot-folder-flush' });
+    let res;
+    if (folder) {
+      res = await queueLocalFlush(folder);
+      if (res && res.saved) {
+        /* Statuspflege des Hintergrunds nachziehen (lastShot/recordShot liegen dort). */
+        api.runtime.sendMessage({
+          type: 'ybshot-folder-note',
+          saved: res.saved,
+          savedIds: res.savedIds,
+          lastSaved: res.lastSaved
+        }).catch(() => { /* Status ist optional */ });
+      }
+    } else {
+      res = await api.runtime.sendMessage({ type: 'ybshot-folder-flush' });
+    }
     await renderFolderStatus();
     if (res && res.saved) status(t('folder_flushed', { n: res.saved }));
-    if (res && res.failed) status(t('folder_error', { msg: t('folder_reason_write') }), false);
+    else if (res && res.failed) status(t('folder_error', { msg: t('folder_reason_write') }), false);
+    else if (res && res.reason === 'permission') status(t('folder_flush_permission'), false);
+    else if (res && res.error) status(t('folder_error', { msg: String(res.error) }), false);
     return res;
   } catch (e) {
     await renderFolderStatus();
+    status(t('folder_error', { msg: String((e && e.message) || e) }), false);
     return null;
   }
 }

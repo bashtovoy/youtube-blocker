@@ -386,9 +386,32 @@ async function doTestShot(msg) {
 
 let folderFlushChain = Promise.resolve();
 
-/* Nach der Ordnerfreigabe im Popup werden vorgemerkte Bilder nachgeschrieben.
-   Der letzte „pending“-Status wird danach auf „saved“ gesetzt, damit das Popup
-   nicht dauerhaft auf eine erledigte Freigabe wartet. */
+/* Nach einer Ordnerfreigabe werden vorgemerkte Bilder nachgeschrieben. Der letzte
+   „pending“-Status wird danach auf „saved“ gesetzt, damit das Popup nicht
+   dauerhaft auf eine erledigte Freigabe wartet. In Chrome schreibt das Popup die
+   Warteschlange direkt im eigenen Kontext (dort gilt die soeben erteilte
+   Freigabe) und meldet das Ergebnis über ybshot-folder-note; die Statuspflege
+   bleibt so an einer Stelle. */
+async function noteFolderFlush(res) {
+  if (!res || !res.saved) return;
+  try {
+    const data = await api.storage.local.get('lastShot');
+    const last = data && data.lastShot;
+    const lastWasSaved = !last || last.pendingId == null ||
+      (Array.isArray(res.savedIds) && res.savedIds.indexOf(last.pendingId) >= 0);
+    if (last && last.pending && lastWasSaved) {
+      await recordShot('saved', Object.assign({}, last, {
+        status: 'saved',
+        ok: true,
+        file: res.lastSaved || last.file,
+        error: null,
+        pending: false,
+        pendingId: null
+      }));
+    }
+  } catch (e) { /* Status ist optional */ }
+}
+
 function flushPendingShots() {
   const folder = folderStore();
   if (!folder) return Promise.resolve({ ok: false, error: 'folder-unsupported', saved: 0, pending: 0 });
@@ -396,24 +419,7 @@ function flushPendingShots() {
   const result = folderFlushChain.then(start, start);
   folderFlushChain = result.catch(() => {});
   return result.then(async res => {
-    if (res && res.saved > 0) {
-      try {
-        const data = await api.storage.local.get('lastShot');
-        const last = data && data.lastShot;
-        const lastWasSaved = !last || last.pendingId == null ||
-          (Array.isArray(res.savedIds) && res.savedIds.indexOf(last.pendingId) >= 0);
-        if (last && last.pending && lastWasSaved) {
-          await recordShot('saved', Object.assign({}, last, {
-            status: 'saved',
-            ok: true,
-            file: res.lastSaved || last.file,
-            error: null,
-            pending: false,
-            pendingId: null
-          }));
-        }
-      } catch (e) { /* Status ist optional */ }
-    }
+    await noteFolderFlush(res);
     return res;
   });
 }
@@ -496,6 +502,13 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     flushPendingShots()
       .then(sendResponse)
       .catch(e => sendResponse({ ok: false, error: String((e && e.message) || e), saved: 0, pending: 0 }));
+    return true;
+  } else if (msg.type === 'ybshot-folder-note') {
+    /* Das Popup hat die Warteschlange selbst geschrieben (in Chrome gilt die
+       Ordnerfreigabe dort) — hier nur den letzten Status nachziehen. */
+    noteFolderFlush(msg)
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   } else if (msg.type === 'ybshot' || msg.type === 'ybshot-test') {
     /* Antwort erst nach Aufnahme und Download-Start; der Content wartet mit dem

@@ -53,6 +53,9 @@ Der Firefox-Weg (Hintergrundseite) bleibt unverändert; `build-chrome.js` erzeug
 MV3-Manifest aus dem Firefox-Manifest, damit beide Pakete aus einem Quellbaum kommen.
 Kontrollbilder schreibt Chrome über die File System Access API in einen einmal
 gewählten Ordner; der native „Speichern unter“-Dialog wird dadurch vermieden.
+Chrome schützt diese Freigabe und kann sie nach einem Neustart erneut abfragen —
+im Dialog „Bei jedem Besuch erlauben“ wählen, dann bleibt der Zugang erhalten;
+wartende Bilder schreibt das Popup direkt nach der Bestätigung nach.
 Mindestversion: Chrome 116.
 
 ## Verwendung
@@ -163,19 +166,24 @@ Erweiterung verwendet deshalb in Chrome die File System Access API:
 - Im Popup einmal **„Ordner wählen…“** anklicken und einen Ordner freigeben.
   Der Verzeichnis-Handle wird lokal in IndexedDB gespeichert; es wird nichts
   hochgeladen oder an einen Server geschickt.
-- Fehlt der Ordner oder wurde die Freigabe nach einem Browserneustart noch nicht
-  bestätigt, wird das Bild als Blob in einer lokalen Warteschlange vorgemerkt.
-  Die Karte wird trotzdem ausgeblendet. Nach **„Zugriff erneuern“** schreibt die
-  Erweiterung die wartenden Bilder nach.
+- Chrome schützt den Ordnerzugriff und kann ihn nach einem Browserneustart
+  erneut abfragen. Im Dialog **„Bei jedem Besuch erlauben“** wählen — dann bleibt
+  der Zugang dauerhaft erhalten.
+- Fehlt der Ordner oder wurde die Freigabe noch nicht bestätigt, wird das Bild
+  als Blob in einer lokalen Warteschlange vorgemerkt. Die Karte wird trotzdem
+  ausgeblendet. Nach **„Zugriff erneuern“** schreibt das Popup die wartenden
+  Bilder direkt im eigenen Fenster in den Ordner und meldet, wie viele ankamen;
+  der Status springt dabei von „wartet“ auf „gespeichert“.
 - Ein Download-Fallback gibt es in Chrome nicht. Ohne Ordnerfreigabe entsteht
   kein Systemdialog und keine Datei außerhalb des gewählten Ordners.
 - Die Dateinamen selbst bleiben identisch; vorhandene Namen werden mit `_1`, `_2`, …
   ergänzt. Die maximal 100 wartenden Bilder liegen nur lokal und werden beim
   Nachschreiben aus der Warteschlange entfernt.
 
-- Gründe im Dateinamen: `ai`, `members`, `promo`, `title`, `channel`,
-  `semantic`, `ocr`, `speech`, `test`; Werbeplätze ohne Video-Kennung erscheinen
-  als `slot`.
+- Gründe im Dateinamen (seit 1.5.19 vollständig ausgeschrieben): `ai-generated`,
+  `members-only`, `promo`, `test` sowie mit Suchbegriff `title_<begriff>`,
+  `channel_<begriff>`, `semantic-image_<begriff>`, `ocr_<begriff>`,
+  `speech_<begriff>`. Werbeplätze ohne Video-Kennung tragen als Kennung `slot`.
 - JPEG-Qualität 30: Firefox speichert 1 CSS-Pixel je Bildpunkt, Chrome
   verkleinert auf höchstens 480 Pixel Breite — je nach Karte etwa 3–25 KB.
 - Das Bild entsteht **vor** der Aktion — auch vor dem Klick auf „Kein

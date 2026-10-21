@@ -138,7 +138,7 @@ async function main() {
       }
       throw new Error('Zeitüberschreitung: ' + expression);
     };
-    await waitFor('document.readyState === "complete" && !!self.YB?.folder && !!self.YB?.i18n', sid);
+    await waitFor('document.readyState === "complete" && !!self.YB?.folder && !!self.YB?.i18n', sid, 25000);
     await waitFor('document.readyState === "complete" && document.body && document.body.textContent.includes("Chrome screenshot E2E")', pageSid);
 
     const basic = await evaluate(`(async () => ({
@@ -268,6 +268,55 @@ async function main() {
     const pendingLast = await evaluate(`(async () => (await chrome.storage.local.get('lastShot')).lastShot)()`);
     if (!pendingLast || pendingLast.status !== 'pending' || !pendingLast.pending || pendingLast.pendingId == null) {
       throw new Error('lastShot ohne Ordner nicht pending: ' + JSON.stringify(pendingLast));
+    }
+
+    /* Popup schreibt selbst (neuer Weg): Ordner erneut setzen und die
+       Warteschlange im Fensterkontext des Popups flushen — genau dort gilt die
+       Ordnerfreigabe. Der Hintergrund pflegt danach nur den lastShot-Status
+       (ybshot-folder-note). */
+    await evaluate(`(async () => {
+      const root = await navigator.storage.getDirectory();
+      const sub = await root.getDirectoryHandle('E2E Shots', { create: true });
+      const db = await new Promise((res, rej) => {
+        const r = indexedDB.open('youtube-blocker-shots', 1);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+      await new Promise((res, rej) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(sub, 'shotsDir');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      return true;
+    })()`);
+    const localFlush = await evaluate(`flushShotFolder()`);
+    if (!localFlush || !localFlush.saved || localFlush.failed || localFlush.pending !== 0) {
+      throw new Error('Popup-Nachschreiben fehlgeschlagen: ' + JSON.stringify(localFlush));
+    }
+    await waitFor(`(async () => ((await chrome.storage.local.get('lastShot')).lastShot || {}).status === 'saved')()`);
+    const localLast = await evaluate(`(async () => (await chrome.storage.local.get('lastShot')).lastShot)()`);
+    if (!localLast || localLast.status !== 'saved' || localLast.pending) {
+      throw new Error('lastShot nach Popup-Nachschreiben nicht gespeichert: ' + JSON.stringify(localLast));
+    }
+    const localFile = await evaluate(`(async () => {
+      const root = await navigator.storage.getDirectory();
+      const base = await root.getDirectoryHandle('E2E Shots');
+      const wanted = ${JSON.stringify(pendingShot.file)};
+      const dot = wanted.lastIndexOf('.');
+      const candidates = dot > 0 ? [wanted, wanted.slice(0, dot) + '_1' + wanted.slice(dot)] : [wanted];
+      const files = [];
+      const walk = async (dir, prefix) => {
+        for await (const [name, handle] of dir.entries()) {
+          if (handle.kind === 'directory') await walk(handle, prefix + name + '/');
+          else files.push({ path: prefix + name, size: (await handle.getFile()).size });
+        }
+      };
+      await walk(base, '');
+      return files.find(f => candidates.indexOf(f.path) >= 0 && f.size > 0) || null;
+    })()`);
+    if (!localFile) {
+      throw new Error('Vom Popup geschriebene Datei fehlt: ' + JSON.stringify({ wanted: pendingShot.file, localFile }));
     }
 
     console.log('e2e-chrome-fsa: OK');

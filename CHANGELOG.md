@@ -3,6 +3,34 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.20] — 2026-10-21
+
+### Behoben
+- **Chrome: „Zugriff erneuern“ schreibt wartende Bilder jetzt wirklich.**
+  Die Ordnerfreigabe erteilt der Nutzer im Popup, geschrieben wurde die
+  Warteschlange aber vom Service Worker — der dieselbe Freigabe nicht zwingend
+  sieht. Der Klick schien deshalb zu wirken, „Wartend: N“ blieb stehen, und
+  beim nächsten Öffnen verlangte der Ordnerstatus erneut eine Bestätigung. Das
+  Popup schreibt die Warteschlange jetzt direkt im eigenen Kontext (dort gilt
+  die soeben erteilte Freigabe); der Hintergrund zieht über die neue Meldung
+  `ybshot-folder-note` nur noch den `lastShot`-Status nach.
+- **Fehlgeschlagenes Nachschreiben war stumm.** Fehlender Zugriff oder ein
+  Schreibfehler beim Nachschreiben werden im Popup jetzt sichtbar gemeldet,
+  statt den wartenden Bestand unverändert zu lassen.
+
+### Geändert
+- **Popup erklärt die Chrome-Freigabe.** Solange der Ordnerzugriff bestätigt
+  werden muss, steht unter dem Ordnerstatus ein Hinweis, im Chrome-Dialog
+  „Bei jedem Besuch erlauben“ zu wählen — Chrome schützt den Ordnerzugriff und
+  fragt nach einem Neustart sonst erneut. Die wartenden Bilder werden
+  unmittelbar nach der Bestätigung geschrieben.
+
+### Tests
+- `test-background-route` prüft die Statusmeldung `ybshot-folder-note`
+  (passende Kennung → `saved`, fremde Kennung → unverändert).
+- `e2e-chrome-fsa` schreibt die Warteschlange zusätzlich aus dem
+  Popup-Fensterkontext nach und prüft, dass Datei und `lastShot` ankommen.
+
 ## [1.5.19] — 2026-10-21
 
 ### Geändert
