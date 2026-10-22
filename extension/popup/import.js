@@ -68,7 +68,10 @@ $('file').onchange = async (e) => {
     const settings = Object.assign({}, existing.settings || {},
       (data && typeof data === 'object' && data.settings) ? data.settings : {});
     if (!i18n.normalize(settings.uiLang)) settings.uiLang = i18n.current;   /* gewählte Oberflächensprache behalten */
-    settings.allowAll = YB.matcher.normalizeAllowAll(settings.allowAll);
+    /* 1.6.0 hat Fuzzy und die globale Freigabeliste entfernt; alte Exporte
+       bleiben lesbar, die früheren Felder werden nicht weiter gespeichert. */
+    delete settings.allowAll;
+    delete settings.fuzzy;
     /* Leere Zahlfelder aus alten Exporten auf gültige Defaults heben. */
     for (const [key, fallback] of Object.entries({
       actionDelayMs: 2500, semanticMargin: 0.03, hashThreshold: 8, speechMaxSeconds: 120

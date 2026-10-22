@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Youtube Blocker",
-  "version": "1.5.23",
+  "version": "1.6.0",
   "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal und an der semantischen Übereinstimmung deiner Liste mit dem Inhalt des Vorschaubilds (lokales SigLIP, OCR) und sendet das Signal „Kein Interesse“.",
   "icons": {
     "48": "icons/icon48.png",

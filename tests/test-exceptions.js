@@ -1,4 +1,4 @@
-/* test-exceptions.js — Freigaben pro Schlüsselwort und global.
+/* test-exceptions.js — Freigaben pro Schlüsselwort.
    Reine Logik aus matcher.js + semantischer Margin-Entscheidung, kein Browser. */
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const path = require('path');
@@ -17,8 +17,6 @@ const sem = sandbox.window.YB.semantic;
 /* ---- Normalisierung der Listen ---- */
 assert.deepStrictEqual([...m.normalizeExceptions('теннис, пинг-понг')], ['теннис', 'пинг-понг']);
 assert.deepStrictEqual([...m.normalizeExceptions([' Теннис ', 'теннис', ''])], ['Теннис']);
-assert.deepStrictEqual([...m.normalizeAllowAll('No Tesla\nNo, thanks')], ['No Tesla', 'No, thanks']);
-assert.deepStrictEqual([...m.normalizeAllowAll(['No Tesla', 'no tesla'])], ['No Tesla']);
 assert.deepStrictEqual([...m.exceptionsOf({ text: 'Робот', exceptions: ['теннис'] })], ['теннис']);
 assert.deepStrictEqual([...m.exceptionsOf('Робот')], []);
 
@@ -47,17 +45,17 @@ assert.strictEqual(m.firstException('No Tesla: warum', ['No Tesla']), 'No Tesla'
 /* Dieselbe Phrase nur beim Wort Tesla: hebt Tesla auf, aber nicht Робот. */
 const teslaOnly = [{ text: 'Tesla', exceptions: ['No Tesla'] }];
 assert.strictEqual(m.matchEntries('No Tesla: warum', teslaOnly, {
-  contextText: 'No Tesla: warum', fuzzy: true
+  contextText: 'No Tesla: warum'
 }), null);
 assert.strictEqual(m.matchEntries('Tesla Model 3', teslaOnly, {
-  contextText: 'Tesla Model 3', fuzzy: true
+  contextText: 'Tesla Model 3'
 }).text, 'Tesla');
 const teslaAndRobot = [
   { text: 'Tesla', exceptions: ['No Tesla'] },
   { text: 'Робот', exceptions: [] }
 ];
 const scopeHit = m.matchEntries('No Tesla и робот', teslaAndRobot, {
-  contextText: 'No Tesla и робот', fuzzy: true
+  contextText: 'No Tesla и робот'
 });
 assert.ok(scopeHit);
 assert.strictEqual(scopeHit.text, 'Робот');
@@ -68,15 +66,15 @@ const entries = [
   { text: 'Дрон', exceptions: [] }
 ];
 let hit = m.matchEntries('Робот-теннисист и дрон', entries, {
-  contextText: 'Робот-теннисист и дрон', fuzzy: true
+  contextText: 'Робот-теннисист и дрон'
 });
 assert.ok(hit, 'Дрон muss trotz freigegebenem Робот treffen');
 assert.strictEqual(hit.text, 'Дрон');
 assert.strictEqual(m.matchEntries('Робот-теннисист', entries, {
-  contextText: 'Робот-теннисист', fuzzy: true
+  contextText: 'Робот-теннисист'
 }), null);
 hit = m.matchEntries('Робот-пылесос', entries, {
-  contextText: 'Робот-пылесос', fuzzy: true
+  contextText: 'Робот-пылесос'
 });
 assert.strictEqual(hit.text, 'Робот');
 

@@ -9,6 +9,7 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'extension', 'ai-channel.js'), 'utf8'), sandbox);
 const a = sandbox.YB && sandbox.YB.aiChannel;
 assert.ok(a, 'ai-channel.js muss YB.aiChannel exportieren');
+assert.deepStrictEqual([...a.MODES], ['off', 'badge', 'dim'], 'kein lokales Ausblenden mehr');
 
 const V1 = 'aaaaaaaaaaa';
 const V2 = 'bbbbbbbbbbb';
@@ -73,7 +74,7 @@ assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode
 assert.strictEqual(a.decision(store, ref, { hideAiGenerated: false, aiChannelMode: 'badge' }, {}, V1, 2000), 'off');
 assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'badge' }, {}, V1, 2000), 'badge');
 assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'dim' }, {}, V1, 2000), 'dim');
-assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'hide' }, {}, V1, 2000), 'hide');
+assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'hide' }, {}, V1, 2000), 'off', 'entfernter Modus fällt auf aus zurück');
 assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'foo' }, {}, V1, 2000), 'off');
 assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'badge' }, { allowVideos: { [V1]: 1 } }, V1, 2000), 'off');
 assert.strictEqual(a.decision(store, ref, { hideAiGenerated: true, aiChannelMode: 'badge' }, { allowChannels: { [UC]: 1 } }, V1, 2000), 'off');

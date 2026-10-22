@@ -298,8 +298,9 @@ existiert.
 
 ## Nachtrag 10/2026 — Freigaben (Ausnahmen)
 
-Die Wortliste kann pro Eintrag Ausnahmen tragen (`exceptions`), zusätzlich gibt
-es globale Freigaben (`settings.allowAll`). Die Entscheidung lautet:
+Die Wortliste kann pro Eintrag Ausnahmen tragen (`exceptions`). Eine globale
+Freigabeliste (`settings.allowAll`) gibt es seit 1.6.0 nicht mehr. Die
+Entscheidung lautet:
 
 ```
 blockieren = Keyword im Kanal gefunden UND keine Ausnahme im Kontext
@@ -316,24 +317,26 @@ Kontext je Kanal:
   Treffer eines anderen Konzepts verdrängen.
 
 Der Matcher liefert den ersten Treffer, dessen Ausnahme **nicht** zutrifft —
-nicht einfach den ersten Treffer. Eine Ausnahme gilt nur für ihr Schlüsselwort.
-Globale Freigaben werden im Content vor dem Titelabgleich geprüft und heben
-alle Worttreffer dieser Karte auf; Badges und Werbekarten bleiben unabhängig.
+nicht einfach den ersten Treffer. Eine Ausnahme gilt nur für ihr Schlüsselwort;
+andere Wörter der Liste treffen weiterhin. Badges und Werbekarten bleiben
+unabhängig.
 
 Beispiele:
 
 ```
 Робот => теннис, настольный теннис, пинг-понг, tennis, теніс
 Tesla => No Tesla
-No Tesla        (global)
 ```
 
 Matching: Groß-/Kleinschreibung, ё/е, Bindestriche und Satzzeichen werden
-normalisiert. Kurze Begriffe (unter 4 Zeichen) treffen nur ein ganzes Wort;
-längere auch Wortstämme (`теннис` → `теннисист`, `tennis` → `tennisplayer`).
-Phrasen werden als Wortfolge verglichen, das letzte Wort darf ein Stamm sein
-(`No Tesla` → `No Teslas`). Die Prüfung ist wörtlich: „No Tesla? Tesla ist
-toll“ wird ebenfalls freigegeben.
+normalisiert. Der Treffer ist danach exakt; es gibt keine Tippfehler-, Stamm-
+oder Mehrzahl-Toleranz. Varianten müssen ausdrücklich in der Liste stehen
+(`Drohne`/`drone`, `Tesla`/`Teslas`, `машина`/`машины`). Ausnahmen vergleichen
+kurze Begriffe (unter 4 Zeichen) nur als ganzes Wort; längere auch Wortstämme
+(`теннис` → `теннисист`, `tennis` → `tennisplayer`). Phrasen werden als
+Wortfolge verglichen, das letzte Wort darf ein Stamm sein (`No Tesla` →
+`No Teslas`).
 
-Abwärtskompatibilität: `exceptions` und `allowAll` sind optional; alte
-JSON-Listen ohne diese Felder bleiben gültig.
+Abwärtskompatibilität: `exceptions` ist optional; alte JSON-Listen ohne dieses
+Feld bleiben gültig. Das frühere Feld `allowAll` wird beim Import verworfen und
+im Content nicht mehr ausgewertet.

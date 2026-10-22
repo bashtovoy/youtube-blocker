@@ -8,7 +8,7 @@ const t = (key, vars) => i18n.t(key, vars);
 console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide', 'fuzzy'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
 const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode'];
@@ -24,7 +24,6 @@ const DEFAULT_SETTINGS = {
   aiChannelMode: 'off',
   hidePromoted: true,
   shotBeforeHide: false,
-  fuzzy: true,
   mode: 'dismiss',
   ocrLangs: 'eng+rus',
   hashThreshold: 8,
@@ -32,8 +31,7 @@ const DEFAULT_SETTINGS = {
   actionDelayMs: 2500,
   speechLang: 'ru',
   speechModel: 'models/ggml-base.bin',
-  speechMaxSeconds: 120,
-  allowAll: []
+  speechMaxSeconds: 120
 };
 
 /* Importe aus älteren Versionen können Zahlfelder als leeren String enthalten.
@@ -135,7 +133,6 @@ function renderStats() {
   setStat('statMembersOnly', on('hideMembersOnly') ? 'ok' : 'off', on('hideMembersOnly') ? 'stat_ok' : 'stat_off');
   setStat('statAi', on('hideAiGenerated') ? 'ok' : 'off', on('hideAiGenerated') ? 'stat_ok' : 'stat_off');
   setStat('statPromoted', on('hidePromoted') ? 'ok' : 'off', on('hidePromoted') ? 'stat_ok' : 'stat_off');
-  setStat('statFuzzy', on('fuzzy') ? 'ok' : 'off', on('fuzzy') ? 'stat_ok' : 'stat_off');
 
   /* Semantik: Live-Status des Hosts (Modelle bereit / laden / Fehler).
      „off“ mit lastUsedAt = Worker wurde nach Leerlauf bewusst beendet;
@@ -679,7 +676,7 @@ function parseKeywordLines(text) {
   }).filter(Boolean);
 }
 
-const AI_CHANNEL_MODES = ['off', 'badge', 'dim', 'hide'];
+const AI_CHANNEL_MODES = ['off', 'badge', 'dim'];
 
 function syncAiChannelUi() {
   const on = $('hideAiGenerated') && $('hideAiGenerated').checked;
@@ -699,10 +696,8 @@ async function load() {
   s.semanticMargin = numberOr(s.semanticMargin, DEFAULT_SETTINGS.semanticMargin);
   s.hashThreshold = numberOr(s.hashThreshold, DEFAULT_SETTINGS.hashThreshold);
   if (!AI_CHANNEL_MODES.includes(s.aiChannelMode)) s.aiChannelMode = DEFAULT_SETTINGS.aiChannelMode;
-  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
+  SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage'); });
   VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
-  s.allowAll = YB.matcher.normalizeAllowAll(s.allowAll);
-  if ($('allowAll')) $('allowAll').value = s.allowAll.join('\n');
   keywords = normalizeKeywords(data.keywords);
   counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
   lastSemStatus = data.semStatus;
@@ -855,7 +850,6 @@ async function persist() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
-  settings.allowAll = YB.matcher.normalizeAllowAll($('allowAll') ? $('allowAll').value : []);
   settings.aiChannelMode = AI_CHANNEL_MODES.includes(settings.aiChannelMode)
     ? settings.aiChannelMode
     : DEFAULT_SETTINGS.aiChannelMode;
@@ -1014,9 +1008,6 @@ VALUE_IDS.forEach(id => {
   });
 });
 if ($('hideAiGenerated')) $('hideAiGenerated').addEventListener('change', syncAiChannelUi);
-if ($('allowAll')) {
-  $('allowAll').addEventListener('input', () => schedulePersist(700));
-}
 
 /* Sprachwechsel: Oberfläche sofort umstellen und die Wahl speichern */
 $('uiLang').addEventListener('change', () => {
@@ -1031,7 +1022,15 @@ $('ocrPrepare').onclick = () => prepareOcr();
 
 $('export').onclick = async () => {
   const data = await api.storage.local.get(['settings', 'keywords']);
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const settings = Object.assign({}, data.settings || {});
+  /* Entfernte Felder nicht in neue Exporte weiterschleppen. */
+  delete settings.allowAll;
+  delete settings.fuzzy;
+  if (!AI_CHANNEL_MODES.includes(settings.aiChannelMode)) {
+    settings.aiChannelMode = DEFAULT_SETTINGS.aiChannelMode;
+  }
+  const out = { settings, keywords: data.keywords || [] };
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'youtube-blocker-list.json';

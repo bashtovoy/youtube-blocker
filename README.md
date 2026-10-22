@@ -8,7 +8,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
-| Videotitel | Unscharfer Token-Abgleich (Fälle, Tippfehler, Stämme/Mehrzahlformen) mit der Schlüsselwortliste | nein |
+| Videotitel | Exakter Token-Abgleich mit der Schlüsselwortliste (Fälle, ё/е, Bindestriche und Satzzeichen normalisiert; Wortvarianten explizit eintragen) | nein |
 | Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, weißer Rand gegen Leptonica-Boxfehler, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung; `debug_file=/dev/null` hält Tesseract-Diagnosen aus dem Erweiterungsprotokoll | `ocr-host.js` + `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
@@ -68,8 +68,7 @@ Bestätigung nach. Mindestversion: Chrome 116.
    gesucht (lokales SigLIP). Über die Route je Begriff (Auto/Titel/OCR/Bild/
    Hybrid, siehe unten) lässt sich der Kanal einschränken. **OCR** lässt sich
    für Text im Vorschaubild zusätzlich einschalten. Unter jedem Begriff können
-   **Ausnahmen** eingetragen werden; darunter steht die **globale Freigabe**
-   (siehe „Ausnahmen und globale Freigaben“).
+   **Ausnahmen** eingetragen werden (siehe „Ausnahmen je Schlüsselwort“).
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
 4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv und nutzt ausschließlich
@@ -97,14 +96,14 @@ Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 
 ## Kanäle mit wiederholter KI-Kennzeichnung (ab 1.5.23)
 
-Unter **„Was geprüft wird“** gibt es zusätzlich den Modus **„Kanäle mit
-wiederholter KI-Kennzeichnung“**. Er ist standardmäßig **aus**.
+Unter **„Was geprüft wird“** gibt es zusätzlich den Modus **„Kanäle mit 2+
+offiziellen KI-Kennzeichnungen“**. Er ist standardmäßig **aus**.
 
 Ist er aktiv, zählt die Erweiterung lokal, bei wie vielen **verschiedenen**
 Videos eines Kanals YouTube die offizielle KI-Kennzeichnung angezeigt hat.
 Ab **zwei Videos innerhalb von 180 Tagen** gilt der Kanal als auffällig;
-weitere Karten dieses Kanals werden dann je nach Modus markiert, abgedunkelt
-oder lokal ausgeblendet. Ein und dasselbe Video zählt nur einmal.
+weitere Karten dieses Kanals werden dann je nach Modus markiert oder
+abgedunkelt. Ein und dasselbe Video zählt nur einmal.
 
 Wichtig:
 
@@ -119,10 +118,11 @@ Wichtig:
 - Die Kanalerkennung nutzt `/channel/UC…`, `@handle`, `/c/…` oder `/user/…`.
   Wechselt YouTube zwischen diesen Formen, kann derselbe Kanal vorübergehend
   als zwei Einträge gezählt werden; der Zähler bleibt dann konservativ.
-- „Ausblenden“ ist eine lokale Ausblendung ohne „Kein Interesse“-Klick. Bei
-  Bedarf kann der Modus jederzeit auf **Aus** zurückgestellt werden.
+- Der Modus **„Ausblenden“** wurde in 1.6.0 bewusst entfernt. Bis eine
+  Rücknahme-/Freigabeliste existiert, sind nur **Aus**, **Nur markieren** und
+  **Abdunkeln** verfügbar.
 
-## Ausnahmen und globale Freigaben (ab 1.5.13)
+## Ausnahmen je Schlüsselwort (ab 1.5.13)
 
 Jedes Wort kann eigene Ausnahmen tragen. Im Popup steht unter dem Wort das Feld
 **„Ausnahmen“**; in der Massenbearbeitung lautet das Format:
@@ -135,37 +135,28 @@ Eine Ausnahme hebt nur dieses eine Wort auf. Andere Wörter der Liste treffen
 weiterhin. Beispiel: „Робот-теннисист“ wird nicht wegen `Roboter` ausgeblendet;
 ein Video, das zusätzlich `news` trifft, bleibt blockiert.
 
-Zusätzlich gibt es die **globale Freigabe** („Global freigeben“ / „Разрешать
-всё“). Eine Phrase pro Zeile, zum Beispiel:
-
-```
-No Tesla
-```
-
-Enthält Titel oder Kanal diese Phrase, wird die Karte durch kein Schlüsselwort
-ausgeblendet — auch dann nicht, wenn sie weitere Wörter trifft. Normale
-Tesla-Videos ohne „No Tesla“ bleiben blockiert. Dieselbe Phrase kann auch nur
-beim Wort `Tesla` als Ausnahme eingetragen werden; dann gilt sie ausschließlich
-für Tesla.
+Eine globale Freigabeliste („Global freigeben“ / „Разрешать всё“) gibt es seit
+**1.6.0 nicht mehr**. Alte `allowAll`-Werte in Exporten oder im Speicher sind
+harmlos und werden ignoriert.
 
 Matching: Groß-/Kleinschreibung, ё/е, Bindestriche und Satzzeichen werden
-normalisiert. Kurze Begriffe (unter 4 Zeichen) treffen nur ein ganzes Wort;
+normalisiert. Der Treffer ist danach **exakt**: keine Tippfehler-, Stamm- oder
+Mehrzahl-Toleranz. Varianten müssen ausdrücklich in der Liste stehen, z. B.
+`Drohne` und `drone`, `Tesla` und `Teslas`, `машина` und `машины`.
+Ausnahmen vergleichen kurze Begriffe (unter 4 Zeichen) nur als ganzes Wort;
 längere auch Wortstämme (`теннис` → `теннисист`, `tennis` → `tennisplayer`).
 Phrasen werden als Wortfolge verglichen, das letzte Wort darf ein Stamm sein
 (`No Tesla` → `No Teslas`).
 
 Grenzen:
 
-- „No Tesla“ ist eine literale Phrase. „No Tesla? Tesla ist toll“ wird ebenfalls
-  freigegeben. Eine semantische Anti-Tesla-Erkennung ist nicht enthalten.
-- Die globale Freigabe wird gegen Titel und Kanal geprüft. Steht die Phrase nur
-  im OCR-Text oder Transkript, greift sie in v1 nicht.
-- KI-, Mitglieder- und Werbebadges werden durch Freigaben nicht aufgehoben.
+- Ausnahmen gelten nur für ihr eigenes Schlüsselwort.
+- KI-, Mitglieder- und Werbebadges werden durch Ausnahmen nicht aufgehoben.
 - Bei einem semantischen Bildtreffer werden freigegebene Konzepte aus der
   Margin-Berechnung entfernt; ein anderes aktives Konzept kann weiterhin
   treffen. OCR und Sprache prüfen die Ausnahmen im jeweiligen Text mit.
-- Alte JSON-Listen ohne `exceptions`/`allowAll` funktionieren unverändert; der
-  Export enthält beide Felder ab 1.5.13.
+- Alte JSON-Listen ohne `exceptions` funktionieren unverändert; das frühere
+  Feld `allowAll` wird beim Import verworfen.
 
 ## Kontrollbilder vor dem Ausblenden (ab 1.5.12)
 
@@ -258,10 +249,6 @@ Erweiterung verwendet deshalb in Chrome die File System Access API:
 
 - `dHash/pHash-Schwelle` — Hamming-Distanz. Kleiner = strenger.
   Für Kopien derselben Vorschaubilder reichen 4–8.
-- `Unscharfer Vergleich` — bei kurzen Wörtern (5–6 Zeichen) nur Stamm/Endung,
-  keine beliebigen Ersetzungen. Das verhindert z. B. `root` → `robot`,
-  `drove` → `drone` und `off-roader` → `roadster`; `Drohne` → `drone`,
-  `Teslas` → `Tesla` und `машины` → `машин` bleiben möglich.
 - `Margin-Schwelle (Semantik)` — kontrastive Margin im Kosinus-Raum
   (Ziel-Kosinus − bester Kosinus der übrigen Konzepte), 0–1. Höher = strenger.
   Default **0.03**, kalibriert 10/2026 an Kontrollbildern (q8): echte Treffer
@@ -394,7 +381,7 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
 extension/
   manifest.json   — MV2, content_scripts auf *.youtube.com
   content.js      — Orchestrator: DOM-Scan → Erkennung → Aktion
-  matcher.js      — unscharfer Abgleich von Schlüsselwörtern
+  matcher.js      — exakter Abgleich von Schlüsselwörtern und Ausnahmen
   promo-rules.js  — Datenregeln für Werbekarten (Muster, Gewichte, Schwelle)
   promo.js        — mehrstufige Werbekarten-Erkennung + Diagnose-Fingerabdruck
   image.js        — visuelle Deskriptoren (legacy; Referenzfotos nicht mehr nötig)
@@ -436,7 +423,7 @@ extension/
 ```bash
 node --check extension/*.js      # Syntax
 node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erkennung (Members/KI)
-node tests/test-exceptions.js    # Freigaben pro Wort und global (No Tesla), Semantik-Filter
+node tests/test-exceptions.js    # Ausnahmen pro Wort, Semantik-Filter
 node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele, Diagnose
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
@@ -449,6 +436,7 @@ node tests/test-shots.js         # Kontrollbilder: Dateiname mit vollständigem 
 node tests/e2e-chrome-fsa.js     # echter Chrome: OPFS-Handle, Service-Worker-Schreiben, captureVisibleTab
 node tests/e2e-chrome-ocr.js     # echter Chrome: Offscreen-OCR, WASM-Zwang, leere Konsole (Rand/debug_file)
 node tests/test-ai.js            # KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
+node tests/test-ai-channel.js    # Kanalzähler: zwei Videos/180 Tage, Markier-/Dim-Modi, Freigaben
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
 node tests/test-sem-gpu-fallback.js # Gerätewahl: Chrome ohne WebGPU-Anfrage, Firefox mit versionsgebundenem Fallback
 node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen

@@ -16,14 +16,13 @@
   const DEFAULTS = {
     enabled: true,
     mode: 'dismiss',
-    fuzzy: true,
     checkTitle: true,
     checkThumbOcr: false,
     checkSemanticImage: true,
     checkSpeech: false,
     hideMembersOnly: false,
     hideAiGenerated: true,
-    /* Kanalweite KI-Heuristik: standardmäßig aus, damit 1.5.22 unverändert bleibt. */
+    /* Kanalweite KI-Markierung: standardmäßig aus, nur auf Basis offizieller Befunde. */
     aiChannelMode: 'off',
     hidePromoted: true,
     shotBeforeHide: false,
@@ -36,8 +35,7 @@
     speechModel: 'models/ggml-base.bin',
     speechMaxSeconds: 120,
     actionDelayMs: 2500,
-    logMatch: true,
-    allowAll: []
+    logMatch: true
   };
 
   const state = {
@@ -73,8 +71,6 @@
     aiChannels: {},             /* lokaler Kanalzähler: storage.aiChannels */
     aiFeedback: { allowChannels: {}, allowVideos: {} },
     aiChannelSent: new Set(),   /* pro Video nur ein Kanal-Hit an den Hintergrund */
-    aiChannelHidden: new Map(),  /* videoId → item, nur für Rücknahme per Freigabe */
-    hiddenReasons: new Map(),   /* videoId → Grund, für gezieltes Aufheben */
     aiOverlay: null,
     aiOverlayId: '',
     watchAiTimer: null,
@@ -85,7 +81,6 @@
     titleEntries: [],
     imageEntries: [],
     ocrEntries: [],
-    allowAll: [],
     semanticKeywordsKey: '',
     semanticReady: false,
     semanticFailed: false,
@@ -366,11 +361,9 @@
     s.semanticMargin = settingNumber(s.semanticMargin, DEFAULTS.semanticMargin, 0, 1);
     s.speechMaxSeconds = settingNumber(s.speechMaxSeconds, DEFAULTS.speechMaxSeconds, 10, 600);
     s.hashThreshold = settingNumber(s.hashThreshold, 8, 0, 30);
-    s.aiChannelMode = ['off', 'badge', 'dim', 'hide'].includes(s.aiChannelMode)
+    s.aiChannelMode = ['off', 'badge', 'dim'].includes(s.aiChannelMode)
       ? s.aiChannelMode : 'off';
     state.settings = s;
-    state.allowAll = window.YB.matcher.normalizeAllowAll(s.allowAll);
-    s.allowAll = state.allowAll;
     const kwObjects = (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && String(k.text || '').trim() && k.enabled !== false);
@@ -407,7 +400,6 @@
       title: state.titleKeywords.length,
       image: state.imageKeywords.length,
       ocr: state.ocrKeywords.length,
-      allowAll: state.allowAll.length,
       exceptions: state.allEntries.filter(e => e.exceptions.length).length,
       aiChannelMode: state.settings.aiChannelMode,
       aiChannels: Object.keys(state.aiChannels).length
@@ -704,11 +696,7 @@
   function hideLocallyNow(v, reason) {
     if (state.disposed) return;
     window.YB.dismiss.hideItem(v.item);
-    if (v.videoId) {
-      state.hiddenIds.add(v.videoId);
-      state.hiddenReasons.set(v.videoId, reason);
-      if (reason === 'ai-channel') state.aiChannelHidden.set(v.videoId, v.item);
-    }
+    if (v.videoId) state.hiddenIds.add(v.videoId);
     /* Jeder offizielle KI-Treffer nährt den Kanalzähler — unabhängig davon,
        ob er über Karte, Watch-Seite oder aiBlockedIds gefunden wurde. */
     if (reason === 'ai-generated') sendAiChannelHit(v);
@@ -922,7 +910,7 @@
   function matchTitle(v) {
     if (!state.settings.checkTitle) return null;
     const contextText = [v.title, v.channel].filter(Boolean).join(' ');
-    const opt = { fuzzy: state.settings.fuzzy, contextText };
+    const opt = { contextText };
     const t = window.YB.matcher.matchEntries(v.title, state.titleEntries, opt);
     if (t) return { source: 'title', keyword: t.text };
     if (v.channel) {
@@ -1012,7 +1000,7 @@
         log('ocr', v.videoId, trimmed.length + ' chars', (Date.now() - t0) + 'ms',
           trimmed ? '« ' + trimmed.slice(0, 60) + ' »' : '(kein Text)');
         const contextText = [v.title, v.channel, text].filter(Boolean).join(' ');
-        const kw = window.YB.matcher.matchEntries(text, state.ocrEntries, { fuzzy: false, contextText });
+        const kw = window.YB.matcher.matchEntries(text, state.ocrEntries, { contextText });
         if (kw) return { source: 'ocr', keyword: kw.text };
       } catch (e) {
         /* Nur fatale Fehler (Bibliothek/Worker/Sprachdaten defekt) schalten den
@@ -1033,10 +1021,7 @@
     try {
       const text = await window.YB.speech.transcribeVideo(v.videoId, state.settings.speechMaxSeconds);
       const contextText = [v.title, v.channel, text].filter(Boolean).join(' ');
-      const kw = window.YB.matcher.matchEntries(text, state.allEntries, {
-        fuzzy: state.settings.fuzzy,
-        contextText
-      });
+      const kw = window.YB.matcher.matchEntries(text, state.allEntries, { contextText });
       if (kw) return { source: 'speech', keyword: kw.text };
     } catch (e) { log('speech fail', v.videoId, e.message); }
     return null;
@@ -1052,13 +1037,6 @@
       return;
     }
     const channelMode = channelModeFor(current.item, current.videoId);
-    if (channelMode === 'hide') {
-      /* Ein direkter offizieller Badge bleibt der stärkere Grund. */
-      const official = matchBadge(current);
-      hideLocally(current, official || 'ai-channel');
-      if (state.io && current.item) state.io.unobserve(current.item);
-      return;
-    }
     if (channelMode !== 'off') markAiChannel(current.item, channelMode);
     const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
     if (state.inFlight.has(key)) return;
@@ -1114,19 +1092,6 @@
         /* Werbekarten sind eine Eigenschaft des Angebots, kein Interessensignal:
            lokal ausblenden, kein „Kein Interesse“-Klick. */
         hideLocally(current, 'promo');
-        return;
-      }
-      /* Globale Freigaben gelten für die ganze Karte: „No Tesla“ lässt auch
-         Karten durch, die zusätzlich ein anderes Wort der Liste treffen.
-         Badges und Werbekarten bleiben davon unberührt (oben geprüft). */
-      const allowContext = [current.title, current.channel].filter(Boolean).join(' ');
-      const allowTerm = window.YB.matcher.firstException(allowContext, state.allowAll);
-      if (allowTerm) {
-        state.processed.set(key, null);
-        log('global allow', current.videoId, '←', allowTerm);
-        if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && current.item) {
-          state.badgeWatched.add(current.item);
-        }
         return;
       }
       const titleHit = matchTitle(current);
@@ -1294,47 +1259,19 @@
     for (const mark of item.querySelectorAll('.yb-ai-channel-mark')) mark.remove();
   }
 
-  function unhideAiChannelItem(item) {
-    if (!item || !item.isConnected) return;
-    /* hideItem() kann den umschließenden Karten-Container treffen. */
-    const target = item.closest(
-      'ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ' +
-      'ytd-compact-video-renderer, ytd-playlist-panel-video-renderer, ytd-reel-item-renderer'
-    ) || item;
-    target.classList.remove('yb-hidden');
-  }
-
-  /* Entfernt nur die Kanal-Heuristik. Offizielle KI-Treffer und Keyword-
+  /* Entfernt nur die Kanal-Markierung. Offizielle KI-Treffer und Keyword-
      Ausblendungen bleiben unberührt. Wird nach Moduswechseln aufgerufen;
      scanNow entscheidet danach neu. */
   function clearAiChannelMarks() {
     for (const item of document.querySelectorAll('[data-yb-ai-channel]')) unmarkAiChannel(item);
-    for (const [videoId, item] of Array.from(state.aiChannelHidden)) {
-      unhideAiChannelItem(item);
-      if (state.hiddenReasons.get(videoId) === 'ai-channel') {
-        state.hiddenIds.delete(videoId);
-        state.hiddenReasons.delete(videoId);
-      }
-    }
-    state.aiChannelHidden.clear();
   }
 
-  /* Gezielte Aktualisierung ohne erneutes Ausblenden: nur Karten, deren
+  /* Gezielte Aktualisierung ohne erneutes Markieren: nur Karten, deren
      Kanal inzwischen nicht mehr auffällig oder per Feedback erlaubt ist,
      werden zurückgenommen. Alles andere bleibt unangetastet. */
   function refreshAiChannelMarks() {
     for (const item of document.querySelectorAll('[data-yb-ai-channel]')) {
       if (channelModeFor(item, quickVideoId(item)) === 'off') unmarkAiChannel(item);
-    }
-    for (const [videoId, item] of Array.from(state.aiChannelHidden)) {
-      if (!item || !item.isConnected) continue;
-      if (channelModeFor(item, videoId) !== 'off') continue;
-      unhideAiChannelItem(item);
-      if (state.hiddenReasons.get(videoId) === 'ai-channel') {
-        state.hiddenIds.delete(videoId);
-        state.hiddenReasons.delete(videoId);
-      }
-      state.aiChannelHidden.delete(videoId);
     }
     scheduleScan();
   }
@@ -1366,24 +1303,9 @@
           continue;
         }
       }
-      /* Kanalweite KI-Heuristik: nur auf Basis mehrerer offizieller Befunde.
-         Bei 'badge'/'dim' läuft die normale Keyword-Prüfung weiter.
-         Bei 'hide' hat ein direkter offizieller Karten-Badge Vorrang. */
-      const channelVideoId = quickVideoId(item);
-      const channelMode = channelModeFor(item, channelVideoId);
-      if (channelMode === 'hide' && channelVideoId) {
-        const official = matchBadge({ item });
-        const channelRef = quickChannelRef(item);
-        if (official === 'ai-generated') {
-          sendAiChannelHit({ item, videoId: channelVideoId, channelRef });
-        }
-        hideLocally({
-          item,
-          videoId: channelVideoId,
-          channelRef
-        }, official || 'ai-channel');
-        continue;
-      }
+      /* Kanalweite KI-Markierung: nur auf Basis mehrerer offizieller Befunde.
+         Sie markiert oder dunkelt ab; die normale Keyword-Prüfung läuft weiter. */
+      const channelMode = channelModeFor(item, quickVideoId(item));
       if (channelMode !== 'off') markAiChannel(item, channelMode);
       if (state.observed.has(item)) {
         /* Spät gerenderter Badge: Die Karte wurde bereits als „kein Treffer“
@@ -1491,9 +1413,9 @@
       refreshAiChannelMarks();
     }
     if (!changes.settings) return;
-    /* Nur bei einem AI-relevanten Wechsel alte Markierungen und rein
-       kanalbasierte Ausblendungen zurücknehmen. Ein Sprach- oder
-       OCR-Wechsel darf keine erneuten Zähler/Screenshots auslösen. */
+    /* Nur bei einem AI-relevanten Wechsel alte Kanal-Markierungen
+       zurücknehmen. Ein Sprach- oder OCR-Wechsel darf keine erneuten
+       Zähler/Screenshots auslösen. */
     const prevSettings = state.settings || {};
     const nextSettings = changes.settings.newValue || {};
     if (prevSettings.hideAiGenerated !== nextSettings.hideAiGenerated ||
@@ -1546,10 +1468,8 @@
       checkThumbOcr: state.settings.checkThumbOcr,
       checkSemanticImage: state.settings.checkSemanticImage,
       checkSpeech: state.settings.checkSpeech,
-      fuzzy: state.settings.fuzzy,
       keywords: state.keywords.slice(),
       imageKeywords: state.imageKeywords.slice(),
-      allowAll: state.allowAll.slice(),
       exceptions: state.allEntries.filter(e => e.exceptions.length).length,
       semanticReady: state.semanticReady,
       semanticFailed: state.semanticFailed,

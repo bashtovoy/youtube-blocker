@@ -83,7 +83,6 @@
     .kwrow .route { background: transparent; border: 1px solid #ece4f6; border-radius: 6px; color: #8b84a6; font-size: 11px; padding: 1px 2px; }
     .kwrow .del { background: transparent; color: #ff9db0; border: 0; font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
     .kwrow .del:hover { color: #ff5c5c; }
-    #allowAll { height: 58px; min-height: 44px; }
     .kwadd { display: flex; gap: 6px; }
     .kwadd input[type=text] { flex: 1; background: #fff; color: #33354f; border: 1px solid #e3d9e8; border-radius: 10px; padding: 7px; font: inherit; }
     .kwadd input[type=text]:focus { outline: 2px solid #bfe9ff; border-color: #38bdf8; }
@@ -140,12 +139,6 @@
     </fieldset>
 
     <fieldset>
-      <legend data-i18n="allow_legend">Global freigeben</legend>
-      <textarea id="allowAll" data-i18n-placeholder="allow_ph" placeholder="eine Phrase pro Zeile, z. B. No Tesla"></textarea>
-      <div class="hint" data-i18n="allow_hint">Enthält der Titel oder Kanal eine dieser Phrasen, wird die Karte durch kein Schlüsselwort ausgeblendet. Beispiel: No Tesla lässt Anti-Tesla-Videos durch, normale Tesla-Videos bleiben blockiert. KI-/Mitglieder-/Werbebadges werden weiterhin geprüft.</div>
-    </fieldset>
-
-    <fieldset>
       <legend data-i18n="checks_legend">Was geprüft wird</legend>
       <label class="row"><input type="checkbox" id="checkTitle"> <span data-i18n="check_title">Videotitel</span> <span class="stat" id="statTitle"></span></label>
       <label class="row"><input type="checkbox" id="checkSemanticImage"> <span data-i18n="check_semantic">Semantik: Liste → Bild (SigLIP)</span> <span class="stat" id="statSemanticImage"></span></label>
@@ -163,17 +156,15 @@
       <label class="row"><input type="checkbox" id="hideMembersOnly"> <span data-i18n="check_members">„Members only“ ausblenden (Mitglieder-Badge)</span> <span class="stat" id="statMembersOnly"></span></label>
       <label class="row"><input type="checkbox" id="hideAiGenerated"> <span data-i18n="check_ai">KI-Inhalte ausblenden (offizielle KI-Kennzeichnung)</span> <span class="stat" id="statAi"></span></label>
       <div class="hint" data-i18n="ai_hint">YouTube zeigt die offizielle KI-Kennzeichnung oft nur auf der Videoseite. Dort blockiert die Erweiterung die Wiedergabe und merkt sich die Video-Kennung; Feed-Karten dieses Videos werden danach ausgeblendet. Nicht markierte Videos werden nicht heuristisch gefiltert.</div>
-      <label class="row"><span data-i18n="ai_channel_label">Kanäle mit wiederholter KI-Kennzeichnung</span>
+      <label class="row"><span data-i18n="ai_channel_label">Kanäle mit 2+ offiziellen KI-Kennzeichnungen</span>
         <select id="aiChannelMode">
           <option value="off" data-i18n="ai_channel_off">Aus</option>
           <option value="badge" data-i18n="ai_channel_badge">Nur markieren</option>
           <option value="dim" data-i18n="ai_channel_dim">Abdunkeln</option>
-          <option value="hide" data-i18n="ai_channel_hide">Ausblenden</option>
         </select>
       </label>
-      <div class="hint" data-i18n="ai_channel_hint">Wenn YouTube mindestens zwei verschiedene Videos eines Kanals offiziell als KI-erstellt kennzeichnet, werden weitere Karten dieses Kanals lokal markiert. Es werden keine Daten gesendet; die offizielle Kennzeichnung bleibt die einzige Quelle.</div>
+      <div class="hint" data-i18n="ai_channel_hint">Wenn YouTube innerhalb von 180 Tagen mindestens zwei verschiedene Videos eines Kanals offiziell als KI-erstellt gekennzeichnet hat, werden weitere Karten dieses Kanals lokal markiert oder abgedunkelt. Das ist keine KI-Erkennung; die offizielle Kennzeichnung bleibt die einzige Quelle. Daten bleiben lokal.</div>
       <label class="row"><input type="checkbox" id="hidePromoted"> <span data-i18n="check_promoted">Werbekarten „YouTube empfiehlt“ ausblenden</span> <span class="stat" id="statPromoted"></span></label>
-      <label class="row"><input type="checkbox" id="fuzzy"> <span data-i18n="check_fuzzy">Unscharfer Vergleich (Tippfehler, Fälle)</span> <span class="stat" id="statFuzzy"></span></label>
     </fieldset>
 
     <fieldset>

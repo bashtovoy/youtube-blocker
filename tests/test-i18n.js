@@ -21,6 +21,12 @@ const langs = Array.from(i18n.LANGS);
 const dicts = i18n.DICTS;
 const deKeys = Object.keys(dicts.de).sort();
 assert.ok(deKeys.length > 30, 'Wörterbuch de wirkt zu klein: ' + deKeys.length);
+for (const removed of ['allow_legend', 'allow_ph', 'allow_hint', 'check_fuzzy', 'ai_channel_hide']) {
+  assert.ok(!(removed in dicts.de), 'entfernter Schlüssel bleibt im Wörterbuch: ' + removed);
+}
+const popupHtml = fs.readFileSync(path.join(POPUP, 'popup.html'), 'utf8');
+assert.ok(!/id="allowAll"/.test(popupHtml), 'globale Freigabe ist aus dem Popup entfernt');
+assert.ok(!/id="fuzzy"/.test(popupHtml), 'Fuzzy-Checkbox ist aus dem Popup entfernt');
 
 const placeholders = s => Array.from(String(s).match(/\{[a-zA-Z0-9_]+\}/g) || []).sort();
 

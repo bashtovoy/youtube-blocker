@@ -10,7 +10,6 @@ const BL = JSON.parse(fs.readFileSync(path.join(__dirname, 'blocklist.json'), 'u
 const SETTINGS = {
   enabled: true,
   mode: 'dismiss',
-  fuzzy: true,
   checkTitle: true,
   checkThumbOcr: false,
   checkThumbHash: false,

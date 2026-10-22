@@ -3,6 +3,41 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-10-22
+
+### Entfernt
+- **Unscharfer Vergleich vollständig entfernt.** Der Textabgleich ist jetzt
+  exakt: normalisiert werden nur Groß-/Kleinschreibung, ё/е, Bindestriche und
+  Satzzeichen. Es gibt keine Tippfehler-, Stamm- oder Mehrzahl-Toleranz mehr;
+  Varianten wie `Drohne`/`drone`, `Tesla`/`Teslas` oder `машина`/`машины`
+  müssen ausdrücklich in der Wortliste stehen. Die Checkbox und der zugehörige
+  Code sind entfernt.
+- **Globale Freigabeliste „Global freigeben“ entfernt.** Die frühere
+  `settings.allowAll`-Logik wird nicht mehr ausgewertet; alte Werte in
+  Exporten oder im Speicher sind harmlos und werden beim Import verworfen.
+  Ausnahmen unter einzelnen Schlüsselwörtern bleiben erhalten und wirken
+  weiterhin nur auf ihr eigenes Wort.
+- **Kanalmodus „Ausblenden“ entfernt.** Für Kanäle mit wiederholter
+  offizieller KI-Kennzeichnung bleiben nur **Aus**, **Nur markieren** und
+  **Abdunkeln**. Eine lokale Ausblendung kehrt erst mit einer Rücknahme-/
+  Freigabeliste zurück; bis dahin wird kein Kanal allein wegen des Zählers
+  versteckt.
+- Veraltete `fuzzy`- und `aiChannelMode: "hide"`-Werte werden ignoriert und
+  beim nächsten Speichern nicht mehr geschrieben.
+
+### Geändert
+- **Kanalhinweise im Popup verständlicher.** Der Text nennt jetzt ausdrücklich
+  die Zwei-Video-Regel, das 180-Tage-Fenster und dass es keine KI-Erkennung,
+  sondern nur die Weitergabe der offiziellen YouTube-Kennzeichnung ist.
+- README, Routing-Dokumentation und Import-Hinweise beschreiben den exakten
+  Abgleich und die verbleibenden Ausnahmen pro Schlüsselwort.
+
+### Tests
+- `test-matcher` prüft exakte Treffer, Normalisierung und das bewusste Fehlen
+  von Tippfehler-/Stammtoleranz.
+- `test-exceptions` deckt nur noch Ausnahmen pro Schlüsselwort ab;
+  `test-ai-channel` prüft, dass der entfernte Modus `hide` auf `off` fällt.
+
 ## [1.5.23] — 2026-10-22
 
 ### Hinzugefügt

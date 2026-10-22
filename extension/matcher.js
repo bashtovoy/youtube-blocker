@@ -18,79 +18,15 @@
     return n ? n.split(' ').filter(Boolean) : [];
   }
 
-  function levenshtein(a, b) {
-    if (a === b) return 0;
-    const m = a.length, n = b.length;
-    if (!m || !n) return m || n;
-    if (Math.abs(m - n) > 3) return Math.max(m, n);
-    let prev = new Array(n + 1);
-    for (let j = 0; j <= n; j++) prev[j] = j;
-    for (let i = 1; i <= m; i++) {
-      const cur = [i];
-      let rowMin = cur[0];
-      for (let j = 1; j <= n; j++) {
-        cur[j] = Math.min(
-          prev[j] + 1,
-          cur[j - 1] + 1,
-          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-        );
-        if (cur[j] < rowMin) rowMin = cur[j];
-      }
-      if (rowMin > 3) return rowMin;
-      prev = cur;
-    }
-    return prev[n];
-  }
-
-  /* Kurze Wörter (5–6 Zeichen) sind die gefährlichste Fuzzy-Zone: „root“ liegt
-     eine Einfügung von „robot“ entfernt, „drove“ eine Ersetzung von „drone“.
-     Deshalb dort keine beliebigen Ersetzungen mehr zulassen, sondern nur:
-     - eine Einfügung/Löschung (Drohne → Drone, Teslas → Tesla, машины → машин),
-     - einen Wechsel des letzten Vokals (машина → машины, Tesla → Tesle).
-     Das erhält Stämme/Mehrzahlformen, verhindert aber die falschen Treffer. */
-  const FINAL_VOWEL_RE = /^[aeiouyäöüаеёиоуыэюяіїє]$/i;
-
-  function isShortStemPair(t, k) {
-    if (t.length === k.length) {
-      return t.slice(0, -1) === k.slice(0, -1)
-        && t.slice(-1) !== k.slice(-1)
-        && FINAL_VOWEL_RE.test(t.slice(-1))
-        && FINAL_VOWEL_RE.test(k.slice(-1));
-    }
-    const short = t.length < k.length ? t : k;
-    const long = t.length < k.length ? k : t;
-    if (long.length - short.length !== 1) return false;
-    for (let i = 0; i < long.length; i++) {
-      if (long.slice(0, i) + long.slice(i + 1) === short) return true;
-    }
-    return false;
-  }
-
-  function tokenMatches(t, k, fuzzy) {
-    if (t === k) return true;
-    /* Kurze Wörter nur über Stamm/Endung vergleichen: Das senkt falsche Treffer deutlich. */
-    if (!fuzzy || k.length < 5 || t.length < 2) return false;
-    if (t[0] !== k[0] || t[1] !== k[1]) return false;
-    if (k.length <= 6) {
-      if (t.slice(0, 3) !== k.slice(0, 3)) return false;
-      return isShortStemPair(t, k);
-    }
-    /* Lange Wörter: höchstens eine Änderung und höchstens ein Zeichen
-       Längenunterschied. Zwei Änderungen („roader“ → „roadster“) sind zu viel. */
-    if (Math.abs(t.length - k.length) > 1) return false;
-    if (t.slice(0, 3) !== k.slice(0, 3)) return false;
-    if (levenshtein(t, k) <= 1) return true;
-    /* Für den Modus „Absolut kein Interesse“ bewusst kein Prefix-Matching:
-       Es erzeugt gefährliche Treffer wie „auto“ → „automatic“. */
-    return false;
-  }
-
-  function tokensMatch(textTokens, kwTokens, fuzzy) {
+  /* Wort-Treffer sind exakt: keine Tippfehler- oder Stammtoleranz.
+     Schreibweisen und Mehrzahlformen müssen ausdrücklich in der Liste stehen
+     (Tesla/Teslas, Drohne/drone, машина/машины). */
+  function tokensMatch(textTokens, kwTokens) {
     if (!kwTokens.length || kwTokens.length > textTokens.length) return false;
     for (let i = 0; i + kwTokens.length <= textTokens.length; i++) {
       let ok = true;
       for (let j = 0; j < kwTokens.length; j++) {
-        if (!tokenMatches(textTokens[i + j], kwTokens[j], fuzzy)) {
+        if (textTokens[i + j] !== kwTokens[j]) {
           ok = false;
           break;
         }
@@ -103,25 +39,22 @@
   /**
    * @param {string} text Titel / Kanal / OCR / Transkript
    * @param {string[]} keywords
-   * @param {{fuzzy?:boolean}} opts
    * @returns {string|null} passendes Schlüsselwort
    */
-  function matchKeywords(text, keywords, opts) {
-    opts = opts || {};
+  function matchKeywords(text, keywords) {
     const textTokens = tokenize(text);
     if (!textTokens.length) return null;
     for (const raw of keywords || []) {
       const kwTokens = tokenize(raw);
       if (!kwTokens.length) continue;
-      if (tokensMatch(textTokens, kwTokens, opts.fuzzy !== false)) return raw;
+      if (tokensMatch(textTokens, kwTokens)) return raw;
     }
     return null;
   }
 
   /* ---- Freigaben (Ausnahmen) ----
-     Eine Ausnahme gilt nur für ihr Schlüsselwort. Die globale Liste
-     (settings.allowAll) wird vom Content zusätzlich vor dem Titelabgleich
-     geprüft und hebt alle Worttreffer einer Karte auf.
+     Eine Ausnahme gilt nur für ihr Schlüsselwort. Es gibt keine globale
+     Freigabeliste: Andere Wörter der Liste treffen weiterhin.
      Kurze Begriffe (< 4 Zeichen) treffen nur ein ganzes Wort; längere auch
      Wortstämme (теннис → теннисист, tennis → tennisplayer). Phrasen werden
      als Wortfolge verglichen, das letzte Wort darf ebenfalls ein Stamm sein
@@ -137,13 +70,6 @@
     const out = [];
     if (Array.isArray(value)) value.forEach(v => addTerm(out, v));
     else if (typeof value === 'string') value.split(/[\n,;]+/).forEach(v => addTerm(out, v));
-    return out;
-  }
-
-  function normalizeAllowAll(value) {
-    const out = [];
-    if (Array.isArray(value)) value.forEach(v => addTerm(out, v));
-    else if (typeof value === 'string') value.split(/\n+/).forEach(v => addTerm(out, v));
     return out;
   }
 
@@ -234,7 +160,7 @@
       if (!raw) continue;
       const kwTokens = tokenize(raw);
       if (!kwTokens.length) continue;
-      if (!tokensMatch(textTokens, kwTokens, opts.fuzzy !== false)) continue;
+      if (!tokensMatch(textTokens, kwTokens)) continue;
       const ex = isObj ? normalizeExceptions(entry.exceptions) : [];
       if (firstException(ctx, ex)) continue;
       return { text: raw, exceptions: ex };
@@ -290,9 +216,9 @@
 
   window.YB = window.YB || {};
   window.YB.matcher = {
-    normalize, tokenize, matchKeywords, levenshtein,
+    normalize, tokenize, matchKeywords,
     channelKeywords, channelEntries, matchEntries, routeOf,
-    normalizeExceptions, normalizeAllowAll, exceptionsOf,
+    normalizeExceptions, exceptionsOf,
     firstException, exceptionMatches, termMatches, activeScores,
     isMembersOnlyText, isAiBadgeText
   };

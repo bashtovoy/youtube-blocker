@@ -11,7 +11,7 @@
   const TTL_MS = 365 * 24 * 60 * 60 * 1000;
   const MAX_VIDEOS = 10;
   const MAX_CHANNELS = 300;
-  const MODES = ['off', 'badge', 'dim', 'hide'];
+  const MODES = ['off', 'badge', 'dim'];
 
   function clean(value) {
     return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
@@ -213,9 +213,9 @@
     return false;
   }
 
-  /* Liefert 'off' | 'badge' | 'dim' | 'hide'. Die offizielle Kennzeichnung
-     bleibt die einzige Quelle; diese Entscheidung gilt nur für Karten, deren
-     Kanal bereits mehrere offizielle Befunde hat. */
+  /* Liefert 'off' | 'badge' | 'dim'. Die offizielle Kennzeichnung bleibt die
+     einzige Quelle; diese Entscheidung gilt nur für Karten, deren Kanal
+     bereits mehrere offizielle Befunde hat. */
   function decision(store, ref, settings, feedback, videoId, now) {
     const s = settings && typeof settings === 'object' ? settings : {};
     if (!s.hideAiGenerated) return 'off';

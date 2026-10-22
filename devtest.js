@@ -10,7 +10,6 @@ const CMD_FILE = path.join(__dirname, 'devcommands.json');
 const SETTINGS = {
   enabled: true,
   mode: 'dismiss',
-  fuzzy: true,
   checkTitle: true,
   checkThumbOcr: false,
   checkThumbHash: false,
