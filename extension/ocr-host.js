@@ -131,6 +131,7 @@
   function loadLib() {
     if (self.PaddleOCR) return Promise.resolve();
     if (loadPromise) return loadPromise;
+    self.YB_OPENCV_WASM_URL = LIB_DIR + 'opencv_js.wasm';
     loadPromise = new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = LIB_URL;

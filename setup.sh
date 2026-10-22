@@ -42,6 +42,9 @@ curl -fsSL -o "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
   "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/ort-wasm-simd-threaded.jsep.mjs"
 curl -fL --progress-bar -o "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
   "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/ort-wasm-simd-threaded.jsep.wasm"
+# Der Function-Konstruktor im Emscripten-Glue ist nur ein globalThis-Fallback,
+# wird von Chrome aber als eval-Warnung im AMO-Bericht gemeldet.
+node "$ROOT/tools/patch-ort-wasm.js" "$LIB/ort-wasm-simd-threaded.jsep.mjs"
 echo "SigLIP bereit: Bild- und Text-Turm je q4f16 (WebGPU) + q8 (WASM) + lokale ONNX-WASM-Runtime; Inferenz — lokal im Browser."
 echo
 echo "==> PaddleOCR.js (OCR der Vorschaubilder) — 0.4.2"
@@ -55,13 +58,13 @@ fi
 PADDLE_BUILD="$(mktemp -d "${TMPDIR:-/tmp}/yb-paddle.XXXXXX")"
 cleanup_paddle_build() { rm -rf "$PADDLE_BUILD"; }
 trap cleanup_paddle_build EXIT
-cp "$ROOT/tools/paddle-entry.js" "$ROOT/tools/paddle-empty.js" "$PADDLE_BUILD/"
+cp "$ROOT/tools/paddle-entry.js" "$ROOT/tools/paddle-empty.js" "$ROOT/tools/opencv-shim.js" "$PADDLE_BUILD/"
 (
   cd "$PADDLE_BUILD"
   npm init -y >/dev/null 2>&1
   npm install --silent --no-audit --no-fund --save-exact \
     "@paddleocr/paddleocr-js@0.4.2" \
-    "@techstark/opencv-js@4.10.0-release.1" \
+    "fast-opencv-wasm@4.10.0-14" \
     "clipper-lib@6.4.2" \
     "js-yaml@4.3.2" \
     "onnxruntime-web@1.22.0" \
@@ -70,10 +73,17 @@ cp "$ROOT/tools/paddle-entry.js" "$ROOT/tools/paddle-empty.js" "$PADDLE_BUILD/"
   ./node_modules/.bin/esbuild paddle-entry.js \
     --bundle --format=iife --platform=browser --target=es2022 \
     --alias:fs=./paddle-empty.js --alias:path=./paddle-empty.js \
+    --alias:crypto=./paddle-empty.js \
+    --alias:@techstark/opencv-js=./opencv-shim.js \
     --outfile="$ROOT/$LIB/paddle.bundle.js"
+  # OpenCV liegt bewusst als separate WASM-Datei vor: AMO parst JS-Dateien
+  # über 5 MB nicht, der rund 10-MB-asm.js-Build würde die Validierung
+  # blockieren. Der Glue-Code sucht `opencv_js.wasm` neben dem Bundle.
+  cp node_modules/fast-opencv-wasm/opencv.wasm "$ROOT/$LIB/opencv_js.wasm"
 )
-# Chrome MV3 erlaubt kein 'unsafe-eval'; OpenCV/Embind wird deshalb direkt
-# nach dem Bundling an seinen zwei new-Function-Stellen gepatcht.
+# Chrome MV3 erlaubt kein 'unsafe-eval'; die dynamischen Embind-Aufrufer von
+# OpenCV/ONNX Runtime werden deshalb direkt nach dem Bundling durch Closures
+# ersetzt.
 node "$ROOT/tools/patch-paddle-bundle.js" "$ROOT/$LIB/paddle.bundle.js"
 
 # Offizielle PP-OCRv5-ONNX-Assets. Der Detektor wird von beiden Erkennern
@@ -137,6 +147,7 @@ echo
 # Weiche Prüfung (bricht das Skript trotz set -e nicht ab): Warnung, wenn etwas nicht geladen wurde.
 for F in \
   "$LIB/paddle.bundle.js" \
+  "$LIB/opencv_js.wasm" \
   "$LIB/ppocrv5_mobile_det.tar" \
   "$LIB/en_ppocrv5_mobile_rec.tar" \
   "$LIB/eslav_ppocrv5_mobile_rec.tar" \

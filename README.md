@@ -9,7 +9,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
 | Videotitel | Exakter Token-Abgleich mit der Schlüsselwortliste (Fälle, ё/е, Bindestriche und Satzzeichen normalisiert; Wortvarianten explizit eintragen) | nein |
-| Foto — OCR | Text im Vorschaubild wird mit PaddleOCR.js (PP-OCRv5 mobile) erkannt und in der Wortliste gesucht. Ein Detektor und zwei Erkenner liegen lokal im Paket: `en` für Latein, `eslav` für Kyrillisch. Bei `eng+rus` entscheidet die Schrift von Titel/Kanal, welche Pipeline zuerst läuft; beide können vom Popup vorgewärmt werden. Die ONNX-Runtime kommt ebenfalls aus `lib/` — kein CDN, kein Modell-Download zur Laufzeit | `ocr-host.js` + `lib/paddle.bundle.js` + `lib/*_ppocrv5_*.tar` |
+| Foto — OCR | Text im Vorschaubild wird mit PaddleOCR.js (PP-OCRv5 mobile) erkannt und in der Wortliste gesucht. Ein Detektor und zwei Erkenner liegen lokal im Paket: `en` für Latein, `eslav` für Kyrillisch. Bei `eng+rus` entscheidet die Schrift von Titel/Kanal, welche Pipeline zuerst läuft; beide können vom Popup vorgewärmt werden. ONNX-Runtime und OpenCV kommen ebenfalls aus `lib/` — kein CDN, kein Modell-Download zur Laufzeit | `ocr-host.js` + `lib/paddle.bundle.js` + `lib/opencv_js.wasm` + `lib/*_ppocrv5_*.tar` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
@@ -323,7 +323,9 @@ Erweiterungsprotokoll. Firefox wählt WebGPU, wenn verfügbar, und merkt sich
 einen Fehlschlag versionsgebunden. Die OCR-Modelle dagegen sind im Paket
 enthalten und werden beim Öffnen des Popups lokal vorgeladen: PP-OCRv5-Detektor
 sowie die Erkenner `en` und `eslav` als komprimierte TAR-Dateien in `lib/`
-(zusammen ~21 MB). Die Erweiterung
+(zusammen ~21 MB). OpenCV liegt als separate `opencv_js.wasm` (~8 MB) daneben;
+das JavaScript-Bundle bleibt dadurch klein genug für den AMO-Validator, der
+Dateien über 5 MB nicht parst. Die Erweiterung
 sucht die SigLIP-Modelle in dieser Reihenfolge:
 
 1. **Lokal** — `extension/models/siglip-base-patch16-224/onnx/…`, gefüllt von
@@ -368,7 +370,7 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   Anfragen laufen sequenziell über eine Warteschlange; Ergebnisse werden je
   Bild-URL im Hintergrund-Host gecacht, die Paddle-Pipelines werden nach zehn
   Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet. Der erste
-  Start lädt Detektor, Erkenner und ONNX-Runtime aus dem Paket und dauert
+  Start lädt Detektor, Erkenner, ONNX-Runtime und OpenCV-WASM aus dem Paket und dauert
   etwa 10–15 Sekunden; danach liegt die Erkennung im Bereich von ein bis drei
   Sekunden pro Vorschaubild. Bei `eng+rus` entscheidet die Schrift von Titel
   und Kanal über die Pipeline — ein Thumbnail mit der jeweils anderen Schrift
@@ -453,4 +455,5 @@ npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 Die Änderungshistorie steht in [`CHANGELOG.md`](CHANGELOG.md). Lizenz: [`LICENSE`](LICENSE) (MIT).
 Gebündelte Drittanbieter: PaddleOCR.js und die PP-OCRv5-Modelle (Apache-2.0,
 Details in [`experiments/paddleocr/README.md`](experiments/paddleocr/README.md)),
-ONNX Runtime und OpenCV.js (Apache-2.0), clipper-lib (BSL-1.0), js-yaml (MIT).
+ONNX Runtime (Apache-2.0), OpenCV über `fast-opencv-wasm` (BSD-3-Clause),
+clipper-lib (BSL-1.0), js-yaml (MIT).

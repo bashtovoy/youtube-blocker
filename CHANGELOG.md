@@ -3,6 +3,35 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] — 2026-10-22
+
+### Behoben
+- **AMO-Validierung von 1.7.0 scheiterte an `lib/paddle.bundle.js`.**
+  `@techstark/opencv-js` bettete einen rund 10 MB großen OpenCV-asm.js-Build
+  ins JavaScript ein; der AMO-Validator parst Dateien über 5 MB nicht und
+  brach mit „File is too large to parse“ ab. OpenCV kommt jetzt über
+  `fast-opencv-wasm`: Der Glue-Code ist ~335 KB groß, das eigentliche
+  OpenCV liegt als separate `lib/opencv_js.wasm` (~8 MB) daneben. Das
+  Paddle-Bundle schrumpft dadurch auf ~1,2 MB.
+- **Keine `Function`-Konstruktoren mehr im JavaScript.** Die minifizierten
+  Embind-Aufrufer von OpenCV (`craftInvokerFunction`,
+  `__emval_get_method_caller`) und der Method-Caller der ONNX-Runtime werden
+  beim Bundling durch gewöhnliche Closures ersetzt; der
+  `Function("return this")`-Fallback im ORT-Glue entfällt ebenfalls. Damit
+  bleibt die Chrome-MV3-CSP bei `'wasm-unsafe-eval'`, und der AMO-Bericht
+  enthält keine eval-Warnung mehr. `tools/patch-paddle-bundle.js` bricht ab,
+  wenn eines der Muster nach dem Patch noch vorhanden ist.
+- `setup.sh` lädt `lib/opencv_js.wasm` mit und prüft es zusammen mit den
+  übrigen Paddle-Assets.
+
+### Tests
+- Alle 18 Unit-Tests grün.
+- Chrome-E2E mit echten EN/RU-Fixtures: OCR `ready` (`eng, rus`), beide
+  Texte erkannt, alle Assets aus dem Paket, keine externen HTTP(S)-Anfragen.
+- Firefox-MCP-Live-Test (MV2, temporäres Add-on): Titel-Filter P0/P1,
+  Deaktivieren/Reaktivieren, OCR EN (`THE DYING SR22 KILLER`) und RU
+  (`МАГИЧЕСКАЯ СИЛА СЛОВА`) ohne Konsolenfehler.
+
 ## [1.7.0] — 2026-10-22
 
 ### Geändert
