@@ -1,0 +1,19 @@
+{
+  "name": "youtube-blocker-paddleocr-bench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated PaddleOCR.js vs Tesseract benchmark for YouTube thumbnails",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild bench/paddle-entry.js --bundle --format=iife --platform=browser --target=es2022 --alias:fs=./bench/empty.js --alias:path=./bench/empty.js --outfile=bench/paddle.bundle.js",
+    "serve": "node bench/server.js",
+    "bench": "node bench/run-bench.js"
+  },
+  "dependencies": {
+    "@paddleocr/paddleocr-js": "0.4.2",
+    "onnxruntime-web": "1.22.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

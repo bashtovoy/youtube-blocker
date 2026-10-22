@@ -35,7 +35,7 @@ assert.deepStrictEqual(m.optional_permissions, ['downloads']);
 assert.deepStrictEqual(m.optional_host_permissions, ['<all_urls>']);
 assert.ok(!m.host_permissions.includes('<all_urls>'), 'optional bleibt optional');
 
-/* WASM (SigLIP/Tesseract) braucht die CSP-Ausnahme; keine gecko-Einstellungen. */
+/* WASM (SigLIP/PaddleOCR) braucht die CSP-Ausnahme; keine gecko-Einstellungen. */
 assert.ok(/script-src 'self'/.test(m.content_security_policy.extension_pages));
 assert.ok(/wasm-unsafe-eval/.test(m.content_security_policy.extension_pages));
 assert.ok(!('browser_specific_settings' in m));

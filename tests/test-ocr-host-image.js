@@ -1,9 +1,8 @@
-/* test-ocr-host-image.js — Bildbeschaffung und mehrstufige Erkennung des
-   OCR-Hosts (extension/ocr-host.js). Ohne Browser, über vm mit Fakes:
-   AVIF-Bytes (ytimg liefert hq720-URLs so) werden über den Browser zu PNG
-   gewandelt; JPEG/PNG/WebP laufen unverändert durch; 404/HTML und kaputte
-   Bilder werden still übersprungen (kein Fehler, kein Cache). Zusätzlich:
-   PSM 11, Sprachwahl nach Titel/Kanal und der tiefe Lauf mit Masken. */
+/* test-ocr-host-image.js — Bildbeschaffung, Sprachrouting und Lifecycle des
+   PaddleOCR-Hosts (extension/ocr-host.js). Ohne Browser, über vm mit Fakes:
+   AVIF/JPEG/WebP werden als ImageBitmap an Paddle übergeben; 404/HTML und
+   kaputte Bilder werden still übersprungen; Modell- und ORT-Pfade bleiben
+   lokal; „eng+rus“ wählt anhand des Titel-/Kanalhinweises en oder eslav. */
 'use strict';
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const path = require('path');
@@ -29,7 +28,6 @@ const AVIF_BYTES = new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x61, 
 const JPEG_BYTES = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4, 5, 6, 7, 8]);
 const WEBP_BYTES = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
 
-/* fetch-Fake: liefert die nächste geplante Antwort. */
 let nextResponse = null;
 const fetchCalls = [];
 function okResponse(type, bytes, status) {
@@ -45,83 +43,66 @@ function fakeFetch(url, opts) {
   return Promise.resolve(nextResponse(url));
 }
 
-/* createImageBitmap/Canvas-Fakes: merken sich, was konvertiert wurde. */
 let bitmapFails = false;
 const bitmapBlobs = [];
-let pixelMode = 'mix';   /* 'mix' = Testmuster, 'white' = leere Fläche */
 async function fakeCreateImageBitmap(blob) {
   bitmapBlobs.push(blob);
   if (bitmapFails) throw new Error('Bild nicht dekodierbar');
-  return { width: 4, height: 2, closed: false, close() { this.closed = true; } };
+  return { width: 480, height: 270, closed: false, close() { this.closed = true; } };
 }
-const canvasCalls = [];
-function makePixels(w, h) {
-  const data = new Uint8ClampedArray(w * h * 4);
-  for (let i = 0; i < data.length; i += 4) {
-    const band = ((i / 4) % 4);
-    /* Dunkelrot mit weicher Kante: die frühere strenge Rot-Schwelle hat
-       genau solche Pixel verworfen; die lockere Maske muss sie behalten. */
-    const rgb = pixelMode === 'white' ? [255, 255, 255]
-      : band === 0 ? [100, 70, 70] : band === 1 ? [240, 240, 240] : band === 2 ? [10, 10, 10] : [128, 128, 128];
-    data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = 255;
-  }
-  return { data, width: w, height: h };
-}
-function makeCanvas() {
-  const canvas = {
-    width: 0, height: 0,
-    getContext(kind) {
-      canvasCalls.push(kind);
-      return {
-        drawImage() {},
-        fillRect() {},
-        getImageData(x, y, w, h) { return makePixels(w, h); },
-        createImageData(w, h) { return makePixels(w, h); },
-        putImageData(image) { canvas.lastImage = image; }
-      };
-    },
-    toBlob(cb, type) { canvasCalls.push('toBlob:' + type); cb(new FakeBlob([PNG_BYTES], { type })); }
-  };
-  return canvas;
-}
-const document = {
-  createElement(tag) {
-    if (tag === 'script') return { src: '', onload: null, onerror: null };
-    if (tag === 'canvas') return makeCanvas();
-    return {};
-  },
-  head: { appendChild(node) { if (node && typeof node.onload === 'function') node.onload(); } },
-  documentElement: { appendChild() {} }
-};
 
-/* Tesseract-Fake: zeichnet auf, welche Bytes/Canvases der „Kern“ bekommt. */
-const recognized = [];
-const loadedLangs = [];
-const initializedLangs = [];
-const paramCalls = [];
-let terminated = 0;
-let recognizeResult = { data: { text: 'RECOGNIZED THUMBNAIL TEXT', confidence: 91 } };
-const fakeWorker = {
-  async loadLanguage(lang) { loadedLangs.push(lang); },
-  async initialize(lang) { initializedLangs.push(lang); },
-  async setParameters(params) { paramCalls.push(params); },
-  recognize(image) { recognized.push(image); return Promise.resolve(recognizeResult); },
-  terminate() { terminated++; }
-};
-let createWorkerOpts = null;
-let created = 0;
-const Tesseract = { createWorker: async opts => { createWorkerOpts = opts; created++; return fakeWorker; } };
-
+const scripts = [];
 const sandbox = {
   browser: { runtime: { getURL: p => 'moz-extension://test/' + p } },
-  document,
+  document: {
+    createElement(tag) {
+      if (tag === 'script') return { src: '', onload: null, onerror: null };
+      return {};
+    },
+    head: {
+      appendChild(node) {
+        scripts.push(node.src);
+        /* Das echte Bundle setzt globalThis.PaddleOCR beim Ausführen. */
+        sandbox.PaddleOCR = Paddle;
+        if (typeof node.onload === 'function') node.onload();
+      }
+    },
+    documentElement: { appendChild() {} }
+  },
   fetch: fakeFetch,
   createImageBitmap: fakeCreateImageBitmap,
   Blob: FakeBlob,
   setTimeout: fakeSetTimeout,
   clearTimeout: fakeClearTimeout,
-  console,
-  Tesseract
+  console
+};
+
+/* PaddleOCR-Fake: zeichnet die Erstellungsoptionen und die Pipeline auf, die
+   tatsächlich erkennt. Jede erzeugte Instanz bekommt einen eigenen Namen. */
+const createCalls = [];
+const predictions = [];
+const disposed = [];
+let recognizeResult = {
+  items: [
+    { text: 'RÖCONIZED THUMBNAIL TEXT', score: 0.97 },
+    { text: '', score: 0.1 },
+    { text: 'SECOND LINE', score: 0.93 }
+  ]
+};
+let predictError = null;
+const Paddle = {
+  async create(options) {
+    createCalls.push(options);
+    const name = options.textRecognitionModelName;
+    return {
+      async predict(image) {
+        predictions.push({ name, image });
+        if (predictError) throw predictError;
+        return [recognizeResult];
+      },
+      async dispose() { disposed.push(name); }
+    };
+  }
 };
 sandbox.self = sandbox;
 vm.runInNewContext(
@@ -131,174 +112,158 @@ vm.runInNewContext(
 const host = sandbox.YB_OCR_HOST;
 assert.ok(host && typeof host.recognize === 'function', 'YB_OCR_HOST muss exportiert sein');
 
-const arr = u8 => Array.from(u8);
-/* Objekte aus dem vm-Kontext haben fremde Prototypen → für Vergleiche
-   in einfache Objekte des Testkontexts wandeln. */
 const plain = o => JSON.parse(JSON.stringify(o));
+const tick = () => new Promise(r => setImmediate(r));
 
 (async () => {
   let st = host.status();
   assert.strictEqual(st.state, 'off', 'vor dem ersten Lauf ist der Host aus');
   assert.deepStrictEqual(plain(st.langs), []);
+  assert.strictEqual(st.error, null);
 
-  /* 1) AVIF (echte ytimg-Lieferung): wird über Canvas zu PNG gewandelt und
-     bekommt vor dem Kern den weißen Rand. */
+  /* 1) Vorwärmen: „eng+rus“ initialisiert beide Pipelines wirklich. */
+  st = await host.prepare('eng+rus');
+  assert.strictEqual(st.state, 'ready', 'nach prepare ist der Host bereit');
+  assert.strictEqual(st.loading, false);
+  assert.strictEqual(st.error, null);
+  assert.deepStrictEqual(plain(st.langs), ['eng', 'rus'], 'beide Modelle sind geladen');
+  assert.strictEqual(scripts.length, 1, 'das SDK-Bundle wird genau einmal geladen');
+  assert.ok(scripts[0].endsWith('/lib/paddle.bundle.js'), 'SDK kommt aus lib/');
+  assert.strictEqual(createCalls.length, 2, 'en und eslav werden getrennt erstellt');
+  assert.deepStrictEqual(createCalls.map(c => c.textRecognitionModelName), [
+    'en_PP-OCRv5_mobile_rec',
+    'eslav_PP-OCRv5_mobile_rec'
+  ]);
+  for (const c of createCalls) {
+    assert.strictEqual(c.textDetectionModelName, 'PP-OCRv5_mobile_det');
+    assert.ok(c.textDetectionModelAsset.url.startsWith('moz-extension://test/lib/'),
+      'Detektor bleibt lokal');
+    assert.ok(c.textDetectionModelAsset.url.endsWith('/ppocrv5_mobile_det.tar'));
+    assert.ok(c.textRecognitionModelAsset.url.startsWith('moz-extension://test/lib/'),
+      'Erkenner bleibt lokal');
+    assert.strictEqual(c.ortOptions.backend, 'wasm', 'keine WebGPU-Anfrage');
+    assert.strictEqual(c.ortOptions.wasmPaths, 'moz-extension://test/lib/', 'ORT-WASM bleibt lokal');
+    assert.strictEqual(c.ortOptions.numThreads, 1);
+  }
+  assert.ok(createCalls[0].textRecognitionModelAsset.url.endsWith('/en_ppocrv5_mobile_rec.tar'));
+  assert.ok(createCalls[1].textRecognitionModelAsset.url.endsWith('/eslav_ppocrv5_mobile_rec.tar'));
+
+  /* 2) AVIF (echte ytimg-Lieferung): der Browser dekodiert, Paddle bekommt
+     ein ImageBitmap; es gibt keinen weißen Rand und keinen Maskenlauf. */
   nextResponse = () => okResponse('image/avif', AVIF_BYTES);
   let out = await host.recognize('https://i.ytimg.com/vi/x/hq720.jpg?sqp=1&rs=2', 'eng+rus');
-  assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT', 'Text kommt durch');
+  assert.strictEqual(out.text, 'RÖCONIZED THUMBNAIL TEXT\nSECOND LINE', 'Zeilen werden verbunden');
   assert.ok(Number.isFinite(out.ms), 'Laufzeit wird gemeldet');
-  assert.strictEqual(recognized.length, 1, 'der Kern bekam genau ein Bild');
-  assert.strictEqual(recognized[0].width, 24, 'AVIF → PNG → Rand (4 + 2×10)');
-  assert.strictEqual(recognized[0].height, 22, 'Höhe mit Rand (2 + 2×10)');
-  assert.ok(bitmapBlobs.some(b => b.type === 'image/avif'), 'Browser dekodiert die Original-Bytes');
-  assert.ok(canvasCalls.includes('2d') && canvasCalls.includes('toBlob:image/png'), 'Canvas-Weg wurde benutzt');
-  assert.ok(createWorkerOpts && String(createWorkerOpts.workerPath).endsWith('/ocr-worker.js'),
-    'Worker startet über den Filter-Einstieg ocr-worker.js');
-  assert.ok(String(createWorkerOpts.corePath).endsWith('/lib/'), 'Kern kommt aus lib/');
-  assert.strictEqual(paramCalls[0].tessedit_pageseg_mode, '11', 'PSM 11 wird gesetzt');
-  assert.strictEqual(paramCalls[0].debug_file, '/dev/null', 'Tesseract-Debugausgabe wird umgeleitet');
-  assert.deepStrictEqual(loadedLangs, ['eng'], 'ohne kyrillischen Hinweis nur eng');
-  assert.deepStrictEqual(initializedLangs, ['eng']);
+  assert.strictEqual(predictions.length, 1, 'genau eine Paddle-Erkennung');
+  assert.strictEqual(predictions[0].name, 'en_PP-OCRv5_mobile_rec', 'lateinischer Hinweis → en');
+  assert.strictEqual(predictions[0].image.width, 480, 'ImageBitmap wird direkt übergeben');
+  assert.strictEqual(predictions[0].image.closed, true, 'ImageBitmap wird geschlossen');
+  assert.ok(bitmapBlobs.some(b => b.type === 'image/avif'), 'Browser dekodiert AVIF');
 
-  /* 2) JPEG: wird für den Rand dekodiert; der Kern sieht die Fassung mit Rand. */
-  const canvasBefore = canvasCalls.length;
+  /* 3) JPEG und WebP laufen ohne zusätzliche Konvertierung durch. */
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/y/hqdefault.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT');
-  assert.strictEqual(recognized[recognized.length - 1].width, 24, 'JPEG mit Rand');
-  assert.ok(canvasCalls.length > canvasBefore, 'Rand wird über Canvas erzeugt');
-
-  /* 3) WebP: ebenfalls mit Rand. */
+  assert.strictEqual(out.text, 'RÖCONIZED THUMBNAIL TEXT\nSECOND LINE');
   nextResponse = () => okResponse('image/webp', WEBP_BYTES);
-  await host.recognize('https://i.ytimg.com/vi_webp/z/hqdefault.webp', 'eng+rus');
-  assert.strictEqual(recognized[recognized.length - 1].width, 24, 'WebP mit Rand');
+  out = await host.recognize('https://i.ytimg.com/vi_webp/z/hqdefault.webp', 'eng+rus');
+  assert.strictEqual(out.text, 'RÖCONIZED THUMBNAIL TEXT\nSECOND LINE');
 
-  /* 4) 404: stiller Skip, kein Aufruf des Kerns, kein Cache. */
-  const recognizedBefore = recognized.length;
+  /* 4) 404: stiller Skip, kein Modellaufruf, kein negativer Cache. */
+  const predictBefore404 = predictions.length;
   nextResponse = () => okResponse('text/html', new Uint8Array([60, 104, 116, 109, 108, 62]), 404);
   out = await host.recognize('https://i.ytimg.com/vi/gone/hq720.jpg', 'eng+rus');
   assert.deepStrictEqual(plain(out), { text: '', skipped: true }, '404 → leerer Text statt Fehler');
-  assert.strictEqual(recognized.length, recognizedBefore, 'der Kern wurde nicht belastet');
-  /* Derselbe URL später erneut: kein negativer Cache — zweiter Versuch erlaubt. */
+  assert.strictEqual(predictions.length, predictBefore404, 'Paddle wurde nicht belastet');
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/gone/hq720.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'RECOGNIZED THUMBNAIL TEXT', 'nach Netz-Recovery liefert derselbe URL Text');
+  assert.strictEqual(out.text, 'RÖCONIZED THUMBNAIL TEXT\nSECOND LINE', 'derselbe URL wird erneut versucht');
 
-  /* 5) HTML unter 200: ebenfalls Skip (kein Bild). */
+  /* 5) HTML unter 200: ebenfalls Skip. */
   nextResponse = () => okResponse('text/html; charset=utf-8', new Uint8Array([60, 33, 68, 79, 67, 84, 89, 80, 69, 62]));
   out = await host.recognize('https://i.ytimg.com/vi/html/hq720.jpg', 'eng+rus');
   assert.deepStrictEqual(plain(out), { text: '', skipped: true }, 'HTML-Antwort → Skip');
 
-  /* 6) Nicht dekodierbares AVIF: Skip ohne Ausnahme, ohne Protokoll-Spam. */
+  /* 6) Nicht dekodierbares Bild: Skip ohne Ausnahme. */
   bitmapFails = true;
   nextResponse = () => okResponse('image/avif', AVIF_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/broken/hq720.jpg', 'eng+rus');
   assert.deepStrictEqual(plain(out), { text: '', skipped: true }, 'kaputtes Bild → Skip statt Fehler');
   bitmapFails = false;
 
-  /* 7) Cache: ein bereits erkannter URL+Sprache-Treffer geht nicht erneut raus. */
+  /* 7) Cache: ein bereits erkannter URL+Sprache-Hinweis-Treffer geht nicht
+     erneut raus. */
   const fetchesBefore = fetchCalls.length;
+  const predictsBeforeCache = predictions.length;
   out = await host.recognize('https://i.ytimg.com/vi/y/hqdefault.jpg', 'eng+rus');
   assert.strictEqual(out.cached, true, 'Cache-Treffer');
-  assert.strictEqual(fetchCalls.length, fetchesBefore, 'kein erneuter Bildabruf bei Cache-Treffer');
+  assert.strictEqual(fetchCalls.length, fetchesBefore, 'kein erneuter Bildabruf');
+  assert.strictEqual(predictions.length, predictsBeforeCache, 'keine erneute Erkennung');
 
   /* 8) Abruf-Fehler (Netz weg): Skip statt Ausnahme. */
   nextResponse = () => { throw new Error('netz weg'); };
   out = await host.recognize('https://i.ytimg.com/vi/offline/hq720.jpg', 'eng+rus');
   assert.deepStrictEqual(plain(out), { text: '', skipped: true }, 'Netzfehler → Skip');
 
-  /* 9) Kurzer/unsicherer Text löst den tiefen Lauf mit Masken aus.
-     Der Fake liefert für jede Variante denselben Kurztext; entscheidend ist,
-     dass nach dem schnellen Lauf weitere Bildvarianten an Tesseract gehen. */
-  recognizeResult = { data: { text: '10 iLvs?', confidence: 40 } };
-  const recognizedBeforeDeep = recognized.length;
+  /* 9) Leere Zeilen werden verworfen; die Reihenfolge bleibt erhalten. */
+  recognizeResult = { items: [{ text: '  A  ' }, { text: '' }, { text: 'B' }] };
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
-  out = await host.recognize('https://i.ytimg.com/vi/deep/hq720.jpg', 'eng+rus');
-  assert.strictEqual(out.text, '10 iLvs?', 'tiefer Lauf liefert den erkannten Text');
-  assert.strictEqual(recognized.length - recognizedBeforeDeep, 6,
-    'schneller Lauf + fünf Varianten (grau, rot, hell, invertiert, dunkel)');
-  assert.strictEqual(recognized[recognized.length - 1].width, 28,
-    'Varianten sind 2× skaliert und bekommen den Rand (8 + 2×10)');
-  assert.strictEqual(recognized[recognized.length - 1].height, 24, 'Höhe mit Rand (4 + 2×10)');
+  out = await host.recognize('https://i.ytimg.com/vi/lines/hq720.jpg', 'eng');
+  assert.strictEqual(out.text, 'A\nB');
 
-  /* 9b) Langer Text mit OCR-Rauschen löst den schnellen tiefen Lauf aus.
-     Genau dieser Fall stand im echten Thumbnail: „THE IlYIN[i SR22 KIllEB“
-     ist lang, enthält aber Klammern; die alte Längen-/Gesamtconfidence-Regel
-     übersprang deshalb die graue/bright-Maske. Die Wortconfidence ist hier
-     bewusst hoch, damit nur das Rauschen den Ausschlag gibt. */
-  recognizeResult = {
-    data: {
-      text: 'THE IlYIN[i SR22 KIllEB',
-      confidence: 90,
-      words: [
-        { text: 'THE', confidence: 95 },
-        { text: 'IlYIN[i', confidence: 90 },
-        { text: 'SR22', confidence: 90 },
-        { text: 'KIllEB', confidence: 90 }
-      ]
-    }
-  };
-  const recognizedBeforeNoise = recognized.length;
-  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
-  out = await host.recognize('https://i.ytimg.com/vi/noise/hq720.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'THE IlYIN[i SR22 KIllEB', 'schneller Text bleibt erhalten');
-  assert.strictEqual(recognized.length - recognizedBeforeNoise, 3,
-    'langer Text mit OCR-Rauschen löst schnellen Lauf + zwei Varianten aus');
-
-  /* 9c) Auch ein einzelnes Wort unter 60 % Confidence reicht für den
-     schnellen tiefen Lauf, selbst wenn der Text lang und ansonsten sauber
-     ist. Das ist der eigentliche KIllEB/K1LLER-Fall ohne Klammern. */
-  recognizeResult = {
-    data: {
-      text: 'THE DYING SR22 KILLEB',
-      confidence: 90,
-      words: [
-        { text: 'THE', confidence: 95 },
-        { text: 'DYING', confidence: 90 },
-        { text: 'SR22', confidence: 90 },
-        { text: 'KILLEB', confidence: 45 }
-      ]
-    }
-  };
-  const recognizedBeforeWord = recognized.length;
-  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
-  out = await host.recognize('https://i.ytimg.com/vi/word-confidence/hq720.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'THE DYING SR22 KILLEB', 'schneller Text bleibt erhalten');
-  assert.strictEqual(recognized.length - recognizedBeforeWord, 3,
-    'ein unsicheres Wort löst schnellen Lauf + zwei Varianten aus');
-
-  /* 9d) Komplett leere Fläche: keine Varianten mit voller/leerer Maske an
-     Tesseract — genau diese Bilder erzeugten die Leptonica-Meldungen. */
-  recognizeResult = { data: { text: 'x', confidence: 10 } };
-  pixelMode = 'white';
-  const recognizedBlank = recognized.length;
-  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
-  out = await host.recognize('https://i.ytimg.com/vi/blank/hq720.jpg', 'eng+rus');
-  assert.strictEqual(out.text, 'x', 'schneller Lauf bleibt erhalten');
-  assert.strictEqual(recognized.length - recognizedBlank, 1,
-    'leere Fläche überspringt alle fünf Varianten');
-  pixelMode = 'mix';
-
-  /* 10) Popup-Vorwärmen: „eng+rus“ initialisiert beide Modelle wirklich
-     und meldet danach einen belastbaren Bereit-Status. */
-  st = await host.prepare('eng+rus');
-  assert.strictEqual(st.state, 'ready', 'nach prepare ist der Host bereit');
-  assert.strictEqual(st.loading, false);
-  assert.strictEqual(st.error, null);
-  assert.deepStrictEqual(plain(st.langs).sort(), ['eng', 'rus'], 'beide Modelle sind geladen');
-  assert.deepStrictEqual(initializedLangs.slice().sort(), ['eng', 'rus']);
-
-  /* 11) Kyrillischer Hinweis wählt rus statt des gemischten Modells. Der
-     rus-Worker wurde oben bereits vorgeladen und bleibt neben eng bestehen. */
-  recognizeResult = { data: { text: 'ПРИВЕТ МИР', confidence: 91 } };
-  const loadedBefore = loadedLangs.length;
-  const terminatedBefore = terminated;
+  /* 10) Sprachwahl:
+     - „rus“ → eslav,
+     - „eng+rus“ mit kyrillischem Hinweis → eslav,
+     - „eng+rus“ mit lateinischem Hinweis → en. */
+  recognizeResult = { items: [{ text: 'ПРИВЕТ МИР' }] };
+  const predictionsBeforeRu = predictions.length;
   nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
   out = await host.recognize('https://i.ytimg.com/vi/ru/hq720.jpg', 'eng+rus', 'Привет, это русский заголовок');
   assert.strictEqual(out.text, 'ПРИВЕТ МИР');
-  assert.strictEqual(loadedLangs.length, loadedBefore, 'kein erneutes Laden nach prepare');
-  assert.strictEqual(initializedLangs[initializedLangs.length - 1], 'rus');
-  assert.strictEqual(terminated, terminatedBefore, 'der eng-Worker bleibt für spätere Karten erhalten');
+  assert.strictEqual(predictions.length, predictionsBeforeRu + 1);
+  assert.strictEqual(predictions[predictions.length - 1].name, 'eslav_PP-OCRv5_mobile_rec');
+  assert.deepStrictEqual(plain(host.status().langs), ['eng', 'rus'], 'beide Pipelines bleiben geladen');
+  assert.strictEqual(createCalls.length, 2, 'kein erneutes Erstellen nach prepare');
+
+  const predictionsBeforeEn = predictions.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/en/hq720.jpg', 'eng+rus', 'Cloud Codes');
+  assert.strictEqual(predictions[predictions.length - 1].name, 'en_PP-OCRv5_mobile_rec');
+  assert.strictEqual(predictions.length, predictionsBeforeEn + 1);
+
+  const predictionsBeforeRusOnly = predictions.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  await host.recognize('https://i.ytimg.com/vi/ru-only/hq720.jpg', 'rus');
+  assert.strictEqual(predictions[predictions.length - 1].name, 'eslav_PP-OCRv5_mobile_rec');
+  assert.strictEqual(predictions.length, predictionsBeforeRusOnly + 1);
+
+  const predictionsBeforeEngOnly = predictions.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  await host.recognize('https://i.ytimg.com/vi/en-only/hq720.jpg', 'eng');
+  assert.strictEqual(predictions[predictions.length - 1].name, 'en_PP-OCRv5_mobile_rec');
+  assert.strictEqual(predictions.length, predictionsBeforeEngOnly + 1);
+
+  /* 11) Zwei Erkennungsfehler in Folge verwerfen die Pipelines; der nächste
+     Aufruf initialisiert sie neu. */
+  const disposedBeforeErrors = disposed.length;
+  predictError = new Error('Paddle-Lauf fehlgeschlagen');
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  await assert.rejects(host.recognize('https://i.ytimg.com/vi/e1/hq720.jpg', 'eng'), /Paddle-Lauf fehlgeschlagen/);
+  await assert.rejects(host.recognize('https://i.ytimg.com/vi/e2/hq720.jpg', 'eng'), /Paddle-Lauf fehlgeschlagen/);
+  assert.ok(disposed.length > disposedBeforeErrors, 'nach zwei Fehlern werden die Pipelines verworfen');
+  assert.strictEqual(host.status().state, 'off', 'nach dem Verwerfen ist der Host aus');
+  predictError = null;
+  recognizeResult = { items: [{ text: 'WIEDER DA' }] };
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/e3/hq720.jpg', 'eng');
+  assert.strictEqual(out.text, 'WIEDER DA', 'nächster Aufruf initialisiert neu');
+  assert.strictEqual(host.status().state, 'ready');
+
+  /* 12) reset beendet die Pipelines; der Status ist danach aus. */
+  const disposedBeforeReset = disposed.length;
+  await host.prepare('eng+rus');
+  host.reset();
+  assert.strictEqual(host.status().state, 'off');
+  assert.ok(disposed.length > disposedBeforeReset, 'reset ruft dispose() auf');
 
   process.stdout.write('ocr-host image tests: OK\n');
 })().catch(e => { console.error(e); process.exit(1); });

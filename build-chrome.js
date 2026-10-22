@@ -16,13 +16,23 @@ const OUT = path.join(ROOT, 'dist-chrome');
 const ART = path.join(ROOT, 'web-ext-artifacts');
 
 /* Modelle lädt die Erweiterung zur Laufzeit (HF-Erstbezug); devreport.js ist
-   die lokale Dev-Brücke und gehört nie ins Paket. */
+   die lokale Dev-Brücke und gehört nie ins Paket. Tesseract-Reste aus alten
+   setup.sh-Läufen werden ebenfalls nicht mitkopiert: Mit der Paddle-Integration
+   sollen beide OCR-Asset-Sätze nicht im selben Release liegen. */
 const EXCLUDE = new Set(['models', 'devreport.js', '.DS_Store']);
+const EXCLUDE_FILES = new Set([
+  'tesseract.min.js',
+  'worker-tesseract.min.js',
+  'tesseract-core-simd.wasm.js',
+  'eng.traineddata.gz',
+  'rus.traineddata.gz'
+]);
 
 function copyDir(from, to) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
     if (EXCLUDE.has(entry.name)) continue;
+    if (entry.isFile() && EXCLUDE_FILES.has(entry.name)) continue;
     const s = path.join(from, entry.name);
     const d = path.join(to, entry.name);
     if (entry.isDirectory()) copyDir(s, d);
@@ -32,7 +42,7 @@ function copyDir(from, to) {
 
 /* MV2→MV3: Host-Muster wandern nach host_permissions, browser_action wird action,
    der Hintergrund wird Service Worker (die Hosts laufen dort im Offscreen-Dokument),
-   und der WASM-Bedarf (SigLIP/Tesseract) braucht 'wasm-unsafe-eval' in der CSP. */
+   und der WASM-Bedarf (SigLIP/PaddleOCR) braucht 'wasm-unsafe-eval' in der CSP. */
 function buildChromeManifest(ff) {
   const permissions = [];
   const hostPermissions = [];

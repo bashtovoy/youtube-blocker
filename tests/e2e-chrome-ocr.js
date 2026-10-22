@@ -2,10 +2,10 @@
    Dokument der Erweiterung. Geprüft wird:
      - das Offscreen-Dokument setzt YB_FORCE_WASM (keine WebGPU-Anfrage),
      - der OCR-Host erkennt Text auf einem erzeugten PNG (Diacritics, Text an
-       Ober- und Unterkante) — der weiße Rand darf die Erkennung nicht stören,
-     - die Konsole von Offscreen-Dokument und ocr-worker.js bleibt frei von
-       „Detected N diacritics“, den Leptonica-Boxmeldungen und
-       „Failed to create WebGPU Context Provider“.
+       Ober- und Unterkante),
+     - PaddleOCR, Modell-Tars und ONNX-Runtime werden ausschließlich aus dem
+       Erweiterungspaket geladen (keine externen Anfragen),
+     - die Konsole bleibt frei von der WebGPU-Warnung.
 
    Aufruf: node tests/e2e-chrome-ocr.js
    Chrome-Pfad überschreibbar mit CHROME_BIN. Fehlt Chrome, wird der Test
@@ -32,9 +32,9 @@ const TEST_EXT = path.join(TMP, 'dist-chrome');
 const PROFILE = path.join(TMP, 'profile');
 
 function prepareExtension() {
-  if (!fs.existsSync(path.join(ROOT, 'dist-chrome', 'manifest.json'))) {
-    execFileSync(process.execPath, ['build-chrome.js'], { cwd: ROOT, stdio: 'inherit' });
-  }
+  /* Immer neu bauen: Sonst würde der Test eine alte dist-chrome/ mit altem
+     OCR-Host oder ohne Paddle-Assets prüfen. */
+  execFileSync(process.execPath, ['build-chrome.js'], { cwd: ROOT, stdio: 'inherit' });
   fs.cpSync(path.join(ROOT, 'dist-chrome'), TEST_EXT, { recursive: true });
   const mfPath = path.join(TEST_EXT, 'manifest.json');
   const mf = JSON.parse(fs.readFileSync(mfPath, 'utf8'));
@@ -53,6 +53,7 @@ function connect(chrome) {
   const attached = new Map();
   const attachedInfo = new Map();
   const consoleLines = [];
+  const requests = [];
 
   function on(method, fn) {
     if (!listeners.has(method)) listeners.set(method, []);
@@ -97,10 +98,18 @@ function connect(chrome) {
     consoleLines.push('[console.' + p.type + '] ' + args.join(' '));
   });
   on('Runtime.exceptionThrown', p => {
-    consoleLines.push('[exception] ' + ((p.exceptionDetails && p.exceptionDetails.text) || '?'));
+    const d = p && p.exceptionDetails;
+    const detail = (d && d.exception && (d.exception.description || d.exception.value)) ||
+      (d && d.text) || '?';
+    consoleLines.push('[exception] ' + detail);
   });
   on('Log.entryAdded', p => {
     if (p && p.entry) consoleLines.push('[log] ' + p.entry.text);
+  });
+  on('Network.requestWillBeSent', (p, sessionId) => {
+    const url = String((p && p.request && p.request.url) || '');
+    if (!url || /^(data|blob|filesystem):/i.test(url)) return;
+    requests.push({ url, session: sessionId || '' });
   });
   on('Target.attachedToTarget', p => {
     attached.set(p.targetInfo.targetId, p.sessionId);
@@ -110,13 +119,14 @@ function connect(chrome) {
     });
     send('Runtime.enable', {}, p.sessionId).catch(() => {});
     send('Log.enable', {}, p.sessionId).catch(() => {});
-    /* Kind-Ziele (dedizierter OCR-Worker) ebenfalls anbinden. */
+    send('Network.enable', {}, p.sessionId).catch(() => {});
+    /* Kind-Ziele ebenfalls anbinden. */
     send('Target.setAutoAttach', {
       autoAttach: true, waitForDebuggerOnStart: false, flatten: true
     }, p.sessionId).catch(() => {});
   });
 
-  return { send, attached, attachedInfo, consoleLines };
+  return { send, attached, attachedInfo, consoleLines, requests };
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -166,14 +176,34 @@ async function main() {
     }
     if (!hostReady) throw new Error('callHost im Service Worker nicht gefunden');
 
-    const prep = await cdp.send('Runtime.evaluate', {
-      expression: "callHost('ocr', { op: 'prepare', langs: 'eng' })" +
-        ".then(r => JSON.stringify(r)).catch(e => JSON.stringify({ ok: false, error: String(e) }))",
-      awaitPromise: true, returnByValue: true
-    }, swSession);
+    let prepTimer;
+    const prepTimeout = new Promise((_, reject) => {
+      prepTimer = setTimeout(() => {
+        reject(new Error('OCR-Vorbereitung: Zeitüberschreitung\nKonsole:\n' +
+          cdp.consoleLines.join('\n').slice(0, 3000)));
+      }, 120000);
+    });
+    let prep;
+    try {
+      prep = await Promise.race([
+        cdp.send('Runtime.evaluate', {
+          expression: "callHost('ocr', { op: 'prepare', langs: 'eng+rus' })" +
+            ".then(r => JSON.stringify(r)).catch(e => JSON.stringify({ ok: false, error: String(e) }))",
+          awaitPromise: true, returnByValue: true
+        }, swSession),
+        prepTimeout
+      ]);
+    } finally {
+      clearTimeout(prepTimer);
+    }
     const prepResult = prep.result && JSON.parse(prep.result.value);
     if (!prepResult || prepResult.ok !== true) {
-      throw new Error('OCR-Vorbereitung fehlgeschlagen: ' + JSON.stringify(prepResult));
+      throw new Error('OCR-Vorbereitung fehlgeschlagen: ' + JSON.stringify(prepResult) +
+        '\nKonsole:\n' + cdp.consoleLines.join('\n').slice(0, 3000));
+    }
+    const prepLangs = (prepResult.status && prepResult.status.langs) || [];
+    if (!prepLangs.includes('eng') || !prepLangs.includes('rus')) {
+      throw new Error('prepare(eng+rus) meldet nicht beide Modelle: ' + JSON.stringify(prepLangs));
     }
 
     /* Offscreen-Dokument einsammeln (CDP meldet es als Typ „other“). */
@@ -230,18 +260,78 @@ async function main() {
       throw new Error('OCR-Text unvollständig: ' + JSON.stringify(result.text));
     }
 
+    /* Echte 480×270-Fixtures, falls der lokale Benchmark-Ordner vorhanden ist
+       (gitignored). Beide Sprachpfade werden über denselben Host geprüft:
+       lateinischer Hinweis → en, kyrillischer Hinweis → eslav. */
+    const fixtureDir = path.join(ROOT, 'experiments', 'paddleocr', 'fixtures-480');
+    const fixtures = [
+      {
+        id: 'OhVjcySNqqc',
+        hint: 'THE DYING SR22 KILLER aviation',
+        re: /THE DYING SR22 KILLER/i,
+        label: 'en'
+      },
+      {
+        id: 'Jrhf0JPKkUo',
+        hint: 'МАГИЧЕСКАЯ СИЛА СЛОВА',
+        re: /МАГИЧЕСКАЯ[\s\S]*СИЛА/i,
+        label: 'ru'
+      }
+    ];
+    let fixtureCount = 0;
+    for (const f of fixtures) {
+      const fixturePath = path.join(fixtureDir, f.id + '.jpg');
+      if (!fs.existsSync(fixturePath)) continue;
+      const b64 = fs.readFileSync(fixturePath).toString('base64');
+      const fixtureExpr = `(async () => {
+        const bin = atob(${JSON.stringify(b64)});
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'image/jpeg' });
+        const blobUrl = URL.createObjectURL(blob);
+        try {
+          const res = await self.YB_ROUTES.ocr({
+            op: 'recognize', url: blobUrl, langs: 'eng+rus',
+            hint: ${JSON.stringify(f.hint)}
+          });
+          return JSON.stringify(res);
+        } finally { URL.revokeObjectURL(blobUrl); }
+      })()`;
+      const fev = await cdp.send('Runtime.evaluate', {
+        expression: fixtureExpr, awaitPromise: true, returnByValue: true
+      }, offSession);
+      const fres = fev.result && JSON.parse(fev.result.value);
+      if (!fres || fres.ok !== true) {
+        throw new Error('Fixture ' + f.id + ' fehlgeschlagen: ' + JSON.stringify(fres));
+      }
+      if (!f.re.test(fres.text || '')) {
+        throw new Error('Fixture ' + f.id + ' (' + f.label + ') falscher Text: ' +
+          JSON.stringify(fres.text));
+      }
+      fixtureCount++;
+    }
+
     await sleep(1000);
-    const workerAttached = [...cdp.attachedInfo.values()]
-      .some(i => i.type === 'worker' && String(i.url || '').includes('ocr-worker.js'));
-    if (!workerAttached) throw new Error('OCR-Worker wurde nicht angebunden');
+    const urls = cdp.requests.map(r => r.url);
+    for (const asset of [
+      'paddle.bundle.js',
+      'ppocrv5_mobile_det.tar',
+      'en_ppocrv5_mobile_rec.tar',
+      'eslav_ppocrv5_mobile_rec.tar',
+      'ort-wasm-simd-threaded.jsep'
+    ]) {
+      if (!urls.some(u => u.includes(asset))) {
+        throw new Error('lokales OCR-Asset wurde nicht geladen: ' + asset);
+      }
+    }
+    const external = cdp.requests.filter(r => /^https?:/i.test(r.url));
+    if (external.length) {
+      throw new Error('externe OCR-Anfrage(n): ' +
+        external.slice(0, 5).map(r => r.url).join(', '));
+    }
 
     const joined = cdp.consoleLines.join('\n');
     const forbidden = [
-      /Detected \d+ diacritics/,
-      /boxClipToRectangle/,
-      /pixScanForForeground/,
-      /Image too small to scale/,
-      /Line cannot be recognized/,
       /Failed to create WebGPU Context Provider/
     ];
     const hits = forbidden.filter(re => re.test(joined));
@@ -251,7 +341,8 @@ async function main() {
     }
 
     process.stdout.write('e2e-chrome-ocr: OK (' + result.ms + ' ms, ' +
-      JSON.stringify(result.text.trim()).slice(0, 60) + ')\n');
+      JSON.stringify(result.text.trim()).slice(0, 60) +
+      (fixtureCount ? ', ' + fixtureCount + ' reale Fixtures' : '') + ')\n');
   } finally {
     closing = true;
     try { chrome.kill('SIGKILL'); } catch { /* schon weg */ }

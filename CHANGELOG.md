@@ -3,6 +3,47 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-10-22
+
+### Geändert
+- **Die Vorschaubild-OCR läuft jetzt mit PaddleOCR.js 0.4.2 (PP-OCRv5 mobile)
+  statt Tesseract.js.** Der Detektor `ppocrv5_mobile_det` und die Erkenner
+  `en` und `eslav` liegen als offizielle ONNX-Assets lokal in `lib/`; die
+  ONNX-Runtime wird aus demselben Ordner geladen. Zur Laufzeit gibt es keinen
+  CDN- oder Modell-Download.
+- **Englisch ist als eigene Pipeline dazugekommen.** `eng` nutzt den
+  `en`-Erkenner, `rus` den `eslav`-Erkenner (Latein und Kyrillisch). Bei
+  `eng+rus` entscheidet die Schrift von Titel und Kanal, welche Pipeline
+  zuerst läuft; das Popup lädt beide vor. Die bisherige Umschaltung bleibt
+  erhalten, falls ein Thumbnail anders beschriftet ist.
+- **Gemeinsamer Host für Firefox und Chrome.** Der Paddle-Host läuft in der
+  Firefox-Hintergrundseite bzw. im Chrome-Offscreen-Dokument und behält
+  Schnittstelle, Warteschlange, Cache und Statusanzeige bei. Der Cache trägt
+  jetzt die Version `ocr-v5-paddle`.
+- **AVIF-Miniaturen bleiben unterstützt:** Die Bildbytes werden weiterhin
+  selbst geladen und über `createImageBitmap` dekodiert.
+- **Chrome MV3** nutzt dieselbe lokale WASM-Runtime; das Bundle ist frei von
+  `eval`/`new Function` und die CSP bleibt bei `'wasm-unsafe-eval'`.
+- **PaddleOCR.js und die PP-OCRv5-Assets stehen unter Apache-2.0** (siehe
+  `experiments/paddleocr/README.md`); die Projektlizenz bleibt MIT.
+
+### Entfernt
+- Tesseract.js, der OCR-Worker (`ocr-worker.js`), die eng/rus-Sprachdaten und
+  die Leptonica-Logfilter. `setup.sh` entfernt alte Tesseract-Reste aus
+  früheren Installationen; `build-chrome.js` kopiert sie nicht mehr ins Paket.
+
+### Tests
+- Alle 18 Unit-Tests grün; `test-ocr-client`, `test-ocr-host-image` und
+  `test-chrome-manifest` sind auf PaddleOCR umgestellt, `test-ocr-worker` ist
+  entfallen.
+- `tests/e2e-chrome-ocr.js` prüft die Offscreen-OCR mit einem erzeugten PNG
+  und echten 480×270-Fixtures (EN/RU), dass alle Paddle-Assets aus dem
+  Erweiterungspaket geladen werden und keine externen HTTP(S)-Anfragen
+  entstehen.
+- Live-Test über MCP: Firefox 158.0.1 (MV2, temporäres Add-on) und Chrome
+  155.0.8059.85 (MV3, isoliertes Profil) erkennen EN und RU; Status
+  `ready` mit `eng, rus`, Popup „OCR ready: eng, rus“.
+
 ## [1.6.1] — 2026-10-22
 
 ### Behoben

@@ -176,8 +176,8 @@ function renderStats() {
 }
 
 /* ---- OCR-Modell: sichtbar vorbereiten und Status anzeigen -------------------
-   Die Tesseract-Modelle liegen lokal im Paket; „laden“ heißt hier: Worker,
-   WASM-Kern und die ausgewählten Sprachdaten initialisieren. Das passiert
+   Die PaddleOCR-Modelle liegen lokal im Paket; „laden“ heißt hier: SDK,
+   ONNX-Runtime und die ausgewählten Erkenner initialisieren. Das passiert
    automatisch beim Öffnen des Popups, sobald OCR aktiviert ist. Währenddessen
    fragt das Popup den Host regelmäßig nach dem Status; nach Erfolg/Fehler
    hört die Abfrage auf. */

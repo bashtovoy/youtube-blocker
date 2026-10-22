@@ -1,0 +1,1285 @@
+[
+  {
+    "arm": "tess-fast",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.4099175874514358,
+    "meanWer": 0.6624031007751937,
+    "exactLineRate": 0.28236434108527136,
+    "nearLineRate": 0.35058139534883725,
+    "meanKeywordRecall": 0.4286821705426356,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.410014657564798,
+        "kwRecall": 0.42478632478632466
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.4089711538461538,
+        "kwRecall": 0.4666666666666667
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.3547138855511533,
+        "kwRecall": 0.44305555555555554
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.4796485793254768,
+        "kwRecall": 0.41052631578947374
+      }
+    },
+    "timing": {
+      "meanMs": 538.2425925922063,
+      "medianMs": 362,
+      "p95Ms": 1753.7000000029802,
+      "maxMs": 3018.60000000149
+    },
+    "negatives": {
+      "meanFalseWords": 0.2727272727272727,
+      "withText": 3,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": []
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": [
+            "emwd"
+          ]
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": []
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "seoo"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": [
+            "aly"
+          ]
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": []
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.548611111111111,
+      "headlineCer": 0,
+      "kwRecall": 1,
+      "text": "THE DYING SR22 KILLER\n\ne\n\n/\n\nA\n\nT\n\nL\n\nSSATR\n\nN o ——\n\n——\n\n_a\n\ne —\n\n2y"
+    },
+    "variant": "1280",
+    "init": {
+      "ms": 4468.69999999553,
+      "langs": [
+        "eng"
+      ]
+    },
+    "langInit": {
+      "rus": {
+        "ms": 2724,
+        "lang": "rus"
+      }
+    },
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 69
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 710990,
+        "total": 1849498,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 2815507,
+        "total": 3720583
+      },
+      "heapAfterRuns": {
+        "used": 30838997,
+        "total": 32525929
+      }
+    }
+  },
+  {
+    "arm": "tess-161",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.21449866699133555,
+    "meanWer": 0.4334302325581395,
+    "exactLineRate": 0.47461240310077524,
+    "nearLineRate": 0.590891472868217,
+    "meanKeywordRecall": 0.6753045404208196,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.20534336919426024,
+        "kwRecall": 0.6787545787545788
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.3037628205128205,
+        "kwRecall": 0.6416666666666666
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.2251528110620603,
+        "kwRecall": 0.6465277777777777
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.20104080079673592,
+        "kwRecall": 0.7116541353383458
+      }
+    },
+    "timing": {
+      "meanMs": 7579.981481481068,
+      "medianMs": 5887,
+      "p95Ms": 20715,
+      "maxMs": 47185.89999999851
+    },
+    "negatives": {
+      "meanFalseWords": 2.272727272727273,
+      "withText": 7,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": [
+            "nocen",
+            "teonay",
+            "a0v",
+            "mee",
+            "nocen",
+            "teonay"
+          ]
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": [
+            "adlih",
+            "gindib"
+          ]
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": [
+            "emwd",
+            "vens",
+            "vens"
+          ]
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": [
+            "sy597"
+          ]
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "seoo",
+            "shizuku",
+            "shizuku",
+            "cvero"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": [
+            "aly",
+            "she",
+            "iﬂf"
+          ]
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": [
+            "popderonn",
+            "posagee",
+            "phgrieiaps",
+            "peny",
+            "rydere",
+            "pty"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.3888888888888889,
+      "headlineCer": 0,
+      "kwRecall": 1,
+      "text": "THE DYING SR22 KILLER\n\ne\n\n/\n\nA\n\nT\n\nL\n\nSSATR\n\nN o ——\n\n——\n\n_a\n\ne —\n\n2y\nTHE DYING SR22 KILLER\n\n.‘-\n\n' 4\n\n-\n\nadl\n\n\\\n\n—\n\nN\n\ne Ty\n\nAL\n\n- ———————\n\n. »\n\nP~\n\n-\n\nit\n\nPty\n\n—\n\n.-\n\ne o sy\n\n1o\n\nPR\n\n..\n\n-\n\nRtk ) (S\n\nT\n\n-~\n\nC—\n\n[P\n\nU\n\ne DT\n\n— -\n\nL r\n\n2\n\nB3\n\nLAl\n\n=\n\not =\n\no\n\nPt\n\no L iR\n\n.\n\ne\n\nAany\n\norse s\n\n.\n\nS\n\nALY\n\nYR\n\nRy\n\np\n\ne\n\n-\n\ne\n\nRS\n\ne\n\n~ -\n\ne\n\ne\n\nSN\n\n\\Ses\n\ne\n\ney\n\n—\n\n~av -\n\n-\n\ns\n\n.\n\n-~\n\ns\n\nbea\n\n—~\n\n>\n\n[ e 0%\n\n3R\n\nCaddd\n\ne\n\nRar?\n\n.\n\n.2\n\ne\n\nAN\n\nT,\n\nR\n\n%,\n\n-t\n\nR\n\n§ol,\n\n\"\n\nHOS\n\n-4\n\ngas\n\n-\n\n-\n\not\n\no\n\ng\n\n\\‘é’f@\n\n{¥0\n\nR %\n\nv .\n\n2\n\n£\n\nL.\n\n>~\n\nmFa,\n\ns\n\n32\n\n'\\ T\n\nSy\n\n[N\n\n)\n\n.\n\n-\n\n..\n\nL8\n\no\n\n,a,{‘_-’:\n\nNS\n\n5P\n\nPl\n\n5\n\ns\n\n-~\n\n-\n\nN\n\n-\n\n’”\n\n-~\n\nRS\n\ne\n\nW fing 4 ikl\n\n2\n\n.\n\nN\n\nFal ot\n\nD)\n\nR\n\n-\n\ne .\n\no\n\no a s\n\nPy\n\noo\n\ns\n\nLITReR S0\n\n. o~\n\nAT fo\n\nxR\n\n.\n\ne\n\nPone™y\n- -\n\n\"\n\n\"-\n\ne\n\nA WE ¥ ]\n\nD - S S .y\n\n—\n\n-~\n\no —\n\n¢\n\n«w\n\nFa\n\nLl 3\n\n¥\n\nT -\n\nTow\n\nJrf‘*\n\nLTS\n\nI\n\n\\a-.\n\ni t‘ -8 Ty\n\n\\!\\\n\nP,.“ﬁ-a‘:\"\n\ne - 'L etk\n\n-\n\nIS\n\nPOy\n\n~h\n\n\"\n\ns 4]\n\n:R  :“T(\\\n\n335 nﬁ«%  -\n\n‘*ﬁ‘*\nTHE DYING SR22 KILLER\n\n-\n\n|\n\nAP\n\n-——\n\nS5\n\ne o =\n\nV — ———\n\n n— -\n\n-\n\nP\n\n[P\n\n-t\n\n- -\n\nY-\n\n—\n\n-\n\n— .\n\nBV\n\nong—e\n\nprop—.\n\n‘..\n\ni\n\ng, v\n\n-~\n\n-~\n\ne el\n\n.\n\nS TH\n\nA 1\n\nN\n\n¥4\n\n-\n\n~a\n\n-\n_THE DYING SR22 KILLER\n\nL Y.\n\n-\n\n-\n\nadl\n\n!\n\nS5MTR,   e\n\nel\n\ns ———\n\nL\n\n~\n\nN\n\n-'!n‘!L\n\n_hm_____\n\nRN,\n\nAL\n\n——————\n\n. »\n\nP~\n\n= -\n\n-\n\nL.\n\n-\n\nit\n\nPty\n\n.-\n\ne = sy\n\n1o\n\n-\n\n--\n\n_—\n\n-    g\n\nOl\n\npaadar ) v\n\n-~\n\n.\n\n-\n\nR\n\nR\n\n-\n\n-\n\no\n\n——\n\nRt @027\n\nB8 Wy,\n\n=\n\notz\n\nv\n\ns 3!\n\nS\n\n£ o\n\ne\n\n153\n\nst\n\nY CStemptt\n\n2\n\ne\n\nR0y\n\n-~\n\ns\n\ne\n\nPR\n\ns\n\nN\n\n—\n\n—ev. 2\n\ns\n\n&\n\nSofrinrn i\n\ns G\n\nT\n\n#0)\n\nPPN\n\n3R\n\nPAANEY\n\n>\n\n8 e F RO\n\nO\n\n-,\n\n%oy,\n\n~ =\n\n*hy\n\n7im\n\nN\n\ne\n\nS\n\n$o\n\nkY\n\n%2\n\ne\n\ne P\n\n¢\n\ng\n\ne Y\n\nbL) TR,\n\not\n\n\",\n\nL.\n\nLN\n\ns\n\nR\n\nPy\n\n.-,\n\ns,\n\n>~\n\n..\n\n4 vl\n\ni\n\n%\n\n.\n\n.\n\n..\n\ni\n\nPR\n\n>\n\ne\n\nDR\n\nFale\n\nra\n\n-~\n\nc .\n\no\n\nI\n\nAire\n\nLA\n\nRSN\n\nS\n\nLav\n\n&S\n\n<4\n\nVL L %'S\n\ns\n\nFoRared\n\nL e\n\n.,\n\n[ IS\n\n53\n\nT TRRY\n\n.\n\nY\n\n-\nTHE{DYINGISRZ2KILLER\n\n\\\n\n—_—\n\n=)\n\nL ]\n\n- W\n\nST\n\n\\Q\n\nsl ~\n\n\\ ¥ S\n\n[ —\n\n4\n\na2\n\nW\n\n_—\n\nP\n\ni\n\n—\n\n-\n\n“ .\n\n-\n\nP\n\nS,\n\n[\n\n0,\n\no\n\no\n\n[ R\n\ny -\n\nR =4\n\ne\n\ns\n\nS\n\nA\n\ne £\n\nB\n\nT .\n\n[\n\nT\n\ne}\n\nS\n\n~y\n\n>~\n\nv olces\n\nL2 ]\n\nR\n\n-\n\nWV R OPURA & 2t L\n\ne’\n\nY"
+    },
+    "variant": "1280",
+    "init": {
+      "ms": 16657.89999999851,
+      "langs": [
+        "eng"
+      ]
+    },
+    "langInit": {
+      "rus": {
+        "ms": 7424.89999999851,
+        "lang": "rus"
+      }
+    },
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 69
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 710990,
+        "total": 1849498,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 11627419,
+        "total": 12746663
+      },
+      "heapAfterRuns": {
+        "used": 31872077,
+        "total": 35451217
+      }
+    }
+  },
+  {
+    "arm": "paddle-eslav",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.09033136530766968,
+    "meanWer": 0.21166020671834623,
+    "exactLineRate": 0.7042635658914729,
+    "nearLineRate": 0.8143410852713178,
+    "meanKeywordRecall": 0.8807308970099669,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.09745936858708878,
+        "kwRecall": 0.874908424908425
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.020833333333333336,
+        "kwRecall": 0.9375
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.12364825871869217,
+        "kwRecall": 0.8368055555555555
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.04824686836743073,
+        "kwRecall": 0.9362155388471178
+      }
+    },
+    "timing": {
+      "meanMs": 2211.614814815146,
+      "medianMs": 1652.7000000029802,
+      "p95Ms": 4440.5,
+      "maxMs": 11516.79999999702
+    },
+    "negatives": {
+      "meanFalseWords": 0.45454545454545453,
+      "withText": 3,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": []
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": []
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": [
+            "cx939v5"
+          ]
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "benking",
+            "app",
+            "shizuku"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": []
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": [
+            "piael"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.19444444444444445,
+      "headlineCer": 0,
+      "kwRecall": 1,
+      "text": "THE DYING SR22 KILLER\nS5-MTA\nEXPERIMENTAL"
+    },
+    "variant": "1280",
+    "init": {
+      "ms": 15566.5,
+      "init": {
+        "backend": "wasm",
+        "webgpuAvailable": false,
+        "detProvider": "wasm",
+        "recProvider": "wasm",
+        "assets": [
+          {
+            "url": "/experiments/paddleocr/models/ppocrv5_mobile_det.tar",
+            "bytes": 4829696
+          },
+          {
+            "url": "/experiments/paddleocr/models/eslav_ppocrv5_mobile_rec.tar",
+            "bytes": 7922176
+          }
+        ],
+        "elapsedMs": 4770.70000000298,
+        "pipelineConfigWarnings": [
+          "DocPreprocessor is not yet supported in PaddleOCR.js: config will be ignored for now.",
+          "TextLineOrientation is not yet supported in PaddleOCR.js: config will be ignored for now."
+        ]
+      }
+    },
+    "langInit": {},
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 65
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 710990,
+        "total": 1849498,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 31770400,
+        "total": 35254164
+      },
+      "heapAfterRuns": {
+        "used": 66788440,
+        "total": 69067440
+      }
+    }
+  },
+  {
+    "arm": "paddle-en",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.14207859770128414,
+    "meanWer": 0.22361111111111115,
+    "exactLineRate": 0.6992248062015503,
+    "nearLineRate": 0.7775193798449613,
+    "meanKeywordRecall": 0.8210963455149501,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.0926343558379395,
+        "kwRecall": 0.8835164835164835
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.6241599558688942,
+        "kwRecall": 0.2125
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.15631073449126187,
+        "kwRecall": 0.8055555555555555
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.12410116175604906,
+        "kwRecall": 0.8407268170426064
+      }
+    },
+    "timing": {
+      "meanMs": 1375.1166666668873,
+      "medianMs": 1194,
+      "p95Ms": 3306.39999999851,
+      "maxMs": 5736.5
+    },
+    "negatives": {
+      "meanFalseWords": 0.5454545454545454,
+      "withText": 3,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": []
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": []
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": [
+            "939v5"
+          ]
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "tisking",
+            "app",
+            "etth",
+            "shizuku"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": []
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": [
+            "plael"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.19444444444444445,
+      "headlineCer": 0,
+      "kwRecall": 1,
+      "text": "THE DYING SR22 KILLER\nS5-MTA\nEXPERIMENTAL"
+    },
+    "variant": "1280",
+    "init": {
+      "ms": 10950.70000000298,
+      "init": {
+        "backend": "wasm",
+        "webgpuAvailable": false,
+        "detProvider": "wasm",
+        "recProvider": "wasm",
+        "assets": [
+          {
+            "url": "/experiments/paddleocr/models/ppocrv5_mobile_det.tar",
+            "bytes": 4829696
+          },
+          {
+            "url": "/experiments/paddleocr/models/en_ppocrv5_mobile_rec.tar",
+            "bytes": 7882240
+          }
+        ],
+        "elapsedMs": 1908.8999999985099,
+        "pipelineConfigWarnings": [
+          "DocPreprocessor is not yet supported in PaddleOCR.js: config will be ignored for now.",
+          "TextLineOrientation is not yet supported in PaddleOCR.js: config will be ignored for now."
+        ]
+      }
+    },
+    "langInit": {},
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 65
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 710990,
+        "total": 1849498,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 61635480,
+        "total": 67155896
+      },
+      "heapAfterRuns": {
+        "used": 62813953,
+        "total": 65079689
+      }
+    }
+  },
+  {
+    "arm": "tess-fast-480",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.40597008512953014,
+    "meanWer": 0.6899224806201552,
+    "exactLineRate": 0.25852713178294573,
+    "nearLineRate": 0.34147286821705425,
+    "meanKeywordRecall": 0.3769656699889258,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.3979040414516346,
+        "kwRecall": 0.3814407814407813
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.48461401098901097,
+        "kwRecall": 0.3333333333333333
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.34005131628061197,
+        "kwRecall": 0.43749999999999994
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.4892358984123742,
+        "kwRecall": 0.30050125313283216
+      }
+    },
+    "timing": {
+      "meanMs": 513.5648148145389,
+      "medianMs": 439.70000000298023,
+      "p95Ms": 1284.2999999970198,
+      "maxMs": 2009.7000000029802
+    },
+    "negatives": {
+      "meanFalseWords": 0.36363636363636365,
+      "withText": 3,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": [
+            "srr"
+          ]
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": []
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": [
+            "sae"
+          ]
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "elt",
+            "oee"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": []
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": []
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.7212301587301587,
+      "headlineCer": 0.5238095238095238,
+      "kwRecall": 0,
+      "text": "2\n\nTHE IlYI!{[E AI‘IZ KILL\n\n&"
+    },
+    "variant": "480",
+    "init": {
+      "ms": 5493.79999999702,
+      "langs": [
+        "eng"
+      ]
+    },
+    "langInit": {
+      "rus": {
+        "ms": 3739.60000000149,
+        "lang": "rus"
+      }
+    },
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 69
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 721817,
+        "total": 1849653,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 4377242,
+        "total": 5452182
+      },
+      "heapAfterRuns": {
+        "used": 9791170,
+        "total": 11425626
+      }
+    }
+  },
+  {
+    "arm": "tess-161-480",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.22178678394690754,
+    "meanWer": 0.4938999630860095,
+    "exactLineRate": 0.4118217054263567,
+    "nearLineRate": 0.5618217054263566,
+    "meanKeywordRecall": 0.626799557032115,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.20932770327348058,
+        "kwRecall": 0.6338217338217337
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.34326282051282053,
+        "kwRecall": 0.5583333333333333
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.2075927171312234,
+        "kwRecall": 0.6173611111111111
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.23971613150356127,
+        "kwRecall": 0.6387218045112781
+      }
+    },
+    "timing": {
+      "meanMs": 2733.0148148144835,
+      "medianMs": 2215.7000000029802,
+      "p95Ms": 6053.0999999940395,
+      "maxMs": 8515.29999999702
+    },
+    "negatives": {
+      "meanFalseWords": 3.6363636363636362,
+      "withText": 9,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": [
+            "one"
+          ]
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": [
+            "srr",
+            "tldn",
+            "far",
+            "ill",
+            "tlln",
+            "ill",
+            "geep"
+          ]
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": [
+            "k7ha",
+            "aree",
+            "jdos",
+            "l3n"
+          ]
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": [
+            "rew",
+            "vews"
+          ]
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": [
+            "sae",
+            "vier",
+            "xyl",
+            "bycst",
+            "luq"
+          ]
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": [
+            "nery",
+            "sbk"
+          ]
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "elt",
+            "oee",
+            "tsi",
+            "shizuku",
+            "geme",
+            "am3ie",
+            "clujk",
+            "tsi",
+            "shizuku",
+            "heents",
+            "laﬂ"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": [
+            "fbj"
+          ]
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": [
+            "sne",
+            "sne",
+            "paney",
+            "wmaw",
+            "voe",
+            "lyity",
+            "wim"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.5922619047619048,
+      "headlineCer": 0.2857142857142857,
+      "kwRecall": 1,
+      "text": "2\n\nTHE DYITTE AI‘IZ KILL\n\n&\nTIIE DYING SR22 I(IllEII\n\n\"\\WQ\\\n™.\n\nP—\n\nP C g\n\no\nTHE IIYIN(ES“HZZ KILLER\n\nA\nTIIE DYING SR22 I(IllEII\n\n\"\\WQ\\\n\n= W\nHE(DY! Iﬂﬂ@@ﬂmﬂ\n\n<K 3\n\np -\n\n-mes"
+    },
+    "variant": "480",
+    "init": {
+      "ms": 5242.30000000447,
+      "langs": [
+        "eng"
+      ]
+    },
+    "langInit": {
+      "rus": {
+        "ms": 2410.89999999851,
+        "lang": "rus"
+      }
+    },
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 68
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 721817,
+        "total": 1849653,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 24745605,
+        "total": 27390669
+      },
+      "heapAfterRuns": {
+        "used": 18246901,
+        "total": 19449589
+      }
+    }
+  },
+  {
+    "arm": "paddle-eslav-480",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.0701078281802158,
+    "meanWer": 0.18065245478036177,
+    "exactLineRate": 0.7263565891472866,
+    "nearLineRate": 0.8802325581395349,
+    "meanKeywordRecall": 0.9098560354374307,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.07516162252348578,
+        "kwRecall": 0.9070207570207571
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.020833333333333336,
+        "kwRecall": 0.9375
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.07797943120118044,
+        "kwRecall": 0.8958333333333334
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.0601647506800499,
+        "kwRecall": 0.9275689223057644
+      }
+    },
+    "timing": {
+      "meanMs": 1408.2240740746536,
+      "medianMs": 1048.6000000014901,
+      "p95Ms": 3353.39999999851,
+      "maxMs": 6953.10000000149
+    },
+    "negatives": {
+      "meanFalseWords": 0.8181818181818182,
+      "withText": 3,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": []
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": []
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": [
+            "gx93915"
+          ]
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "denking",
+            "aep",
+            "gpay",
+            "peetle",
+            "shizuku",
+            "game",
+            "apo"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": []
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": [
+            "piurl"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.4444444444444444,
+      "headlineCer": 0,
+      "kwRecall": 1,
+      "text": "THE DYING SR22 KILLER\nS5-MTP"
+    },
+    "variant": "480",
+    "init": {
+      "ms": 10201.5,
+      "init": {
+        "backend": "wasm",
+        "webgpuAvailable": false,
+        "detProvider": "wasm",
+        "recProvider": "wasm",
+        "assets": [
+          {
+            "url": "/experiments/paddleocr/models/ppocrv5_mobile_det.tar",
+            "bytes": 4829696
+          },
+          {
+            "url": "/experiments/paddleocr/models/eslav_ppocrv5_mobile_rec.tar",
+            "bytes": 7922176
+          }
+        ],
+        "elapsedMs": 1647.5,
+        "pipelineConfigWarnings": [
+          "DocPreprocessor is not yet supported in PaddleOCR.js: config will be ignored for now.",
+          "TextLineOrientation is not yet supported in PaddleOCR.js: config will be ignored for now."
+        ]
+      }
+    },
+    "langInit": {},
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 65
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 721817,
+        "total": 1849653,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 63323365,
+        "total": 68909929
+      },
+      "heapAfterRuns": {
+        "used": 54477386,
+        "total": 56039022
+      }
+    }
+  },
+  {
+    "arm": "paddle-en-480",
+    "n": 54,
+    "textN": 43,
+    "negativeN": 11,
+    "meanCer": 0.13026741600026154,
+    "meanWer": 0.2149547803617571,
+    "exactLineRate": 0.7127906976744186,
+    "nearLineRate": 0.7968992248062017,
+    "meanKeywordRecall": 0.8399224806201548,
+    "byLang": {
+      "en": {
+        "n": 39,
+        "cer": 0.07961177088552998,
+        "kwRecall": 0.9042735042735043
+      },
+      "ru": {
+        "n": 4,
+        "cer": 0.6241599558688942,
+        "kwRecall": 0.2125
+      }
+    },
+    "bySplit": {
+      "dev": {
+        "n": 24,
+        "cer": 0.12238999514289095,
+        "kwRecall": 0.8333333333333334
+      },
+      "test": {
+        "n": 19,
+        "cer": 0.14021784234641385,
+        "kwRecall": 0.8482456140350877
+      }
+    },
+    "timing": {
+      "meanMs": 1508.3037037032623,
+      "medianMs": 1152.2000000029802,
+      "p95Ms": 3074.2999999970198,
+      "maxMs": 7140.80000000447
+    },
+    "negatives": {
+      "meanFalseWords": 0.9090909090909091,
+      "withText": 2,
+      "details": [
+        {
+          "id": "2m5VsdwVd28",
+          "words": []
+        },
+        {
+          "id": "AcumjEtp-A8",
+          "words": []
+        },
+        {
+          "id": "AwCOAJY1ITE",
+          "words": []
+        },
+        {
+          "id": "G1x4_XivFRg",
+          "words": []
+        },
+        {
+          "id": "VJdTfjpSB-M",
+          "words": []
+        },
+        {
+          "id": "YFqy5Y5KPVE",
+          "words": []
+        },
+        {
+          "id": "emqVZoayOPo",
+          "words": []
+        },
+        {
+          "id": "q8g7M_gjGUw",
+          "words": []
+        },
+        {
+          "id": "tUbo2KUnNYM",
+          "words": [
+            "binking",
+            "app",
+            "gpay",
+            "faetha",
+            "shizuku",
+            "same",
+            "app"
+          ]
+        },
+        {
+          "id": "wqdjfc2eLBE",
+          "words": []
+        },
+        {
+          "id": "zf-zhCBYmxw",
+          "words": [
+            "lipon",
+            "lasd",
+            "plael"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "OhVjcySNqqc",
+      "cer": 0.5277777777777778,
+      "headlineCer": 0,
+      "kwRecall": 1,
+      "text": "THE DYING SR22 KILLER\nS5-M00P"
+    },
+    "variant": "480",
+    "init": {
+      "ms": 10680.79999999702,
+      "init": {
+        "backend": "wasm",
+        "webgpuAvailable": false,
+        "detProvider": "wasm",
+        "recProvider": "wasm",
+        "assets": [
+          {
+            "url": "/experiments/paddleocr/models/ppocrv5_mobile_det.tar",
+            "bytes": 4829696
+          },
+          {
+            "url": "/experiments/paddleocr/models/en_ppocrv5_mobile_rec.tar",
+            "bytes": 7882240
+          }
+        ],
+        "elapsedMs": 1498,
+        "pipelineConfigWarnings": [
+          "DocPreprocessor is not yet supported in PaddleOCR.js: config will be ignored for now.",
+          "TextLineOrientation is not yet supported in PaddleOCR.js: config will be ignored for now."
+        ]
+      }
+    },
+    "langInit": {},
+    "offline": {
+      "ok": true,
+      "external": [],
+      "count": 65
+    },
+    "environment": {
+      "browser": "Chrome/155.0.8059.85",
+      "protocol": "1.3",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 2,
+      "deviceMemory": 8,
+      "crossOriginIsolated": false,
+      "heap": {
+        "used": 721817,
+        "total": 1849653,
+        "limit": 4395630592
+      },
+      "heapAfterInit": {
+        "used": 61698177,
+        "total": 69341625
+      },
+      "heapAfterRuns": {
+        "used": 56288727,
+        "total": 58336547
+      }
+    }
+  }
+]

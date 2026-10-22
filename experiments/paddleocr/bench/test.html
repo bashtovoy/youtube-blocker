@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PaddleOCR smoke test</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 24px; max-width: 1000px; }
+  pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; }
+</style>
+<h1>PaddleOCR.js smoke test</h1>
+<img id="img" src="../fixtures/-On0NzamrM0.jpg" width="640">
+<pre id="log">loading…</pre>
+<script src="./paddle.bundle.js"></script>
+<script>
+  const log = (s) => {
+    document.getElementById('log').textContent += '\n' + s;
+    console.log(s);
+  };
+  (async () => {
+    document.getElementById('log').textContent = 'sdk ' + globalThis.PADDLE_SDK_VERSION;
+    const t0 = performance.now();
+    const ocr = await PaddleOCR.create({
+      textDetectionModelName: 'PP-OCRv5_mobile_det',
+      textDetectionModelAsset: { url: '../models/ppocrv5_mobile_det.tar' },
+      textRecognitionModelName: 'eslav_PP-OCRv5_mobile_rec',
+      textRecognitionModelAsset: { url: '../models/eslav_ppocrv5_mobile_rec.tar' },
+      textDetectionBatchSize: 1,
+      textRecognitionBatchSize: 1,
+      ortOptions: { backend: 'wasm', wasmPaths: './ort/', numThreads: 1, simd: true }
+    });
+    log('create ' + Math.round(performance.now() - t0) + 'ms');
+    const t1 = performance.now();
+    const init = await ocr.initialize();
+    log('init ' + Math.round(performance.now() - t1) + 'ms ' + JSON.stringify(init));
+    const t2 = performance.now();
+    const res = await ocr.predict(document.getElementById('img'));
+    log('predict ' + Math.round(performance.now() - t2) + 'ms');
+    log(JSON.stringify(res, null, 2));
+    document.title = 'DONE';
+  })().catch((e) => {
+    log('ERROR ' + (e && e.stack || e));
+    document.title = 'ERROR';
+  });
+</script>

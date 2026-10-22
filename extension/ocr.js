@@ -1,7 +1,8 @@
-/* ocr.js — Content-Client für Vorschaubild-OCR (Tesseract.js, vollständig lokal).
-   Der eigentliche Worker läuft in der Background-Seite (ocr-host.js), weil
-   YouTube (Trusted Types + CSP) das Erzeugen von Workern aus Content-Scripts
-   blockiert. Hier bleibt nur der schlanke Messaging-Client. */
+/* ocr.js — Content-Client für Vorschaubild-OCR (PaddleOCR.js, vollständig lokal).
+   Die eigentliche Erkennung läuft in der Background-Seite bzw. im Offscreen-
+   Dokument (ocr-host.js), weil YouTube (Trusted Types + CSP) das Erzeugen von
+   Workern aus Content-Scripts blockiert. Hier bleibt nur der schlanke
+   Messaging-Client. */
 (function () {
   'use strict';
 
@@ -36,7 +37,7 @@
   function recognizeUrl(url, langs, hint) {
     const payload = { op: 'recognize', url, langs };
     /* Titel/Kanal helfen dem Host, die wahrscheinlichere Schrift zu wählen
-       (Latein oder Kyrillisch), ohne beide Tesseract-Modelle zu mischen. */
+       (Latein oder Kyrillisch), ohne beide Paddle-Erkenner zu mischen. */
     if (hint) payload.hint = String(hint);
     const run = ocrChain.then(() => call(payload, TIMEOUT_RECOGNIZE_MS));
     ocrChain = run.catch(() => {});

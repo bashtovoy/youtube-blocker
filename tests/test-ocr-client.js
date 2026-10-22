@@ -75,9 +75,9 @@ const tick = () => new Promise(r => setImmediate(r));
   assert.strictEqual(await pb, 'B');
 
   /* 4) Fataler Kanal-Fehler → err.fatal (content.js schaltet dauerhaft ab) */
-  reply = () => Promise.resolve({ ok: false, error: 'Tesseract-Bibliothek konnte nicht geladen werden', fatal: true });
+  reply = () => Promise.resolve({ ok: false, error: 'PaddleOCR-Bibliothek konnte nicht geladen werden', fatal: true });
   await assert.rejects(ocr.recognizeUrl('u3', 'eng'), e => {
-    assert.strictEqual(e.message, 'Tesseract-Bibliothek konnte nicht geladen werden');
+    assert.strictEqual(e.message, 'PaddleOCR-Bibliothek konnte nicht geladen werden');
     assert.strictEqual(e.fatal, true);
     return true;
   });

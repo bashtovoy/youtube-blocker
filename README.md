@@ -9,7 +9,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
 | Videotitel | Exakter Token-Abgleich mit der Schlüsselwortliste (Fälle, ё/е, Bindestriche und Satzzeichen normalisiert; Wortvarianten explizit eintragen) | nein |
-| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, weißer Rand gegen Leptonica-Boxfehler, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung. Bei langem Text mit einem unsicheren Wort oder OCR-Rauschen läuft vorher ein schneller tiefer Durchgang mit Graustufen- und heller Maske; `debug_file=/dev/null` hält Tesseract-Diagnosen aus dem Erweiterungsprotokoll | `ocr-host.js` + `lib/tesseract.min.js` |
+| Foto — OCR | Text im Vorschaubild wird mit PaddleOCR.js (PP-OCRv5 mobile) erkannt und in der Wortliste gesucht. Ein Detektor und zwei Erkenner liegen lokal im Paket: `en` für Latein, `eslav` für Kyrillisch. Bei `eng+rus` entscheidet die Schrift von Titel/Kanal, welche Pipeline zuerst läuft; beide können vom Popup vorgewärmt werden. Die ONNX-Runtime kommt ebenfalls aus `lib/` — kein CDN, kein Modell-Download zur Laufzeit | `ocr-host.js` + `lib/paddle.bundle.js` + `lib/*_ppocrv5_*.tar` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
@@ -28,7 +28,7 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 ## Bibliotheken installieren
 
 ```bash
-./setup.sh          # lädt tesseract.js (OCR: Bibliothek, Worker, Kern, eng/rus-Sprachdaten)
+./setup.sh          # baut PaddleOCR.js als IIFE-Bundle und lädt Detektor + Erkenner (en, eslav)
                     # außerdem die SigLIP-Modelle für die Semantik (siehe unten)
                     # optional — whisper.cpp und ein Modell für Sprache
 ```
@@ -38,7 +38,7 @@ Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
 1. `about:debugging#/runtime/this-firefox` → **Temporäres Add-on laden…**
 2. Wähle `extension/manifest.json` aus.
 
-Für eine dauerhafte Installation (aus dem Projektwurzelverzeichnis): `web-ext build --source-dir extension --artifacts-dir web-ext-artifacts --ignore-files "models/**" "models" "devreport.js"` (benötigt `web-ext`, z. B. via `npx web-ext`; die großen SigLIP-Modelle und die Dev-Brücke bleiben außen vor — die OCR-Sprachdaten in `lib/` sind enthalten, siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
+Für eine dauerhafte Installation (aus dem Projektwurzelverzeichnis): `web-ext build --source-dir extension --artifacts-dir web-ext-artifacts --ignore-files "models/**" "models" "devreport.js"` (benötigt `web-ext`, z. B. via `npx web-ext`; die großen SigLIP-Modelle und die Dev-Brücke bleiben außen vor — die OCR-Modelle in `lib/` sind enthalten, siehe „Modelle: lokaler Bezug und Offline-Betrieb“).
 
 ## Installation in Chrome
 
@@ -47,7 +47,7 @@ Für eine dauerhafte Installation (aus dem Projektwurzelverzeichnis): `web-ext b
 3. Für den Chrome Web Store das erzeugte ZIP hochladen.
 
 Hinweis: Chrome verlangt Manifest V3, und MV3-Service-Worker können keine Worker
-erzeugen — deshalb laufen die Rechen-Hosts (SigLIP, Tesseract) in einem unsichtbaren
+erzeugen — deshalb laufen die Rechen-Hosts (SigLIP, PaddleOCR) in einem unsichtbaren
 Offscreen-Dokument (`offscreen.html`), für Nutzer funktional identisch zu Firefox.
 Der Firefox-Weg (Hintergrundseite) bleibt unverändert; `build-chrome.js` erzeugt das
 MV3-Manifest aus dem Firefox-Manifest, damit beide Pakete aus einem Quellbaum kommen.
@@ -258,9 +258,10 @@ Erweiterung verwendet deshalb in Chrome die File System Access API:
   Kalibrierung: `gui-test-assets/padexp/`.
 - `OCR-Sprachen` — standardmäßig `eng+rus`. Beim Öffnen des Popups werden
   die aktivierten Modelle vorgeladen; Status und Fortschritt stehen direkt
-  unter der OCR-Zeile. Bei `eng+rus` laufen beide Modelle in getrennten
-  Workern, damit ein Sprachwechsel die bereits geladene Sprache nicht
-  verwirft.
+  unter der OCR-Zeile. Bei `eng+rus` laufen beide Erkenner als getrennte
+  Paddle-Pipelines; welcher zuerst gefragt wird, entscheidet die Schrift von
+  Titel und Kanal. Ein Sprachwechsel verwirft die bereits geladene Pipeline
+  nicht.
 - `Pause zwischen Signalen` — Schutz vor Flutung der YouTube-Oberfläche.
 - Sprache: Das Modell wird in `extension/models/` abgelegt, der Pfad wird in
   `speechModel` angegeben (z. B. `models/ggml-small.bin` — für Russisch
@@ -319,9 +320,10 @@ Gerät/Quantisierung: WebGPU q4f16, WASM q8) liegen **nicht** im ausgelieferten
 Paket — das AMO-Uploadlimit von 200 MB erlaubt das nicht. Chrome nutzt bewusst
 WASM (q8): Ohne GPU-Adapter schreibt Chrome jede WebGPU-Anfrage als Warnung ins
 Erweiterungsprotokoll. Firefox wählt WebGPU, wenn verfügbar, und merkt sich
-einen Fehlschlag versionsgebunden. Die kleinen OCR-Sprachdaten
-(`lib/eng.traineddata.gz`, `lib/rus.traineddata.gz`) sind dagegen im Paket
-enthalten und werden beim Öffnen des Popups lokal vorgeladen. Die Erweiterung
+einen Fehlschlag versionsgebunden. Die OCR-Modelle dagegen sind im Paket
+enthalten und werden beim Öffnen des Popups lokal vorgeladen: PP-OCRv5-Detektor
+sowie die Erkenner `en` und `eslav` als komprimierte TAR-Dateien in `lib/`
+(zusammen ~21 MB). Die Erweiterung
 sucht die SigLIP-Modelle in dieser Reihenfolge:
 
 1. **Lokal** — `extension/models/siglip-base-patch16-224/onnx/…`, gefüllt von
@@ -364,14 +366,13 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   unabhängig von der Sprache der Oberfläche.
 - OCR ist aufwendig: bei großer Liste einschalten, sonst wird CPU unnötig verbraucht.
   Anfragen laufen sequenziell über eine Warteschlange; Ergebnisse werden je
-  Bild-URL im Hintergrund-Host gecacht, die Tesseract-Worker werden nach zehn
-  Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet. Bei kurzem,
-  leerem oder insgesamt unsicherem Erstantext läuft zusätzlich ein tiefer
-  Durchgang mit fünf Bildvarianten. Ist der Text lang, aber lokal unsicher
-  (ein Wort unter 60 % Confidence oder OCR-Rauschen wie `[ ] { } |`), genügt
-  ein schneller tiefer Durchgang mit Graustufen- und heller Maske. Das kann
-  pro Karte einige Sekunden dauern, verbessert aber stark stilisierte
-  Thumbnails (neon, Rot/Weiß auf Schwarz, Glitch).
+  Bild-URL im Hintergrund-Host gecacht, die Paddle-Pipelines werden nach zehn
+  Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet. Der erste
+  Start lädt Detektor, Erkenner und ONNX-Runtime aus dem Paket und dauert
+  etwa 10–15 Sekunden; danach liegt die Erkennung im Bereich von ein bis drei
+  Sekunden pro Vorschaubild. Bei `eng+rus` entscheidet die Schrift von Titel
+  und Kanal über die Pipeline — ein Thumbnail mit der jeweils anderen Schrift
+  wird nicht zusätzlich geprüft.
 - Die Spracherkennung ist experimentell: lädt die Watch-Seite und den Audio-Stream,
   transkribiert nur die ersten N Sekunden. Für Russisch — multilinguales
   Modell (`small`), das sind ~460 MB im Worker.
@@ -392,7 +393,7 @@ extension/
   semantic-host.js — SigLIP-Worker-Host in der Background-Seite (umgeht CSP/Trusted Types)
   semantic-worker.js — Text-/Bild-Embeddings + roher Kosinus (Bild-Turm resident, Text einmal je Liste)
   ocr.js          — Content-Client: Vorschaubild-OCR (Messaging)
-  ocr-host.js     — Tesseract-Host in der Background-Seite (umgeht CSP/Trusted Types)
+  ocr-host.js     — PaddleOCR-Host in der Background-Seite (umgeht CSP/Trusted Types)
   speech.js       — whisper.cpp im Worker (optional)
   dismiss.js      — Klick auf „Kein Interesse“ / CSS-Ausblendung
   shots.js        — Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt (Content + Hintergrund)
@@ -431,19 +432,18 @@ node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
 node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
-node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, PSM 11, debug_file, weißer Rand, Sprachwahl, Masken
+node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, lokale Modell-URLs, Sprachwahl, Queue/Cache
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen / FSA ohne Download)
 node tests/test-folder-store.js  # Chrome-Ordner: IndexedDB-Warteschlange, Freigabe, Kollisionsnamen
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 node tests/test-shots.js         # Kontrollbilder: Dateiname mit vollständigem Grund, Sichtbarkeit, Zuschnitt
 node tests/e2e-chrome-fsa.js     # echter Chrome: OPFS-Handle, Service-Worker-Schreiben, captureVisibleTab
-node tests/e2e-chrome-ocr.js     # echter Chrome: Offscreen-OCR, WASM-Zwang, leere Konsole (Rand/debug_file)
+node tests/e2e-chrome-ocr.js     # echter Chrome: Offscreen-OCR, lokale Paddle-Assets, keine externen Anfragen
 node tests/test-ai.js            # KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
 node tests/test-ai-channel.js    # Kanalzähler: zwei Videos/180 Tage, Markier-/Dim-Modi, Freigaben
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
 node tests/test-sem-gpu-fallback.js # Gerätewahl: Chrome ohne WebGPU-Anfrage, Firefox mit versionsgebundenem Fallback
-node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-/Tesseract-Meldungen werden verworfen
-node tests/test-ocr-worker.js    # OCR-Worker-Einstieg: Filter lädt vor dem Tesseract-Skript
+node tests/test-quiet-warn.js    # Log-Filter: genau die bekannten transformers.js-Meldungen werden verworfen
 node tests/test-reinject-health.js # Selbstheilung verwaister Content-Scripts (Drossel, Sitzungs-Marker, Versionswechsel)
 node build-chrome.js             # Chrome-MV3-Sammlung → dist-chrome/ + web-ext-artifacts/*-chrome.zip
 npx web-ext lint --source-dir extension --ignore-files "models/**" "models" "devreport.js"
@@ -451,3 +451,6 @@ npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 ```
 
 Die Änderungshistorie steht in [`CHANGELOG.md`](CHANGELOG.md). Lizenz: [`LICENSE`](LICENSE) (MIT).
+Gebündelte Drittanbieter: PaddleOCR.js und die PP-OCRv5-Modelle (Apache-2.0,
+Details in [`experiments/paddleocr/README.md`](experiments/paddleocr/README.md)),
+ONNX Runtime und OpenCV.js (Apache-2.0), clipper-lib (BSL-1.0), js-yaml (MIT).

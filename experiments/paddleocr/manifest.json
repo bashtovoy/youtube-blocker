@@ -1,0 +1,985 @@
+{
+  "version": 1,
+  "description": "Salient-text ground truth for 54 real YouTube thumbnails (1280x720). Lines are the visually dominant text blocks; timers, LIVE badges and tiny UI chrome are intentionally omitted unless they are part of the thumbnail itself. Images are local and git-ignored.",
+  "fixtureDir": "fixtures",
+  "items": [
+    {
+      "id": "-On0NzamrM0",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean",
+        "stylized",
+        "number",
+        "target"
+      ],
+      "lines": [
+        "13-YEAR-OLD TESLA"
+      ],
+      "keywords": [
+        "13-year-old",
+        "tesla"
+      ]
+    },
+    {
+      "id": "2j4_iPG5Aqk",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "social-card",
+        "clean"
+      ],
+      "lines": [
+        "Elon Musk",
+        "@elonmusk",
+        "Rust is",
+        "the future",
+        "of AGI."
+      ],
+      "keywords": [
+        "rust",
+        "future",
+        "agi"
+      ]
+    },
+    {
+      "id": "2m5VsdwVd28",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "36jZqz_j1WE",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "french",
+        "news",
+        "subtitle"
+      ],
+      "lines": [
+        "13H",
+        "Crash d'avion militaire",
+        "Un mort, un homme disparu"
+      ],
+      "keywords": [
+        "crash",
+        "avion",
+        "militaire",
+        "mort",
+        "disparu"
+      ]
+    },
+    {
+      "id": "9VfbZwh-pqo",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "finance"
+      ],
+      "lines": [
+        "ROB MAURER",
+        "TESLA",
+        "Q3",
+        "2026",
+        "EARNINGS"
+      ],
+      "keywords": [
+        "tesla",
+        "q3",
+        "2026",
+        "earnings"
+      ]
+    },
+    {
+      "id": "AZsMh-qE4Kk",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "subtitle",
+        "clean"
+      ],
+      "lines": [
+        "Does My Tesla Have a",
+        "Costly Vibration Problem?",
+        "Watch This Drive"
+      ],
+      "keywords": [
+        "tesla",
+        "vibration",
+        "problem",
+        "drive"
+      ]
+    },
+    {
+      "id": "AcumjEtp-A8",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "AwCOAJY1ITE",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "Et6kkYkN5ns",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "military",
+        "clean",
+        "blocklist"
+      ],
+      "lines": [
+        "RUSSIA ACCELERATES UPGRADES",
+        "TU-160M2 STRATEGIC BOMBERS"
+      ],
+      "keywords": [
+        "russia",
+        "upgrades",
+        "tu-160m2",
+        "strategic",
+        "bombers"
+      ]
+    },
+    {
+      "id": "G1x4_XivFRg",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "HFdRsFiE68c",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "logo",
+        "small"
+      ],
+      "lines": [
+        "ETH Zürich",
+        "NVIDIA"
+      ],
+      "keywords": [
+        "eth",
+        "zürich",
+        "nvidia"
+      ]
+    },
+    {
+      "id": "Jrhf0JPKkUo",
+      "lang": "ru",
+      "split": "test",
+      "tags": [
+        "russian",
+        "stylized"
+      ],
+      "lines": [
+        "МАГИЧЕСКАЯ",
+        "СИЛА СЛОВА"
+      ],
+      "keywords": [
+        "магическая",
+        "сила",
+        "слова"
+      ]
+    },
+    {
+      "id": "M4v1uXNmxDI",
+      "lang": "ru",
+      "split": "dev",
+      "tags": [
+        "russian",
+        "dense",
+        "small"
+      ],
+      "lines": [
+        "7 САМЫХ ВРЕДНЫХ ПРОДУКТОВ",
+        "ПРИ БОЛИ В СУСТАВАХ И АРТРИТЕ",
+        "Сегодня поговорим о семи самых вредных",
+        "продуктах при боли в суставах и артрите,",
+        "И АРТРИТЕ"
+      ],
+      "keywords": [
+        "вредных",
+        "продуктов",
+        "боли",
+        "суставах",
+        "артрите"
+      ]
+    },
+    {
+      "id": "Ndftcft6XhU",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean"
+      ],
+      "lines": [
+        "ONE MOTOR."
+      ],
+      "keywords": [
+        "one",
+        "motor"
+      ]
+    },
+    {
+      "id": "NnIxjcl6Mnk",
+      "lang": "ru",
+      "split": "test",
+      "tags": [
+        "russian",
+        "card-screenshot",
+        "dense"
+      ],
+      "lines": [
+        "All",
+        "AI",
+        "Podcasts",
+        "Electric cars",
+        "Tennis",
+        "ВОПРОС-ОТВЕТ",
+        "The Best Stress Relief — And It's Not",
+        "Taking Walks. How to Calm Your Nerves ..."
+      ],
+      "keywords": [
+        "вопрос",
+        "ответ",
+        "stress",
+        "relief",
+        "nerves"
+      ]
+    },
+    {
+      "id": "OmacaxGSTpc",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "german",
+        "subtitle",
+        "clean"
+      ],
+      "lines": [
+        "DAS THEMA",
+        "Diese",
+        "Drohne könnte",
+        "Leben retten!"
+      ],
+      "keywords": [
+        "thema",
+        "drohne",
+        "leben",
+        "retten"
+      ]
+    },
+    {
+      "id": "TGzCDy1Fogw",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean",
+        "dense"
+      ],
+      "lines": [
+        "HIGHWAY RANGE TEST",
+        "SURPRISING RESULTS",
+        "LEXUS RZ",
+        "RIVIAN R2",
+        "BMW iX3",
+        "TESLA MODEL YL"
+      ],
+      "keywords": [
+        "highway",
+        "range",
+        "test",
+        "surprising",
+        "results",
+        "tesla"
+      ]
+    },
+    {
+      "id": "TmrSf8zSjeQ",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "stylized"
+      ],
+      "lines": [
+        "Tesla Roadster",
+        "How Did It Fly?",
+        "REAL FOOTAGE"
+      ],
+      "keywords": [
+        "tesla",
+        "roadster",
+        "fly",
+        "real",
+        "footage"
+      ]
+    },
+    {
+      "id": "UEoClx70oiM",
+      "lang": "ru",
+      "split": "test",
+      "tags": [
+        "russian",
+        "aviation",
+        "clean"
+      ],
+      "lines": [
+        "MC-21-310 | 73057",
+        "ЛЕТНЫЕ ИСПЫТАНИЯ"
+      ],
+      "keywords": [
+        "mc-21-310",
+        "73057",
+        "летные",
+        "испытания"
+      ]
+    },
+    {
+      "id": "UeJ-9OB4_rE",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "stylized"
+      ],
+      "lines": [
+        "SO YOU WANT TO",
+        "REPAIR IT?",
+        "$489",
+        "$699"
+      ],
+      "keywords": [
+        "repair",
+        "489",
+        "699"
+      ]
+    },
+    {
+      "id": "VJdTfjpSB-M",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "VemEEylx1Bs",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean"
+      ],
+      "lines": [
+        "MODEL 3 DRIVING",
+        "HUMAN",
+        "AUTOPILOT"
+      ],
+      "keywords": [
+        "model 3",
+        "driving",
+        "human",
+        "autopilot"
+      ]
+    },
+    {
+      "id": "VrWQDuAPKj8",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "german",
+        "stylized"
+      ],
+      "lines": [
+        "Roboter als Wächter",
+        "bis zu 8 h",
+        "Security-Demo"
+      ],
+      "keywords": [
+        "roboter",
+        "wächter",
+        "security",
+        "demo"
+      ]
+    },
+    {
+      "id": "VvJai6HGfyE",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "logo",
+        "small"
+      ],
+      "lines": [
+        "NVIDIA"
+      ],
+      "keywords": [
+        "nvidia"
+      ]
+    },
+    {
+      "id": "WK_j69hLR08",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "short"
+      ],
+      "lines": [
+        "JORDAN"
+      ],
+      "keywords": [
+        "jordan"
+      ]
+    },
+    {
+      "id": "YFqy5Y5KPVE",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "_bN-iHxHx0s",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean",
+        "short"
+      ],
+      "lines": [
+        "BRITISH?"
+      ],
+      "keywords": [
+        "british"
+      ]
+    },
+    {
+      "id": "_golUNME5hI",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "logo"
+      ],
+      "lines": [
+        "GRAND PRIX",
+        "TENNIS HIGHLIGHTS"
+      ],
+      "keywords": [
+        "grand",
+        "prix",
+        "tennis",
+        "highlights"
+      ]
+    },
+    {
+      "id": "birsgsPDjnE",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean",
+        "number"
+      ],
+      "lines": [
+        "DIED AT 417,822 km"
+      ],
+      "keywords": [
+        "died",
+        "417",
+        "822",
+        "km"
+      ]
+    },
+    {
+      "id": "emqVZoayOPo",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "fqmKQoob67U",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean"
+      ],
+      "lines": [
+        "AMAZING UPGRADE",
+        "BEFORE",
+        "AFTER"
+      ],
+      "keywords": [
+        "amazing",
+        "upgrade",
+        "before",
+        "after"
+      ]
+    },
+    {
+      "id": "g5PnYc08-Sk",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean",
+        "number"
+      ],
+      "lines": [
+        "2027 HYBRID OFF-ROAD SUV",
+        "1400 KM",
+        "904 HP",
+        "4.6 SEC"
+      ],
+      "keywords": [
+        "2027",
+        "hybrid",
+        "off-road",
+        "suv",
+        "1400",
+        "904"
+      ]
+    },
+    {
+      "id": "hZLx37vfeF8",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "german",
+        "card-screenshot"
+      ],
+      "lines": [
+        "RIP deutsche LKW Industrie? Diese",
+        "China E-Trucks sind JETZT da!"
+      ],
+      "keywords": [
+        "rip",
+        "deutsche",
+        "lkw",
+        "industrie",
+        "china",
+        "trucks"
+      ]
+    },
+    {
+      "id": "iNVP35lZVNE",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "stylized",
+        "clean"
+      ],
+      "lines": [
+        "RIP",
+        "LLMs?"
+      ],
+      "keywords": [
+        "rip",
+        "llms"
+      ]
+    },
+    {
+      "id": "iyJ059CCop8",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean"
+      ],
+      "lines": [
+        "THE LOST SUMMARY"
+      ],
+      "keywords": [
+        "lost",
+        "summary"
+      ]
+    },
+    {
+      "id": "jDu9Cjfj9iw",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "small"
+      ],
+      "lines": [
+        "VW CAN-FD"
+      ],
+      "keywords": [
+        "vw",
+        "can-fd"
+      ]
+    },
+    {
+      "id": "jLZTTJWp1hs",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "stylized",
+        "dense"
+      ],
+      "lines": [
+        "BAW 212 3-DOOR!",
+        "FIRST TEST",
+        "Suzuki Jimmy KILLER?"
+      ],
+      "keywords": [
+        "baw",
+        "212",
+        "3-door",
+        "first",
+        "test",
+        "suzuki",
+        "killer"
+      ]
+    },
+    {
+      "id": "jYOcIgHp5-s",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "stylized",
+        "clean"
+      ],
+      "lines": [
+        "PORSCHE",
+        "THE FASTEST",
+        "SKATEBOARD RUN EVER",
+        "PORSCHE x RED BULL"
+      ],
+      "keywords": [
+        "porsche",
+        "fastest",
+        "skateboard",
+        "run"
+      ]
+    },
+    {
+      "id": "kciscJSHZgY",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "german",
+        "clean"
+      ],
+      "lines": [
+        "SCHON WIEDER",
+        "VW-RÜCKRUF",
+        "next news"
+      ],
+      "keywords": [
+        "schon",
+        "wieder",
+        "vw",
+        "rückruf",
+        "news"
+      ]
+    },
+    {
+      "id": "kuO4NOqp7Tc",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "stylized"
+      ],
+      "lines": [
+        "RIP",
+        "LLMs?",
+        "NCM"
+      ],
+      "keywords": [
+        "rip",
+        "llms",
+        "ncm"
+      ]
+    },
+    {
+      "id": "l_CDZ1jZ18I",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "card-screenshot",
+        "chyron",
+        "small"
+      ],
+      "lines": [
+        "Money Power Politics",
+        "CONCERNS ABOUT A.I. BUBBLE AS INDUSTRY DRIVES THE ECONOMY"
+      ],
+      "keywords": [
+        "money",
+        "power",
+        "politics",
+        "bubble",
+        "industry",
+        "economy"
+      ]
+    },
+    {
+      "id": "nRnCDnU3sMQ",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "german",
+        "small"
+      ],
+      "lines": [
+        "Energy-Charts Talks",
+        "Strompreisentwicklung für",
+        "Neukunden in Deutschland",
+        "ab 2021",
+        "Fraunhofer ISE"
+      ],
+      "keywords": [
+        "energy",
+        "charts",
+        "strompreisentwicklung",
+        "neukunden",
+        "deutschland"
+      ]
+    },
+    {
+      "id": "ojPnIZZo1b8",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "card-screenshot",
+        "chyron"
+      ],
+      "lines": [
+        "Computer Hardware",
+        "Electrical Engineering",
+        "Camp",
+        "Electric News Highlight"
+      ],
+      "keywords": [
+        "electric",
+        "news",
+        "highlight"
+      ]
+    },
+    {
+      "id": "q8g7M_gjGUw",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "tIZDt6sXGgQ",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "stylized",
+        "clean"
+      ],
+      "lines": [
+        "HOW?!",
+        "TESLA ROADSTER"
+      ],
+      "keywords": [
+        "how",
+        "tesla",
+        "roadster"
+      ]
+    },
+    {
+      "id": "tUbo2KUnNYM",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "uosU6APodYk",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "clean",
+        "subtitle"
+      ],
+      "lines": [
+        "XPENG Humanoid Robot",
+        "Real-Time Motion-Following Interaction"
+      ],
+      "keywords": [
+        "xpeng",
+        "humanoid",
+        "robot",
+        "motion",
+        "interaction"
+      ]
+    },
+    {
+      "id": "v8rT8kmc63k",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "stylized",
+        "dense"
+      ],
+      "lines": [
+        "Alcaraz",
+        "BREAKING NEWS",
+        "NEVER SEEN BEFORE?!"
+      ],
+      "keywords": [
+        "breaking",
+        "news",
+        "never",
+        "seen",
+        "before"
+      ]
+    },
+    {
+      "id": "vg9ycuJRXag",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "ad",
+        "text",
+        "clean"
+      ],
+      "lines": [
+        "KUKA",
+        "Robotics Reinvent the Touchless",
+        "Car Wash",
+        "KUKA robots and 3D vision to deliver",
+        "a faster, more precise car wash"
+      ],
+      "keywords": [
+        "kuka",
+        "robotics",
+        "touchless",
+        "car",
+        "wash",
+        "vision"
+      ]
+    },
+    {
+      "id": "weuhF2bxh8g",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "stylized",
+        "dense"
+      ],
+      "lines": [
+        "NEW",
+        "BREAKING NEWS",
+        "$52B AI MEGAPROJECT"
+      ],
+      "keywords": [
+        "breaking",
+        "news",
+        "52b",
+        "ai",
+        "megaproject"
+      ]
+    },
+    {
+      "id": "wqdjfc2eLBE",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "xa6PkV6-Xsw",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "clean",
+        "short"
+      ],
+      "lines": [
+        "ROBOPARTY RP1"
+      ],
+      "keywords": [
+        "roboparty",
+        "rp1"
+      ]
+    },
+    {
+      "id": "zf-zhCBYmxw",
+      "lang": "en",
+      "split": "dev",
+      "tags": [
+        "negative"
+      ],
+      "negative": true,
+      "lines": [],
+      "keywords": []
+    },
+    {
+      "id": "OhVjcySNqqc",
+      "lang": "en",
+      "split": "test",
+      "tags": [
+        "target",
+        "stylized",
+        "clean",
+        "aviation"
+      ],
+      "lines": [
+        "THE DYING SR22 KILLER",
+        "S5-MTA",
+        "EXPERIMENTAL",
+        "PIPISTREL"
+      ],
+      "keywords": [
+        "dying",
+        "sr22",
+        "killer"
+      ]
+    }
+  ]
+}

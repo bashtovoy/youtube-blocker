@@ -40,7 +40,7 @@ async function ensureOffscreen() {
     offscreenCreating = api.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['BLOBS'],
-      justification: 'Lokale WASM-Worker (SigLIP, Tesseract) ausführen — der Service Worker kann keine Worker erzeugen'
+      justification: 'Lokale WASM-Worker (SigLIP, PaddleOCR) ausführen — der Service Worker kann keine Worker erzeugen'
     }).catch(e => {
       /* Race: parallel wurde doch schon eines erstellt — kein Fehler. */
       if (!/single offscreen|already exists/i.test(String((e && e.message) || e))) throw e;
