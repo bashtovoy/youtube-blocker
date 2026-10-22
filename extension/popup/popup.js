@@ -11,7 +11,7 @@ $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Bu
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide', 'fuzzy'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
-const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold'];
+const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   checkSpeech: false,
   hideMembersOnly: false,
   hideAiGenerated: true,
+  aiChannelMode: 'off',
   hidePromoted: true,
   shotBeforeHide: false,
   fuzzy: true,
@@ -544,6 +545,7 @@ function applyLanguage(lang) {
   renderLastShot();
   renderPromoDiag();
   renderFolderStatus();
+  syncAiChannelUi();
 }
 
 function normRoute(r) {
@@ -677,6 +679,16 @@ function parseKeywordLines(text) {
   }).filter(Boolean);
 }
 
+const AI_CHANNEL_MODES = ['off', 'badge', 'dim', 'hide'];
+
+function syncAiChannelUi() {
+  const on = $('hideAiGenerated') && $('hideAiGenerated').checked;
+  const sel = $('aiChannelMode');
+  if (!sel) return;
+  sel.disabled = !on;
+  sel.title = on ? '' : t('ai_channel_need_ai');
+}
+
 async function load() {
   const data = await api.storage.local.get({
     settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, promoSuspects: [], lastShot: null
@@ -686,6 +698,7 @@ async function load() {
   s.speechMaxSeconds = numberOr(s.speechMaxSeconds, DEFAULT_SETTINGS.speechMaxSeconds);
   s.semanticMargin = numberOr(s.semanticMargin, DEFAULT_SETTINGS.semanticMargin);
   s.hashThreshold = numberOr(s.hashThreshold, DEFAULT_SETTINGS.hashThreshold);
+  if (!AI_CHANNEL_MODES.includes(s.aiChannelMode)) s.aiChannelMode = DEFAULT_SETTINGS.aiChannelMode;
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage' || id === 'fuzzy'); });
   VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
   s.allowAll = YB.matcher.normalizeAllowAll(s.allowAll);
@@ -697,6 +710,7 @@ async function load() {
   lastShot = data.lastShot || null;
   /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
   applyLanguage(i18n.normalize(s.uiLang) || i18n.detect(api));
+  syncAiChannelUi();
   /* Live-Status beim Host erfragen: der gespeicherte semStatus kann fehlen oder
      veraltet sein (z. B. direkt nach dem Browserstart, bevor etwas lief). */
   api.runtime.sendMessage({ type: 'ybsem', op: 'status' })
@@ -842,6 +856,9 @@ async function persist() {
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
   settings.allowAll = YB.matcher.normalizeAllowAll($('allowAll') ? $('allowAll').value : []);
+  settings.aiChannelMode = AI_CHANNEL_MODES.includes(settings.aiChannelMode)
+    ? settings.aiChannelMode
+    : DEFAULT_SETTINGS.aiChannelMode;
   const marginRaw = Number(settings.semanticMargin);
   settings.semanticMargin = Number.isFinite(marginRaw) && marginRaw >= 0 && marginRaw <= 1
     ? marginRaw
@@ -996,6 +1013,7 @@ VALUE_IDS.forEach(id => {
     schedulePersist(isText ? 700 : 0);
   });
 });
+if ($('hideAiGenerated')) $('hideAiGenerated').addEventListener('change', syncAiChannelUi);
 if ($('allowAll')) {
   $('allowAll').addEventListener('input', () => schedulePersist(700));
 }

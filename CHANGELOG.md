@@ -3,6 +3,29 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.5.23] — 2026-10-22
+
+### Hinzugefügt
+- **Optionaler Kanalzähler für offizielle KI-Kennzeichnungen.** Wenn YouTube
+  mindestens zwei verschiedene Videos eines Kanals offiziell als KI-erstellt
+  kennzeichnet (innerhalb von 180 Tagen), kann die Erweiterung weitere Karten
+  dieses Kanals lokal markieren, abdunkeln oder ausblenden. Die Regel ist
+  standardmäßig **aus**; die offizielle Kennzeichnung bleibt die einzige
+  Quelle. Ohne offizielle Befunde wird kein Kanal heuristisch eingestuft.
+- Kanal-Links werden aus Karte und Videoseite gelesen (`/channel/UC…`,
+  `@handle`, `/c/…`, `/user/…`); Treffer werden lokal und tabübergreifend
+  serialisiert gespeichert. Es werden keine Daten gesendet.
+- Das Popup bietet die Modi **Aus**, **Nur markieren**, **Abdunkeln** und
+  **Ausblenden**. Die offizielle KI-Blockierung und das Watch-Overlay bleiben
+  unverändert und haben Vorrang.
+
+### Tests
+- `test-ai-channel` prüft Kanal-Links, Zwei-Video-Regel, Duplikate,
+  180-Tage-Fenster, Obergrenzen und Freigaben.
+- `test-background-route` prüft die serialisierte Kanal-Aufnahme und die
+  Antwort `flagged` nach dem zweiten Video.
+- i18n-Test deckt die neuen Popup-Texte in de/en/ru/uk ab.
+
 ## [1.5.22] — 2026-10-21
 
 ### Behoben

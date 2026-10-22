@@ -95,6 +95,33 @@ Bestätigung nach. Mindestversion: Chrome 116.
 Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 (im Firefox-Popup würde der Datei-Dialog das Popup sofort schließen).
 
+## Kanäle mit wiederholter KI-Kennzeichnung (ab 1.5.23)
+
+Unter **„Was geprüft wird“** gibt es zusätzlich den Modus **„Kanäle mit
+wiederholter KI-Kennzeichnung“**. Er ist standardmäßig **aus**.
+
+Ist er aktiv, zählt die Erweiterung lokal, bei wie vielen **verschiedenen**
+Videos eines Kanals YouTube die offizielle KI-Kennzeichnung angezeigt hat.
+Ab **zwei Videos innerhalb von 180 Tagen** gilt der Kanal als auffällig;
+weitere Karten dieses Kanals werden dann je nach Modus markiert, abgedunkelt
+oder lokal ausgeblendet. Ein und dasselbe Video zählt nur einmal.
+
+Wichtig:
+
+- Die offizielle KI-Kennzeichnung bleibt die **einzige Quelle**. Kanäle ohne
+  offizielle Befunde werden nicht heuristisch als KI eingestuft.
+- Die offizielle KI-Blockierung und das Watch-Overlay haben Vorrang; ein
+  direktes KI-Badge wird nie durch die Kanalregel ersetzt.
+- Die Daten bleiben lokal (`storage.local.aiChannels`). Es gibt keine
+  Netzwerkanfrage, keinen API-Schlüssel und keinen Upload. Kanal-IDs und
+  Zeitpunkte werden nicht exportiert. Gespeichert werden höchstens 300 Kanäle
+  mit je 10 Video-IDs; Befunde fallen nach 180 Tagen aus dem Zählfenster.
+- Die Kanalerkennung nutzt `/channel/UC…`, `@handle`, `/c/…` oder `/user/…`.
+  Wechselt YouTube zwischen diesen Formen, kann derselbe Kanal vorübergehend
+  als zwei Einträge gezählt werden; der Zähler bleibt dann konservativ.
+- „Ausblenden“ ist eine lokale Ausblendung ohne „Kein Interesse“-Klick. Bei
+  Bedarf kann der Modus jederzeit auf **Aus** zurückgestellt werden.
+
 ## Ausnahmen und globale Freigaben (ab 1.5.13)
 
 Jedes Wort kann eigene Ausnahmen tragen. Im Popup steht unter dem Wort das Feld
@@ -381,6 +408,8 @@ extension/
   shots.js        — Kontrollbilder: Dateiname, Sichtbarkeit, Zuschnitt (Content + Hintergrund)
   folder-store.js — Chrome: Screenshot-Ordner, IndexedDB-Warteschlange, File System Access
   ai.js           — offizielle KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
+  ai-channel.js   — lokaler Kanalzähler für wiederholte offizielle KI-Badges
+  ai-channel.css  — Markierung/Abdunkeln von Karten auffälliger Kanäle
   background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-Routing, Kontrollbilder
   popup/          — Verwaltung von Liste und Einstellungen
   lib/ models/    — externe Bibliotheken; Modelle nur lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache

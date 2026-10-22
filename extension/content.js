@@ -23,6 +23,8 @@
     checkSpeech: false,
     hideMembersOnly: false,
     hideAiGenerated: true,
+    /* Kanalweite KI-Heuristik: standardmäßig aus, damit 1.5.22 unverändert bleibt. */
+    aiChannelMode: 'off',
     hidePromoted: true,
     shotBeforeHide: false,
     ocrLangs: 'eng+rus',
@@ -68,6 +70,11 @@
     processStarted: 0,
     lastProcessError: '',
     aiBlockedIds: new Set(),    /* lokal erkannte, offiziell KI-gekennzeichnete Videos */
+    aiChannels: {},             /* lokaler Kanalzähler: storage.aiChannels */
+    aiFeedback: { allowChannels: {}, allowVideos: {} },
+    aiChannelSent: new Set(),   /* pro Video nur ein Kanal-Hit an den Hintergrund */
+    aiChannelHidden: new Map(),  /* videoId → item, nur für Rücknahme per Freigabe */
+    hiddenReasons: new Map(),   /* videoId → Grund, für gezieltes Aufheben */
     aiOverlay: null,
     aiOverlayId: '',
     watchAiTimer: null,
@@ -236,6 +243,9 @@
       return;
     }
     if (state.aiBlockedIds.has(id)) {
+      /* Die Kennung kann von einer Feed-Karte stammen, deren Kanal-Link
+         damals noch nicht gerendert war. Beim Watch-Besuch nachreichen. */
+      sendAiChannelHit({ videoId: id, channelRef: watchChannelRef() });
       showAiOverlay(id);
       return;
     }
@@ -250,6 +260,7 @@
     const badge = window.YB.ai.findBadge(document, text => window.YB.matcher.isAiBadgeText(text));
     if (badge) {
       rememberAiVideo(id);
+      sendAiChannelHit({ videoId: id, channelRef: watchChannelRef(), item: meta });
       showAiOverlay(id);
       return;
     }
@@ -345,7 +356,8 @@
 
   async function loadConfig() {
     const data = await api.storage.local.get({
-      settings: DEFAULTS, keywords: [], promoSuspects: [], aiBlockedIds: []
+      settings: DEFAULTS, keywords: [], promoSuspects: [], aiBlockedIds: [],
+      aiChannels: {}, aiFeedback: {}
     });
     const s = Object.assign({}, DEFAULTS, data.settings || {});
     /* Alte Importe können Zahlfelder als leere Strings enthalten; sonst würde
@@ -354,6 +366,8 @@
     s.semanticMargin = settingNumber(s.semanticMargin, DEFAULTS.semanticMargin, 0, 1);
     s.speechMaxSeconds = settingNumber(s.speechMaxSeconds, DEFAULTS.speechMaxSeconds, 10, 600);
     s.hashThreshold = settingNumber(s.hashThreshold, 8, 0, 30);
+    s.aiChannelMode = ['off', 'badge', 'dim', 'hide'].includes(s.aiChannelMode)
+      ? s.aiChannelMode : 'off';
     state.settings = s;
     state.allowAll = window.YB.matcher.normalizeAllowAll(s.allowAll);
     s.allowAll = state.allowAll;
@@ -362,6 +376,13 @@
       .filter(k => k && String(k.text || '').trim() && k.enabled !== false);
     state.suspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
     state.aiBlockedIds = aiIdSet(data.aiBlockedIds);
+    state.aiChannels = (data.aiChannels && typeof data.aiChannels === 'object' && !Array.isArray(data.aiChannels))
+      ? data.aiChannels : {};
+    const feedback = data.aiFeedback && typeof data.aiFeedback === 'object' ? data.aiFeedback : {};
+    state.aiFeedback = {
+      allowChannels: feedback.allowChannels && typeof feedback.allowChannels === 'object' ? feedback.allowChannels : {},
+      allowVideos: feedback.allowVideos && typeof feedback.allowVideos === 'object' ? feedback.allowVideos : {}
+    };
     /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelEntries):
        ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. Einträge
        tragen ihre Freigaben mit; state.*Keywords bleibt für Host/Debug. */
@@ -387,7 +408,9 @@
       image: state.imageKeywords.length,
       ocr: state.ocrKeywords.length,
       allowAll: state.allowAll.length,
-      exceptions: state.allEntries.filter(e => e.exceptions.length).length
+      exceptions: state.allEntries.filter(e => e.exceptions.length).length,
+      aiChannelMode: state.settings.aiChannelMode,
+      aiChannels: Object.keys(state.aiChannels).length
     });
     if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
       api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }).catch(() => {});
@@ -420,6 +443,19 @@
        ytm-shorts-lockup-view-model-v2 umschließt ytm-shorts-lockup-view-model. */
     'ytm-shorts-lockup-view-model-v2',
     'ytm-shorts-lockup-view-model'
+  ].join(', ');
+
+  /* Ein Ort für Karten- und Watch-Seiten-Links; die Reihenfolge bevorzugt
+     stabile Kanal-IDs/Handles vor dem schwachen Anzeigenamen. */
+  const CHANNEL_LINK_SELECTOR = [
+    'ytd-channel-name #text a',
+    '#channel-name a',
+    'ytd-channel-name a',
+    '#owner #channel-name a',
+    'a[href^="/@"]',
+    'a[href*="/channel/"]',
+    'a[href^="/c/"]',
+    'a[href^="/user/"]'
   ].join(', ');
 
   function bestThumbUrl(img, videoId) {
@@ -464,15 +500,19 @@
     const titleEl = item.querySelector(TITLE_SELECTOR);
     const title = ((titleEl && (titleEl.getAttribute('title') || titleEl.textContent)) || '').replace(/\s+/g, ' ').trim();
     if (!title) return null;
-    let chanEl = item.querySelector('ytd-channel-name #text a, #channel-name a, a[href^="/@"], a[href*="/channel/"]');
+    let chanEl = item.querySelector(CHANNEL_LINK_SELECTOR);
     let channel = ((chanEl && chanEl.textContent) || '').replace(/\s+/g, ' ').trim();
     if (!channel) {
       const md = item.querySelector('.ytContentMetadataViewModelMetadataText');
       if (md) channel = (md.textContent || '').replace(/\s+/g, ' ').trim();
     }
+    const channelRef = (window.YB.aiChannel && window.YB.aiChannel.refFromHref(
+      (chanEl && chanEl.getAttribute('href')) || '',
+      channel
+    )) || null;
     const img = item.querySelector('img');
     const thumb = bestThumbUrl(img, videoId);
-    return { videoId, title, channel, thumb, item, img };
+    return { videoId, title, channel, channelRef, thumb, item, img };
   }
 
   function waitForImage(img, timeout = 1600) {
@@ -664,7 +704,14 @@
   function hideLocallyNow(v, reason) {
     if (state.disposed) return;
     window.YB.dismiss.hideItem(v.item);
-    if (v.videoId) state.hiddenIds.add(v.videoId);
+    if (v.videoId) {
+      state.hiddenIds.add(v.videoId);
+      state.hiddenReasons.set(v.videoId, reason);
+      if (reason === 'ai-channel') state.aiChannelHidden.set(v.videoId, v.item);
+    }
+    /* Jeder offizielle KI-Treffer nährt den Kanalzähler — unabhängig davon,
+       ob er über Karte, Watch-Seite oder aiBlockedIds gefunden wurde. */
+    if (reason === 'ai-generated') sendAiChannelHit(v);
     log('hidden locally', v.videoId, '←', reason);
     api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
   }
@@ -1004,6 +1051,15 @@
       if (state.io && current.item) state.io.unobserve(current.item);
       return;
     }
+    const channelMode = channelModeFor(current.item, current.videoId);
+    if (channelMode === 'hide') {
+      /* Ein direkter offizieller Badge bleibt der stärkere Grund. */
+      const official = matchBadge(current);
+      hideLocally(current, official || 'ai-channel');
+      if (state.io && current.item) state.io.unobserve(current.item);
+      return;
+    }
+    if (channelMode !== 'off') markAiChannel(current.item, channelMode);
     const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
     if (state.inFlight.has(key)) return;
     if (state.processed.has(key)) {
@@ -1048,6 +1104,7 @@
         state.processed.set(key, badgeHit);
         /* Badge-Treffer („Members only“ / KI-Hinweis) sind Eigenschaften des
            Angebots, kein Interessensignal: lokal ausblenden, kein Klick. */
+        if (badgeHit === 'ai-generated') sendAiChannelHit(current);
         hideLocally(current, badgeHit);
         return;
       }
@@ -1155,6 +1212,133 @@
     return m ? m[1] : null;
   }
 
+  function aiChannelLib() {
+    return window.YB && window.YB.aiChannel;
+  }
+
+  /* Kanal-Link aus einer Feed-/Suchkarte. Bewusst billig: kein extract(),
+     damit die Prüfung auch bei noch nicht hydratisierten Karten funktioniert. */
+  function quickChannelRef(item) {
+    const lib = aiChannelLib();
+    if (!lib || !item || !item.querySelector) return null;
+    const a = item.querySelector(CHANNEL_LINK_SELECTOR);
+    if (!a) return null;
+    const name = (a.textContent || '').replace(/\s+/g, ' ').trim();
+    return lib.refFromHref(a.getAttribute('href') || '', name);
+  }
+
+  /* Auf der Watch-Seite liegt der Kanal-Link in ytd-watch-metadata; die
+     Empfehlungen daneben dürfen nicht versehentlich genommen werden. */
+  function watchChannelRef() {
+    const lib = aiChannelLib();
+    if (!lib) return null;
+    const scope = document.querySelector('ytd-watch-metadata, ytd-video-primary-info-renderer') || document;
+    const a = scope.querySelector(CHANNEL_LINK_SELECTOR);
+    if (!a) return null;
+    const name = (a.textContent || '').replace(/\s+/g, ' ').trim();
+    return lib.refFromHref(a.getAttribute('href') || '', name);
+  }
+
+  function sendAiChannelHit(v) {
+    const lib = aiChannelLib();
+    if (!lib || !v || !v.videoId || state.aiChannelSent.has(v.videoId)) return;
+    const ref = v.channelRef || quickChannelRef(v.item);
+    if (!ref || !ref.key) return;
+    state.aiChannelSent.add(v.videoId);
+    const retry = e => {
+      state.aiChannelSent.delete(v.videoId);
+      log('ai-channel hit failed:', (e && e.message) || e);
+    };
+    api.runtime.sendMessage({
+      type: 'yb-ai-channel-hit',
+      channel: ref,
+      videoId: v.videoId
+    }).then(res => {
+      if (!res || !res.ok) retry(res && res.error);
+    }, retry);
+  }
+
+  function channelModeFor(item, videoId) {
+    const lib = aiChannelLib();
+    if (!lib || !state.settings.hideAiGenerated) return 'off';
+    if (!state.settings.aiChannelMode || state.settings.aiChannelMode === 'off') return 'off';
+    const ref = quickChannelRef(item);
+    if (!ref || !ref.key) return 'off';
+    return lib.decision(
+      state.aiChannels, ref, state.settings, state.aiFeedback, videoId, Date.now()
+    );
+  }
+
+  function markAiChannel(item, mode) {
+    const lib = aiChannelLib();
+    if (!lib || !item || (mode !== 'badge' && mode !== 'dim')) return;
+    const text = lib.badgeText(state.settings.uiLang || 'de');
+    item.classList.add('yb-ai-channel-badge');
+    item.classList.toggle('yb-ai-channel-dim', mode === 'dim');
+    item.setAttribute('data-yb-ai-channel', mode);
+    let mark = item.querySelector('.yb-ai-channel-mark');
+    if (!mark) {
+      mark = document.createElement('span');
+      mark.className = 'yb-ai-channel-mark';
+      mark.textContent = text.mark;
+      mark.setAttribute('aria-label', text.aria);
+      mark.title = text.hint;
+      item.appendChild(mark);
+    }
+  }
+
+  function unmarkAiChannel(item) {
+    if (!item) return;
+    item.classList.remove('yb-ai-channel-dim', 'yb-ai-channel-badge');
+    item.removeAttribute('data-yb-ai-channel');
+    for (const mark of item.querySelectorAll('.yb-ai-channel-mark')) mark.remove();
+  }
+
+  function unhideAiChannelItem(item) {
+    if (!item || !item.isConnected) return;
+    /* hideItem() kann den umschließenden Karten-Container treffen. */
+    const target = item.closest(
+      'ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ' +
+      'ytd-compact-video-renderer, ytd-playlist-panel-video-renderer, ytd-reel-item-renderer'
+    ) || item;
+    target.classList.remove('yb-hidden');
+  }
+
+  /* Entfernt nur die Kanal-Heuristik. Offizielle KI-Treffer und Keyword-
+     Ausblendungen bleiben unberührt. Wird nach Moduswechseln aufgerufen;
+     scanNow entscheidet danach neu. */
+  function clearAiChannelMarks() {
+    for (const item of document.querySelectorAll('[data-yb-ai-channel]')) unmarkAiChannel(item);
+    for (const [videoId, item] of Array.from(state.aiChannelHidden)) {
+      unhideAiChannelItem(item);
+      if (state.hiddenReasons.get(videoId) === 'ai-channel') {
+        state.hiddenIds.delete(videoId);
+        state.hiddenReasons.delete(videoId);
+      }
+    }
+    state.aiChannelHidden.clear();
+  }
+
+  /* Gezielte Aktualisierung ohne erneutes Ausblenden: nur Karten, deren
+     Kanal inzwischen nicht mehr auffällig oder per Feedback erlaubt ist,
+     werden zurückgenommen. Alles andere bleibt unangetastet. */
+  function refreshAiChannelMarks() {
+    for (const item of document.querySelectorAll('[data-yb-ai-channel]')) {
+      if (channelModeFor(item, quickVideoId(item)) === 'off') unmarkAiChannel(item);
+    }
+    for (const [videoId, item] of Array.from(state.aiChannelHidden)) {
+      if (!item || !item.isConnected) continue;
+      if (channelModeFor(item, videoId) !== 'off') continue;
+      unhideAiChannelItem(item);
+      if (state.hiddenReasons.get(videoId) === 'ai-channel') {
+        state.hiddenIds.delete(videoId);
+        state.hiddenReasons.delete(videoId);
+      }
+      state.aiChannelHidden.delete(videoId);
+    }
+    scheduleScan();
+  }
+
   function scanNow() {
     if (state.disposed || !state.settings.enabled || !hasDetectionTargets()) return;
     const obs = ensureIO();
@@ -1166,6 +1350,7 @@
       if (state.settings.hideAiGenerated && state.aiBlockedIds.size) {
         const knownAi = quickVideoId(item);
         if (knownAi && state.aiBlockedIds.has(knownAi)) {
+          sendAiChannelHit({ item, videoId: knownAi });
           hideLocally({ item, videoId: knownAi }, 'ai-generated');
           continue;
         }
@@ -1181,6 +1366,25 @@
           continue;
         }
       }
+      /* Kanalweite KI-Heuristik: nur auf Basis mehrerer offizieller Befunde.
+         Bei 'badge'/'dim' läuft die normale Keyword-Prüfung weiter.
+         Bei 'hide' hat ein direkter offizieller Karten-Badge Vorrang. */
+      const channelVideoId = quickVideoId(item);
+      const channelMode = channelModeFor(item, channelVideoId);
+      if (channelMode === 'hide' && channelVideoId) {
+        const official = matchBadge({ item });
+        const channelRef = quickChannelRef(item);
+        if (official === 'ai-generated') {
+          sendAiChannelHit({ item, videoId: channelVideoId, channelRef });
+        }
+        hideLocally({
+          item,
+          videoId: channelVideoId,
+          channelRef
+        }, official || 'ai-channel');
+        continue;
+      }
+      if (channelMode !== 'off') markAiChannel(item, channelMode);
       if (state.observed.has(item)) {
         /* Spät gerenderter Badge: Die Karte wurde bereits als „kein Treffer“
            verbucht, YouTube liefert den Badge aber erst danach nach. Nur
@@ -1189,6 +1393,7 @@
           const hit = matchBadge({ item });
           if (hit) {
             state.badgeWatched.delete(item);
+            if (hit === 'ai-generated') sendAiChannelHit({ item, videoId: quickVideoId(item) });
             hideLocally({ item, videoId: quickVideoId(item) }, hit);
           } else {
             /* Spät gerenderter Werbe-Marker (z. B. „YouTube empfiehlt“) */
@@ -1269,7 +1474,32 @@
       state.aiBlockedIds = aiIdSet(changes.aiBlockedIds.newValue);
       scheduleScan();
     }
+    if (changes.aiChannels) {
+      state.aiChannels = (changes.aiChannels.newValue && typeof changes.aiChannels.newValue === 'object' &&
+        !Array.isArray(changes.aiChannels.newValue))
+        ? changes.aiChannels.newValue : {};
+      /* Gezielt nur inzwischen erlaubte/abgelaufene Kanäle zurücknehmen. */
+      refreshAiChannelMarks();
+    }
+    if (changes.aiFeedback) {
+      const f = changes.aiFeedback.newValue && typeof changes.aiFeedback.newValue === 'object'
+        ? changes.aiFeedback.newValue : {};
+      state.aiFeedback = {
+        allowChannels: f.allowChannels && typeof f.allowChannels === 'object' ? f.allowChannels : {},
+        allowVideos: f.allowVideos && typeof f.allowVideos === 'object' ? f.allowVideos : {}
+      };
+      refreshAiChannelMarks();
+    }
     if (!changes.settings) return;
+    /* Nur bei einem AI-relevanten Wechsel alte Markierungen und rein
+       kanalbasierte Ausblendungen zurücknehmen. Ein Sprach- oder
+       OCR-Wechsel darf keine erneuten Zähler/Screenshots auslösen. */
+    const prevSettings = state.settings || {};
+    const nextSettings = changes.settings.newValue || {};
+    if (prevSettings.hideAiGenerated !== nextSettings.hideAiGenerated ||
+        prevSettings.aiChannelMode !== nextSettings.aiChannelMode) {
+      clearAiChannelMarks();
+    }
     reloadConfigSoon();
   });
 
@@ -1303,6 +1533,8 @@
       mode: state.settings.mode,
       hideMembersOnly: state.settings.hideMembersOnly,
       hideAiGenerated: state.settings.hideAiGenerated,
+      aiChannelMode: state.settings.aiChannelMode,
+      aiChannels: Object.keys(state.aiChannels).length,
       hidePromoted: state.settings.hidePromoted,
       shotBeforeHide: state.settings.shotBeforeHide,
       shotLibrary: !!(window.YB && window.YB.shots),

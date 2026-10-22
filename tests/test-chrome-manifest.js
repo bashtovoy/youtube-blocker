@@ -14,6 +14,13 @@ assert.strictEqual(m.background.service_worker, 'background.js');
 assert.strictEqual(m.version, ff.version);
 assert.ok(m.action && m.action.default_popup === 'popup/popup.html');
 
+/* Kanalzähler muss in beiden Builds vor content.js/background.js geladen werden. */
+assert.ok(ff.background.scripts.includes('ai-channel.js'));
+assert.ok(ff.content_scripts[0].js.includes('ai-channel.js'));
+assert.ok(ff.content_scripts[0].css.includes('ai-channel.css'));
+assert.ok(m.content_scripts[0].js.includes('ai-channel.js'));
+assert.ok(m.content_scripts[0].css.includes('ai-channel.css'));
+
 /* Host-Muster gehören in MV3 nach host_permissions, nicht in permissions */
 assert.deepStrictEqual(m.host_permissions,
   ['*://*.youtube.com/*', '*://music.youtube.com/*', '*://*.ytimg.com/*', '*://*.googlevideo.com/*']);

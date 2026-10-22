@@ -10,6 +10,7 @@ const vm = require('vm');
 const assert = require('assert');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.js'), 'utf8');
+const AI_CHANNEL_SRC = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ai-channel.js'), 'utf8');
 
 /* Objekte entstehen teils in der vm-Instanz; deepStrictEqual prüft auch den
    Prototyp — für Vergleiche in die Host-Welt normalisieren. */
@@ -83,6 +84,7 @@ function makeSandbox({ routes, chromeMode, shotApis, shotTab, folderStore }) {
   const sandbox = { self: { YB_ROUTES: routes }, console, setTimeout, clearTimeout, URL };
   if (folderStore) sandbox.self.YB = { folder: folderStore };
   if (shotApis) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'extension', 'shots.js'), 'utf8'), sandbox);
+  vm.runInNewContext(AI_CHANNEL_SRC, sandbox);
   if (chromeMode) sandbox.chrome = api; else sandbox.browser = api;
   vm.runInNewContext(SRC, sandbox, { filename: 'background.js' });
   assert.strictEqual(typeof listeners.message, 'function', 'onMessage wurde registriert');
@@ -123,6 +125,38 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     const { listener } = makeSandbox({ routes: { sem: async () => ({ ok: true }) } });
     const r = await ask(listener, { type: 'ybget' });
     assert.deepStrictEqual(plain(r.value), { keywords: [], settings: {} });
+  }
+
+  /* --- Kanal-Hits werden serialisiert und nach zwei Videos markiert --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: { sem: async () => ({ ok: true }) } });
+    const channel = { key: 'UCabcdefghijklmnopqrstuv', id: 'UCabcdefghijklmnopqrstuv', name: 'Testkanal' };
+    const first = await ask(listener, { type: 'yb-ai-channel-hit', channel, videoId: 'aaaaaaaaaaa' });
+    const second = await ask(listener, { type: 'yb-ai-channel-hit', channel, videoId: 'bbbbbbbbbbb' });
+    assert.strictEqual(first.value.ok, true);
+    assert.strictEqual(first.value.flagged, false, 'ein Video markiert noch nicht');
+    assert.strictEqual(second.value.ok, true);
+    assert.strictEqual(second.value.flagged, true, 'zwei Videos markieren den Kanal');
+    const stored = calls.storageSets.map(x => x.aiChannels).filter(Boolean).pop();
+    assert.ok(stored && stored[channel.key], 'aiChannels wurde geschrieben');
+    assert.strictEqual(stored[channel.key].videos.length, 2);
+    const third = await ask(listener, { type: 'yb-ai-channel-hit', channel, videoId: 'bbbbbbbbbbb' });
+    assert.strictEqual(third.value.flagged, true);
+    const after = calls.storageSets.map(x => x.aiChannels).filter(Boolean).pop();
+    assert.strictEqual(after[channel.key].videos.length, 2, 'Duplikat zählt nicht doppelt');
+  }
+
+  /* --- Parallele Hits aus zwei Tabs dürfen sich nicht überschreiben --- */
+  {
+    const { calls, listener } = makeSandbox({ routes: { sem: async () => ({ ok: true }) } });
+    const channel = { key: 'UCzzzzzzzzzzzzzzzzzzzzzz', id: 'UCzzzzzzzzzzzzzzzzzzzzzz', name: 'Parallel' };
+    const [a, b] = await Promise.all([
+      ask(listener, { type: 'yb-ai-channel-hit', channel, videoId: 'ddddddddddd' }),
+      ask(listener, { type: 'yb-ai-channel-hit', channel, videoId: 'eeeeeeeeeee' })
+    ]);
+    assert.deepStrictEqual([a.value.flagged, b.value.flagged].sort(), [false, true]);
+    const stored = calls.storageSets.map(x => x.aiChannels).filter(Boolean).pop();
+    assert.strictEqual(stored[channel.key].videos.length, 2, 'beide parallelen Hits bleiben erhalten');
   }
 
   /* --- Fehlerform bleibt {ok:false, error} --- */

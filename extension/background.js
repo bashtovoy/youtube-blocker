@@ -9,6 +9,7 @@ const api = (typeof browser !== 'undefined') ? browser : chrome;
 /* Modellbestand-Prüfung (Cache API) auch im Chrome-Service-Worker bereitstellen;
    Firefox lädt die Datei über manifest.background.scripts. */
 if (typeof importScripts === 'function') {
+  try { importScripts('ai-channel.js'); } catch (e) { /* Kanalzähler bleibt optional */ }
   try { importScripts('model-cache.js'); } catch (e) { /* Status bleibt optional */ }
   try { importScripts('shots.js'); } catch (e) { /* Kontrollbilder bleiben optional */ }
   try { importScripts('folder-store.js'); } catch (e) { /* Chrome-Ordnerwahl bleibt optional */ }
@@ -18,6 +19,8 @@ const actionApi = api.action || api.browserAction;
 let cfgCache = { keywords: [], settings: {} };
 /* Inkremente serialisieren: parallele get→set-Zyklen verloren sonst Treffer. */
 let counterChain = Promise.resolve();
+/* Auch Kanal-Hits aus mehreren YouTube-Tabs dürfen sich nicht überschreiben. */
+let aiChannelChain = Promise.resolve();
 
 /* ---------- Chrome: Offscreen-Dokument mit den Hosts ---------- */
 
@@ -498,6 +501,26 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => api.storage.local.get(kind))
       .then(d => api.storage.local.set({ [kind]: (d[kind] || 0) + by }))
       .catch(() => {});
+  } else if (msg.type === 'yb-ai-channel-hit') {
+    const lib = self.YB && self.YB.aiChannel;
+    if (!lib) {
+      sendResponse({ ok: false, error: 'ai-channel-unavailable' });
+      return;
+    }
+    const run = () => api.storage.local.get({ aiChannels: {} }).then(data => {
+      const next = lib.recordHit(data.aiChannels, msg.channel, msg.videoId, Date.now());
+      return api.storage.local.set({ aiChannels: next }).then(() => next);
+    });
+    const result = aiChannelChain.then(run, run);
+    aiChannelChain = result.catch(() => {});
+    result.then(next => {
+      const found = lib.findRecord(next, msg.channel);
+      sendResponse({
+        ok: true,
+        flagged: !!(found && lib.isFlagged(found.rec, Date.now()))
+      });
+    }).catch(e => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;   /* asynchroner sendResponse */
   } else if (msg.type === 'ybshot-folder-flush') {
     flushPendingShots()
       .then(sendResponse)
