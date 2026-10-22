@@ -221,7 +221,53 @@ const plain = o => JSON.parse(JSON.stringify(o));
     'Varianten sind 2× skaliert und bekommen den Rand (8 + 2×10)');
   assert.strictEqual(recognized[recognized.length - 1].height, 24, 'Höhe mit Rand (4 + 2×10)');
 
-  /* 9b) Komplett leere Fläche: keine Varianten mit voller/leerer Maske an
+  /* 9b) Langer Text mit OCR-Rauschen löst den schnellen tiefen Lauf aus.
+     Genau dieser Fall stand im echten Thumbnail: „THE IlYIN[i SR22 KIllEB“
+     ist lang, enthält aber Klammern; die alte Längen-/Gesamtconfidence-Regel
+     übersprang deshalb die graue/bright-Maske. Die Wortconfidence ist hier
+     bewusst hoch, damit nur das Rauschen den Ausschlag gibt. */
+  recognizeResult = {
+    data: {
+      text: 'THE IlYIN[i SR22 KIllEB',
+      confidence: 90,
+      words: [
+        { text: 'THE', confidence: 95 },
+        { text: 'IlYIN[i', confidence: 90 },
+        { text: 'SR22', confidence: 90 },
+        { text: 'KIllEB', confidence: 90 }
+      ]
+    }
+  };
+  const recognizedBeforeNoise = recognized.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/noise/hq720.jpg', 'eng+rus');
+  assert.strictEqual(out.text, 'THE IlYIN[i SR22 KIllEB', 'schneller Text bleibt erhalten');
+  assert.strictEqual(recognized.length - recognizedBeforeNoise, 3,
+    'langer Text mit OCR-Rauschen löst schnellen Lauf + zwei Varianten aus');
+
+  /* 9c) Auch ein einzelnes Wort unter 60 % Confidence reicht für den
+     schnellen tiefen Lauf, selbst wenn der Text lang und ansonsten sauber
+     ist. Das ist der eigentliche KIllEB/K1LLER-Fall ohne Klammern. */
+  recognizeResult = {
+    data: {
+      text: 'THE DYING SR22 KILLEB',
+      confidence: 90,
+      words: [
+        { text: 'THE', confidence: 95 },
+        { text: 'DYING', confidence: 90 },
+        { text: 'SR22', confidence: 90 },
+        { text: 'KILLEB', confidence: 45 }
+      ]
+    }
+  };
+  const recognizedBeforeWord = recognized.length;
+  nextResponse = () => okResponse('image/jpeg', JPEG_BYTES);
+  out = await host.recognize('https://i.ytimg.com/vi/word-confidence/hq720.jpg', 'eng+rus');
+  assert.strictEqual(out.text, 'THE DYING SR22 KILLEB', 'schneller Text bleibt erhalten');
+  assert.strictEqual(recognized.length - recognizedBeforeWord, 3,
+    'ein unsicheres Wort löst schnellen Lauf + zwei Varianten aus');
+
+  /* 9d) Komplett leere Fläche: keine Varianten mit voller/leerer Maske an
      Tesseract — genau diese Bilder erzeugten die Leptonica-Meldungen. */
   recognizeResult = { data: { text: 'x', confidence: 10 } };
   pixelMode = 'white';

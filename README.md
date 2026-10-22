@@ -9,7 +9,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
 | Videotitel | Exakter Token-Abgleich mit der Schlüsselwortliste (Fälle, ё/е, Bindestriche und Satzzeichen normalisiert; Wortvarianten explizit eintragen) | nein |
-| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, weißer Rand gegen Leptonica-Boxfehler, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung; `debug_file=/dev/null` hält Tesseract-Diagnosen aus dem Erweiterungsprotokoll | `ocr-host.js` + `lib/tesseract.min.js` |
+| Foto — OCR | Text im Vorschaubild wird mit Tesseract.js erkannt und in der Wortliste gesucht: PSM 11, getrennte Sprachmodelle, weißer Rand gegen Leptonica-Boxfehler, bei kurzem/unsicherem Text zusätzlich Rot-/Weiß-/Schwarz-Masken und Invertierung. Bei langem Text mit einem unsicheren Wort oder OCR-Rauschen läuft vorher ein schneller tiefer Durchgang mit Graustufen- und heller Maske; `debug_file=/dev/null` hält Tesseract-Diagnosen aus dem Erweiterungsprotokoll | `ocr-host.js` + `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
@@ -365,10 +365,13 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
 - OCR ist aufwendig: bei großer Liste einschalten, sonst wird CPU unnötig verbraucht.
   Anfragen laufen sequenziell über eine Warteschlange; Ergebnisse werden je
   Bild-URL im Hintergrund-Host gecacht, die Tesseract-Worker werden nach zehn
-  Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet. Bei kurzem
-  oder unsicherem Erstantext läuft zusätzlich ein tiefer Durchgang mit fünf
-  Bildvarianten — das kann pro Karte einige Sekunden dauern, verbessert aber
-  stark stilisierte Thumbnails (neon, Rot/Weiß auf Schwarz, Glitch).
+  Minuten Leerlauf beendet und beim nächsten Bedarf neu gestartet. Bei kurzem,
+  leerem oder insgesamt unsicherem Erstantext läuft zusätzlich ein tiefer
+  Durchgang mit fünf Bildvarianten. Ist der Text lang, aber lokal unsicher
+  (ein Wort unter 60 % Confidence oder OCR-Rauschen wie `[ ] { } |`), genügt
+  ein schneller tiefer Durchgang mit Graustufen- und heller Maske. Das kann
+  pro Karte einige Sekunden dauern, verbessert aber stark stilisierte
+  Thumbnails (neon, Rot/Weiß auf Schwarz, Glitch).
 - Die Spracherkennung ist experimentell: lädt die Watch-Seite und den Audio-Stream,
   transkribiert nur die ersten N Sekunden. Für Russisch — multilinguales
   Modell (`small`), das sind ~460 MB im Worker.

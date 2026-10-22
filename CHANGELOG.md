@@ -3,6 +3,32 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] — 2026-10-22
+
+### Behoben
+- **OCR überspringt den tiefen Lauf bei langen, aber lokal falsch gelesenen
+  Titeln nicht mehr.** Bisher entschieden nur Textlänge, Gesamtconfidence und
+  das Vorhandensein von drei Buchstaben/Ziffern. Ein langer Titel mit einem
+  falsch gelesenen Wort galt damit als sicher. Jetzt löst zusätzlich ein
+  einzelnes Wort unter 60 % Confidence oder OCR-Rauschen (`[ ] { } < > | ~ ^`)
+  einen **schnellen tiefen Lauf** mit Graustufen- und heller Maske aus.
+  Kurze, leere oder insgesamt unsichere Texte durchlaufen weiterhin alle fünf
+  Masken (Graustufen, Rot, hell, invertiert, dunkel).
+- **Konkreter Fall aus dem Test-Thumbnail:** Der erste Lauf lieferte
+  `THE IlYIN[i SR22 KIllEB`; nach dem neuen Trigger ergänzt der schnelle
+  tiefe Lauf `THE DYING SR22 KILLER`, sodass `killer` exakt trifft. Der
+  schnelle Lauf plus zwei Varianten brauchte im Firefox-Test ca. 11 s statt
+  ca. 27 s mit allen fünf Masken.
+- **OCR-Cache auf `ocr-v4` angehoben**, damit alte Fehllesungen aus `ocr-v3`
+  nicht wiederverwendet werden.
+
+### Tests
+- `test-ocr-host-image` deckt den neuen Fall ab: langer Text mit unsicherem
+  Wort/OCR-Rauschen startet den schnellen tiefen Lauf (schneller Lauf +
+  Graustufen + helle Maske = drei Erkennungen), kurzer/unsicherer Text
+  weiterhin alle fünf Varianten.
+- Chrome-e2e (`tests/e2e-chrome-ocr.js`) weiterhin grün.
+
 ## [1.6.0] — 2026-10-22
 
 ### Entfernt

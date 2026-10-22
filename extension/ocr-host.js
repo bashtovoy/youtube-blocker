@@ -30,11 +30,19 @@
 
   /* Cache-Schlüssel mit Pipeline-Version: alte, schlechte OCR-Texte aus einer
      früheren Sitzung dürfen einen erneuten Lauf nicht verhindern. */
-  const CACHE_VERSION = 'ocr-v3'; /* Rand + debug_file ändern das Erkennungsergebnis */
+  const CACHE_VERSION = 'ocr-v4'; /* Qualitätsentscheidung für den tiefen Lauf geändert */
   const OCR_PSM = '11';          /* SPARSE_TEXT: mehrere getrennte Textblöcke */
   const OCR_DPI = '300';
   const FAST_MIN_CHARS = 16;     /* darunter lohnt der tiefe Lauf fast immer */
   const FAST_MIN_CONFIDENCE = 55;
+  const FAST_MIN_WORD_CONFIDENCE = 60; /* ein einzelnes unsicheres Wort reicht */
+  /* Klammern und ähnliche Zeichen sind bei Thumbnail-Text fast nie echte
+     Inhalte, sondern Artefakte einer schlechten Segmentierung. */
+  const OCR_NOISE_RE = /[\[\]{}<>|~^]/;
+  /* Bei langem, nur lokal unsicherem Text reichen Graustufen und helle Maske;
+     die übrigen drei Varianten sind für kurze/leere Texte reserviert. */
+  const QUICK_DEEP_MODES = ['gray', 'bright'];
+  const FULL_DEEP_MODES = ['gray', 'red', 'bright', 'gray-inv', 'dark'];
   const DEEP_SCALE = 2;
   const DEEP_MAX_SIDE = 2600;    /* 1280×720 → 2560×1440, danach Speicherdeckel */
   /* Tesseract/Leptonica meldet bei Text am Bildrand „Error in
@@ -374,9 +382,21 @@
     const res = await w.recognize(image);
     const data = (res && res.data) || {};
     const confidence = Number(data.confidence);
+    /* Wortgenauigkeit ist wichtiger als die Gesamtconfidence: ein langer
+       Titel kann insgesamt sicher wirken und trotzdem ein einzelnes Wort
+       falsch lesen („KIllEB“ statt „KILLER“). Tesseract.js liefert die
+       Wortliste ohnehin mit; wir behalten nur Text und Confidence. */
+    const words = Array.isArray(data.words) ? data.words.map(word => {
+      const wc = Number(word && word.confidence);
+      return {
+        text: String((word && word.text) || '').trim(),
+        confidence: Number.isFinite(wc) ? wc : null
+      };
+    }).filter(word => word.text) : [];
     return {
       text: String(data.text || ''),
-      confidence: Number.isFinite(confidence) ? confidence : null
+      confidence: Number.isFinite(confidence) ? confidence : null,
+      words
     };
   }
 
@@ -393,7 +413,7 @@
     }
   }
 
-  async function deepPass(w, bytes) {
+  async function deepPass(w, bytes, modes) {
     const bitmap = await decodeBitmap(bytes);
     if (!bitmap) return [];
     const out = [];
@@ -401,8 +421,7 @@
       const base = makeBaseImage(bitmap);
       if (!base) return out;
       const threshold = otsuThreshold(base.data, base.width, base.height);
-      const modes = ['gray', 'red', 'bright', 'gray-inv', 'dark'];
-      for (const mode of modes) {
+      for (const mode of (modes || FULL_DEEP_MODES)) {
         const canvas = variantCanvas(base, mode, threshold);
         if (!canvas) continue;
         try {
@@ -446,13 +465,23 @@
     return list[0];
   }
 
-  function needsDeep(text, confidence) {
+  function deepPlan(text, confidence, words) {
     const s = String(text || '').trim();
-    if (!s) return true;
-    if (s.length < FAST_MIN_CHARS) return true;
-    if (!/[\p{L}\p{N}]{3}/u.test(s)) return true;
-    if (Number.isFinite(confidence) && confidence < FAST_MIN_CONFIDENCE) return true;
-    return false;
+    if (!s) return 'full';
+    if (s.length < FAST_MIN_CHARS) return 'full';
+    if (!/[\p{L}\p{N}]{3}/u.test(s)) return 'full';
+    if (Number.isFinite(confidence) && confidence < FAST_MIN_CONFIDENCE) return 'full';
+    if (OCR_NOISE_RE.test(s)) return 'quick';
+    /* Ein einzelnes Wort unter 60 % ist ein starkes Signal für eine
+       Fehllesung wie KIllEB/K1LLER, auch wenn der restliche Text lang und
+       scheinbar sicher ist. Kurze Wörter („a“, „i“) ignorieren wir, weil
+       ihre Confidence wenig Aussagekraft hat. */
+    for (const word of words || []) {
+      const wt = String(word && word.text || '').trim();
+      const wc = Number(word && word.confidence);
+      if (wt.length >= 3 && Number.isFinite(wc) && wc < FAST_MIN_WORD_CONFIDENCE) return 'quick';
+    }
+    return '';
   }
 
   function mergeTexts(texts) {
@@ -589,9 +618,11 @@
 
         const texts = [fast.text];
         let deep = false;
-        if (needsDeep(fast.text, fast.confidence)) {
+        const plan = deepPlan(fast.text, fast.confidence, fast.words);
+        if (plan) {
           deep = true;
-          texts.push(...await deepPass(w, bytes));
+          texts.push(...await deepPass(w, bytes, plan === 'quick' ? QUICK_DEEP_MODES : FULL_DEEP_MODES));
+          dlog('ocr host: tiefer Lauf ' + plan);
         }
 
         const text = mergeTexts(texts);
