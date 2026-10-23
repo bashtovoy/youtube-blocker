@@ -3,6 +3,30 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.7.2] — 2026-10-23
+
+### Behoben
+- **`Uncaught Error: Extension context invalidated.` in offenen Tabs nach
+  Reload oder Update der Erweiterung.** Ein Content-Script, das im Tab
+  weiterläuft, verliert beim Neuladen der Erweiterung ihren Runtime-Kontext;
+  der nächste API-Zugriff wirft synchron, ein `.catch` erreicht diesen Fehler
+  nicht. Alle „fire-and-forget“-Aufrufe (Speichern der Werbe-Verdachtsfälle
+  und KI-Kennungen, letztes Kontrollbild, Zähler, Sprach-Konfiguration)
+  laufen jetzt über `safeApi`: Kontextprüfung vorab, try/catch um den Aufruf
+  und Abschalten der verwaisten Instanz über `disposeInstance()` statt einer
+  unbehandelten Ausnahme. Betroffen war insbesondere der verzögerte
+  `promoSuspects`-Speichervorgang (früher `content.js:302`).
+- `getManifest()` beim Start und der Inkognito-Zugriff sind ebenfalls
+  abgesichert; ein Fehler beim Nachladen der Konfiguration beendet die
+  verwaiste Instanz, statt sie weiterlaufen zu lassen.
+
+### Tests
+- 18/18 Unit-Tests grün; `node --check extension/content.js` fehlerfrei.
+- Chrome-Orphan-Reproduktion (Extension-Reload ohne Neu-Injektion, danach
+  schwaches Werbe-Signal): der Stand aus 1.7.1 wirft
+  `Extension context invalidated. at content.js:302:25`, der neue Stand
+  erzeugt 0 Ausnahmen; beide Läufe wiederholt und stabil.
+
 ## [1.7.1] — 2026-10-22
 
 ### Behoben
