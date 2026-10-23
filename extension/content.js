@@ -4,6 +4,44 @@
 
   const api = (typeof browser !== 'undefined') ? browser : chrome;
 
+  /* Ein bereits offener Tab behält nach einem Update die alte Instanz. Sobald
+     die Extension neu geladen wurde, wirft der nächste API-Zugriff synchron
+     „Extension context invalidated.“; ein `.catch` erreicht diesen Fehler
+     nicht. `safeApi` prüft den Kontext vorab und beendet die verwaiste
+     Instanz, statt eine unbehandelte Ausnahme zu erzeugen. */
+  function extensionAlive() {
+    try { return !!(api && api.runtime && api.runtime.id); } catch (e) { return false; }
+  }
+
+  function isContextInvalidated(error) {
+    return /extension context invalidated/i.test(String((error && error.message) || error || ''));
+  }
+
+  function safeApi(fn, onError) {
+    if (!extensionAlive()) {
+      disposeInstance();
+      return undefined;
+    }
+    try {
+      const result = fn();
+      if (result && typeof result.then === 'function') {
+        result.catch(error => {
+          if (isContextInvalidated(error)) disposeInstance();
+          else if (onError) onError(error);
+        });
+      }
+      return result;
+    } catch (error) {
+      if (isContextInvalidated(error)) disposeInstance();
+      else if (onError) onError(error);
+      return undefined;
+    }
+  }
+
+  const VERSION = (() => {
+    try { return api.runtime.getManifest().version; } catch (e) { return ''; }
+  })();
+
   /* Nach einem Extension-Update behält ein bereits offener Tab die alte Instanz
      dieses Skripts (Browser tauschen Content-Scripts in offenen Tabs nicht aus;
      background.js injiziert deshalb nach einem Update erneut). Läuft in dieser
@@ -222,7 +260,7 @@
     state.aiBlockedIds.add(id);
     const ids = Array.from(state.aiBlockedIds).slice(-500);
     state.aiBlockedIds = new Set(ids);
-    api.storage.local.set({ aiBlockedIds: ids }).catch(() => {});
+    safeApi(() => api.storage.local.set({ aiBlockedIds: ids }));
     log('AI video remembered', id);
   }
 
@@ -299,7 +337,7 @@
     clearTimeout(state.suspectTimer);
     state.suspectTimer = setTimeout(() => {
       const max = window.YB.promoRules.suspectsMax || 50;
-      api.storage.local.set({ promoSuspects: state.suspects.slice(0, max) }).catch(() => {});
+      safeApi(() => api.storage.local.set({ promoSuspects: state.suspects.slice(0, max) }));
     }, 1200);
   }
 
@@ -405,7 +443,7 @@
       aiChannels: Object.keys(state.aiChannels).length
     });
     if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
-      api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }).catch(() => {});
+      safeApi(() => api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }));
       initSpeechSoon();
     }
   }
@@ -633,9 +671,11 @@
       source: 'auto',
       /* Auch ein übersprungener Versuch soll im Popup erkennen lassen, dass
          er aus einem Privatfenster kam. */
-      incognito: !!(api.extension && api.extension.inIncognitoContext)
+      incognito: (() => {
+        try { return !!(api.extension && api.extension.inIncognitoContext); } catch (e) { return false; }
+      })()
     }, extra || {});
-    api.storage.local.set({ lastShot: payload }).catch(() => {});
+    safeApi(() => api.storage.local.set({ lastShot: payload }));
   }
 
   function fullCardRect(item) {
@@ -687,6 +727,10 @@
       reportShot('failed', v, reason, { error, visible: true, partial: !!partial });
       log('shot failed', v.videoId || 'slot', error);
     } catch (e) {
+      if (isContextInvalidated(e)) {
+        disposeInstance();
+        return false;
+      }
       reportShot('failed', v, reason, { error: e.message, visible: true, partial: !!partial });
       log('shot failed', v.videoId || 'slot', e.message);
     }
@@ -701,7 +745,7 @@
        ob er über Karte, Watch-Seite oder aiBlockedIds gefunden wurde. */
     if (reason === 'ai-generated') sendAiChannelHit(v);
     log('hidden locally', v.videoId, '←', reason);
-    api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }).catch(() => {});
+    safeApi(() => api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'hidden' }));
   }
 
   function enqueueAction(v, reason) {
@@ -714,7 +758,7 @@
           const result = await window.YB.dismiss.waitForOutcome(v.item, info.undoBefore);
           if (result.ok) {
             log('dismissed', v.videoId, '←', reason, result.via);
-            api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'dismissed' }).catch(() => {});
+            safeApi(() => api.runtime.sendMessage({ type: 'ybincrement', by: 1, kind: 'dismissed' }));
             return true;
           }
           log('dismiss unverified, local hide:', v.videoId, reason);
@@ -1214,13 +1258,13 @@
       state.aiChannelSent.delete(v.videoId);
       log('ai-channel hit failed:', (e && e.message) || e);
     };
-    api.runtime.sendMessage({
+    safeApi(() => api.runtime.sendMessage({
       type: 'yb-ai-channel-hit',
       channel: ref,
       videoId: v.videoId
     }).then(res => {
       if (!res || !res.ok) retry(res && res.error);
-    }, retry);
+    }), retry);
   }
 
   function channelModeFor(item, videoId) {
@@ -1386,7 +1430,10 @@
         if (!state.settings.enabled) state.pending.clear();
         else if (!shotsOn()) flushPending();
         scheduleWatchAiCheck(0);
-      }).catch(e => log('config reload failed', e.message));
+      }).catch(e => {
+        if (isContextInvalidated(e)) disposeInstance();
+        else log('config reload failed', e.message);
+      });
     }, delay == null ? 30 : delay);
   }
 
@@ -1431,7 +1478,7 @@
        einem Update noch die alte (verwaiste) Instanz läuft, und Tabs, die die
        aktuelle Version bereits ausführen. */
     if (msg.type === 'ybping') {
-      sendResponse({ ok: true, version: api.runtime.getManifest().version });
+      sendResponse({ ok: true, version: VERSION });
       return;
     }
     if (msg.type === 'config-changed') {
@@ -1548,24 +1595,32 @@
   loadConfig().then(() => {
     if (state.settings.enabled && hasDetectionTargets()) startObservers();
     scheduleWatchAiCheck(0);
+  }).catch(e => {
+    if (isContextInvalidated(e)) disposeInstance();
+    else log('config load failed', e.message);
   });
+
+  function disposeInstance() {
+    if (state.disposed) return;
+    state.disposed = true;
+    try { if (state.observer) state.observer.disconnect(); } catch (e) { /* bereits getrennt */ }
+    try { if (state.io) { state.io.disconnect(); state.io = null; } } catch (e) { /* bereits getrennt */ }
+    clearTimeout(state.scanTimer);
+    clearTimeout(state.pendingTimer);
+    clearTimeout(state.watchAiTimer);
+    clearTimeout(state.suspectTimer);
+    clearTimeout(configReloadTimer);
+    state.pending.clear();
+    removeAiOverlay();
+    state.observer = null;
+  }
 
   /* Übergabe-Handle für die nächste Version (siehe Kopf dieses Skripts): Eine
      nach einem Update neu injizierte Instanz ruft dispose() auf und übernimmt
      die Seite, ohne dass zwei Instanzen parallel arbeiten. */
   window.YB = window.YB || {};
   window.YB.__instance = {
-    version: api.runtime.getManifest().version,
-    dispose: () => {
-      state.disposed = true;
-      try { if (state.observer) state.observer.disconnect(); } catch (e) { /* bereits getrennt */ }
-      try { if (state.io) { state.io.disconnect(); state.io = null; } } catch (e) { /* bereits getrennt */ }
-      clearTimeout(state.scanTimer);
-      clearTimeout(state.pendingTimer);
-      clearTimeout(state.watchAiTimer);
-      state.pending.clear();
-      removeAiOverlay();
-      state.observer = null;
-    }
+    version: VERSION,
+    dispose: disposeInstance
   };
 })();
