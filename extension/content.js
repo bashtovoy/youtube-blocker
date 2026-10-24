@@ -10,6 +10,8 @@
     checkTitle: true,
     checkThumbOcr: false,
     checkSemanticImage: true,
+    checkExtremeFaces: false,
+    extremeFaceThreshold: 0.45,
     checkSpeech: false,
     hideMembersOnly: false,
     ocrLangs: 'eng+rus',
@@ -44,7 +46,7 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.settings.hideMembersOnly;
+    return state.keywords.length > 0 || state.settings.hideMembersOnly || state.settings.checkExtremeFaces;
   }
 
   /* YouTube hat die Badges auf neue View-Model-Komponenten umgestellt:
@@ -231,31 +233,49 @@
   }
 
   async function ensureSemanticTexts() {
-    if (!state.settings.checkSemanticImage || !state.keywords.length) return false;
-    const key = state.keywords.join('\u0001');
+    const keywordTexts = state.settings.checkSemanticImage ? state.keywords : [];
+    const faceTexts = state.settings.checkExtremeFaces ? window.YB.emotionalFace.PROMPTS : [];
+    const texts = [...keywordTexts, ...faceTexts];
+    if (!texts.length) return false;
+    const key = JSON.stringify({ keywordTexts, faceTexts });
     if (state.semanticReady && state.semanticKeywordsKey === key) return true;
-    await window.YB.semantic.setTexts(state.keywords);
+    await window.YB.semantic.setTexts(texts);
     state.semanticKeywordsKey = key;
     state.semanticReady = true;
-    log('semantic text concepts ready', state.keywords.length);
+    log('semantic text concepts ready', { keywords: keywordTexts.length, facePrompts: faceTexts.length });
     return true;
   }
 
   async function matchThumbnail(v) {
     const semanticNeeded = state.settings.checkSemanticImage && state.keywords.length > 0;
+    const faceNeeded = state.settings.checkExtremeFaces;
     const ocrNeeded = state.settings.checkThumbOcr && state.keywords.length > 0;
-    if (!semanticNeeded && !ocrNeeded) return null;
+    if (!semanticNeeded && !faceNeeded && !ocrNeeded) return null;
 
-    if (semanticNeeded) {
+    if (semanticNeeded || faceNeeded) {
       try {
         await ensureSemanticTexts();
         const scores = await window.YB.semantic.scoreImage(v.thumb);
-        const m = window.YB.semantic.bestTextMatch(scores, state.settings.semanticThreshold);
-        if (m) return {
-          source: 'semantic-image',
-          keyword: m.text,
-          score: Number(m.score.toFixed(4))
-        };
+
+        if (semanticNeeded) {
+          const keywordScores = scores.filter(item => state.keywords.includes(item.text));
+          const m = window.YB.semantic.bestTextMatch(keywordScores, state.settings.semanticThreshold);
+          if (m) return {
+            source: 'semantic-image',
+            keyword: m.text,
+            score: Number(m.score.toFixed(4))
+          };
+        }
+
+        if (faceNeeded) {
+          const faceMatch = window.YB.emotionalFace.bestMatch(scores, state.settings.extremeFaceThreshold);
+          if (faceMatch) return {
+            source: 'extreme-face',
+            keyword: 'exaggerated facial expression',
+            prompt: faceMatch.text,
+            score: Number(faceMatch.score.toFixed(4))
+          };
+        }
       } catch (e) { log('semantic image fail', v.videoId, e.message); }
     }
 
