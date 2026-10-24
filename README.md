@@ -12,6 +12,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Foto — OCR | Text im Vorschaubild wird mit Tesseract.js (ru+en) erkannt und in der Wortliste gesucht | `lib/tesseract.min.js` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; kein Hochladen von Referenzfotos nötig | `transformers.min.js` + lokales SigLIP-Modell |
+| Übertriebene Mimik *(optional)* | Lokales SigLIP vergleicht das gesamte Vorschaubild mit festen Beschreibungen übertriebener Gesichtsausdrücke; keine Bilder werden hochgeladen | vorhandenes lokales SigLIP-Modell |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
 
 Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
@@ -44,7 +45,8 @@ Für eine dauerhafte Installation: `cd extension && web-ext build` (benötigt `n
 1. Öffne das Erweiterungs-Popup (Symbol in der Toolbar).
 2. Trage die Liste ein — ein Begriff pro Zeile (Themen, Namen, Kanalnamen).
    Jeder Begriff wird im Titel und zusätzlich **semantisch im Vorschaubild**
-   gesucht (lokales SigLIP). **OCR** lässt sich für Text im Vorschaubild
+   gesucht (lokales SigLIP). Optional kann auch die Erkennung übertriebener
+   Mimik aktiviert werden. **OCR** lässt sich für Text im Vorschaubild
    zusätzlich einschalten.
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
@@ -85,6 +87,18 @@ nach Testbefehlen ab (config/navigate/scroll/rescan). Läuft der devserver
 nicht, deaktiviert sich das Modul nach 3 fehlgeschlagenen Versuchen still und
 beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` geschrieben.
 
+### Filter für übertriebene Mimik
+
+Der optionale Mimik-Filter verwendet das bereits eingebundene lokale SigLIP-Modell
+und feste Textbeschreibungen (z. B. stark übertriebenes Erstaunen oder Entsetzen).
+Er ist standardmäßig ausgeschaltet. Die Einstellung **Mimik-Schwelle** bestimmt,
+wie hoch der SigLIP-Score sein muss, bevor eine Karte als Treffer behandelt wird.
+
+Die erste Version bewertet das gesamte Vorschaubild, nicht eine separat erkannte
+und ausgeschnittene Gesichtsregion. Bei kleinen Gesichtern oder mehreren Personen
+kann die Zuverlässigkeit daher variieren. Die Schwelle sollte anhand eigener
+Beispiele angepasst werden. Die Auswertung läuft lokal und überträgt keine Bilder.
+
 ## Bekannte Einschränkungen
 
 - Die Selektoren des YouTube-Menüs („⋮“ → „Kein Interesse“) hängen vom Layout
@@ -108,6 +122,7 @@ extension/
   matcher.js      — unscharfer Abgleich von Schlüsselwörtern
   image.js        — visuelle Deskriptoren (legacy; Referenzfotos nicht mehr nötig)
   semantic.js     — API für Text → Bild semantisches Matching
+  emotional-face.js — feste Prompts und Schwellenprüfung für übertriebene Mimik
   semantic-worker.js — SigLIP-Image-Text-Logits im Worker
   ocr.js          — Tesseract.js im Blob-Worker (CSP-Umgehung)
   speech.js       — whisper.cpp im Worker (optional)
