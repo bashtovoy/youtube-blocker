@@ -21,6 +21,18 @@ assert.ok(ff.content_scripts[0].css.includes('ai-channel.css'));
 assert.ok(m.content_scripts[0].js.includes('ai-channel.js'));
 assert.ok(m.content_scripts[0].css.includes('ai-channel.css'));
 
+/* Face-Filter: Bewertung, Host und Client müssen in beiden Builds vorhanden
+   sein; der Host steht nach den Hosts und vor der Routentabelle. */
+const scripts = ff.background.scripts;
+assert.ok(scripts.indexOf('face-score.js') > 0, 'face-score.js im Hintergrund');
+assert.ok(scripts.indexOf('face-host.js') > scripts.indexOf('face-score.js'), 'face-host.js nach face-score.js');
+assert.ok(scripts.indexOf('host-routes.js') > scripts.indexOf('face-host.js'), 'host-routes.js nach face-host.js');
+assert.ok(ff.content_scripts[0].js.includes('face.js'), 'face.js im Content-Skript');
+assert.ok(ff.content_scripts[0].css.includes('face.css'), 'face.css im Content-Skript');
+const offscreen = fs.readFileSync(path.join(__dirname, '..', 'extension', 'offscreen.html'), 'utf8');
+assert.ok(offscreen.indexOf('face-score.js') > 0 && offscreen.indexOf('face-host.js') > offscreen.indexOf('face-score.js'));
+assert.ok(offscreen.indexOf('host-routes.js') > offscreen.indexOf('face-host.js'));
+
 /* Host-Muster gehören in MV3 nach host_permissions, nicht in permissions */
 assert.deepStrictEqual(m.host_permissions,
   ['*://*.youtube.com/*', '*://music.youtube.com/*', '*://*.ytimg.com/*', '*://*.googlevideo.com/*']);
@@ -35,10 +47,24 @@ assert.deepStrictEqual(m.optional_permissions, ['downloads']);
 assert.deepStrictEqual(m.optional_host_permissions, ['<all_urls>']);
 assert.ok(!m.host_permissions.includes('<all_urls>'), 'optional bleibt optional');
 
-/* WASM (SigLIP/PaddleOCR) braucht die CSP-Ausnahme; keine gecko-Einstellungen. */
+/* WASM (SigLIP/PaddleOCR/MediaPipe) braucht die CSP-Ausnahme; keine gecko-Einstellungen. */
 assert.ok(/script-src 'self'/.test(m.content_security_policy.extension_pages));
 assert.ok(/wasm-unsafe-eval/.test(m.content_security_policy.extension_pages));
+assert.ok(/connect-src 'self' blob: data: https:\/\/i\.ytimg\.com/.test(m.content_security_policy.extension_pages),
+  'CSP erlaubt den lokalen Thumbnail-Host');
+assert.ok(/https:\/\/huggingface\.co/.test(m.content_security_policy.extension_pages) &&
+  /https:\/\/\*\.hf\.co/.test(m.content_security_policy.extension_pages),
+  'CSP erlaubt den bestehenden SigLIP-Erstbezug');
+assert.ok(!/googleapis|odml|pa\.googleapis/.test(m.content_security_policy.extension_pages),
+  'CSP blockiert MediaPipe-Telemetrie');
 assert.ok(!('browser_specific_settings' in m));
+
+/* Firefox-MV2-CSP: gleiche Ausnahme für Wasm, gleiche Connect-Allowlist. */
+assert.ok(/script-src 'self'/.test(ff.content_security_policy));
+assert.ok(/wasm-unsafe-eval/.test(ff.content_security_policy));
+assert.ok(/connect-src 'self' blob: data: https:\/\/i\.ytimg\.com/.test(ff.content_security_policy));
+assert.ok(/https:\/\/huggingface\.co/.test(ff.content_security_policy));
+assert.ok(!/googleapis|odml/.test(ff.content_security_policy));
 
 /* Inhaltliche Parität zur Firefox-Seite bewusst erhalten. */
 assert.deepStrictEqual(m.icons, ff.icons);

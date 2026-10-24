@@ -28,6 +28,28 @@ const EXCLUDE_FILES = new Set([
   'rus.traineddata.gz'
 ]);
 
+/* Der Face-Filter lädt nichts aus dem Netz: ohne diese Dateien würde das
+   Chrome-Paket erst beim ersten Vorschaubild scheitern. Firefox nutzt dieselben
+   Dateien im Hintergrundkontext. */
+const FACE_ASSETS = [
+  'lib/mediapipe/vision_bundle.js',
+  'lib/mediapipe/wasm/vision_wasm_internal.js',
+  'lib/mediapipe/wasm/vision_wasm_internal.wasm',
+  'lib/mediapipe/wasm/vision_wasm_nosimd_internal.js',
+  'lib/mediapipe/wasm/vision_wasm_nosimd_internal.wasm',
+  'lib/mediapipe/face_landmarker.task'
+];
+
+function assertFaceAssets() {
+  const missing = FACE_ASSETS.filter(rel => {
+    try { return !fs.statSync(path.join(SRC, rel)).size; } catch (e) { return true; }
+  });
+  if (missing.length) {
+    throw new Error('MediaPipe-Assets fehlen:\n  ' + missing.join('\n  ') +
+      '\nBitte zuerst ./setup.sh ausführen.');
+  }
+}
+
 function copyDir(from, to) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
@@ -42,7 +64,7 @@ function copyDir(from, to) {
 
 /* MV2→MV3: Host-Muster wandern nach host_permissions, browser_action wird action,
    der Hintergrund wird Service Worker (die Hosts laufen dort im Offscreen-Dokument),
-   und der WASM-Bedarf (SigLIP/PaddleOCR) braucht 'wasm-unsafe-eval' in der CSP. */
+   und der WASM-Bedarf (SigLIP/PaddleOCR/MediaPipe) braucht 'wasm-unsafe-eval' in der CSP. */
 function buildChromeManifest(ff) {
   const permissions = [];
   const hostPermissions = [];
@@ -76,8 +98,11 @@ function buildChromeManifest(ff) {
     background: { service_worker: 'background.js' },
     action: ff.browser_action,
     content_scripts: ff.content_scripts,
+    /* connect-src blockiert die MediaPipe-Telemetrie zu odml.pa.googleapis.com;
+       erlaubt bleiben lokale Dateien, Blobs, der Thumbnail-Host und HuggingFace
+       für den bestehenden SigLIP-Erstbezug. */
     content_security_policy: {
-      extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+      extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' blob: data: https://i.ytimg.com https://huggingface.co https://*.huggingface.co https://hf.co https://*.hf.co"
     }
   };
 }
@@ -85,6 +110,7 @@ function buildChromeManifest(ff) {
 function main() {
   const ff = JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8'));
   if (ff.manifest_version !== 2) throw new Error('Erwartet MV2-Manifest als Quelle');
+  assertFaceAssets();
 
   fs.rmSync(OUT, { recursive: true, force: true });
   copyDir(SRC, OUT);

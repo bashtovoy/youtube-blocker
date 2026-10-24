@@ -1,7 +1,7 @@
 /* offscreen.js — Brücke des Offscreen-Dokuments (nur Chrome).
    Chrome MV3: Der Service Worker kann keine Worker erzeugen, deshalb laufen
-   semantic-host.js/ocr-host.js hier. Diese Brücke verbindet beide Welten:
-   - YB_STATUS_SINK: semStatus an den Service Worker melden (hier gibt es kein storage),
+   semantic-host.js/ocr-host.js/face-host.js hier. Diese Brücke verbindet beide Welten:
+   - YB_STATUS_SINK: Host-Status an den Service Worker melden (hier gibt es kein storage),
    - Nachrichten des Service Workers ({target:'offscreen'}) an host-routes.js reichen. */
 'use strict';
 (function () {
@@ -14,8 +14,8 @@
      versionsgebundenem Fallback. */
   self.YB_FORCE_WASM = true;
 
-  /* semantic-host.js ruft das bei jedem Statuswechsel auf; der Service Worker
-     schreibt den Wert nach storage.local. */
+  /* Semantik-/OCR-/Face-Host rufen das bei jedem Statuswechsel auf; der
+     Service Worker schreibt den Wert nach storage.local. */
   self.YB_STATUS_SINK = (key, payload) => {
     try {
       api.runtime.sendMessage({ target: 'sw', op: 'yb-sw-storage-set', key, payload }).catch(() => {});

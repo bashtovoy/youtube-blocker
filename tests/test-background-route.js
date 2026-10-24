@@ -106,16 +106,21 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
   /* --- Firefox: Route vorhanden → direkt beantworten --- */
   {
     const routeOps = [];
+    const faceOps = [];
     const { calls, listener } = makeSandbox({
       routes: {
         sem: async m => { routeOps.push(m.op); return { ok: true, status: { state: 'off', via: 'route' } }; },
-        ocr: async () => ({ ok: true, status: { ready: false } })
+        ocr: async () => ({ ok: true, status: { ready: false } }),
+        face: async m => { faceOps.push(m.op); return { ok: true, result: { score: 0.8, faceWidth: 0.5 } }; }
       }
     });
     const r = await ask(listener, { type: 'ybsem', op: 'status' });
     assert.strictEqual(r.ret, true, 'asynchroner Kanal bleibt offen');
     assert.deepStrictEqual(plain(r.value), { ok: true, status: { state: 'off', via: 'route' } });
     assert.deepStrictEqual(routeOps, ['status']);
+    const f = await ask(listener, { type: 'ybface', op: 'score', videoId: 'quzTROdLmU4' });
+    assert.deepStrictEqual(faceOps, ['score']);
+    assert.deepStrictEqual(plain(f.value), { ok: true, result: { score: 0.8, faceWidth: 0.5 } });
     assert.strictEqual(calls.offscreen, 0, 'Firefox startet kein Offscreen-Dokument');
     assert.strictEqual(calls.sends.length, 0);
   }
@@ -176,6 +181,11 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     assert.strictEqual(o.value.ok, true);
     assert.strictEqual(o.value.status.state, 'off', 'OCR-Host meldet kalt „aus“');
     assert.deepStrictEqual(plain(o.value.status.langs), []);
+    const f = await ask(listener, { type: 'ybface', op: 'status' });
+    assert.strictEqual(f.value.ok, true);
+    assert.strictEqual(f.value.status.state, 'off', 'Face-Host meldet kalt „aus“');
+    assert.strictEqual(f.value.status.model, 'face-landmarker');
+    assert.strictEqual(f.value.status.assets, true, 'MediaPipe-Assets liegen im Paket');
     assert.strictEqual(calls.offscreen, 0, 'kalte Statusabfrage startet kein Dokument');
   }
 
@@ -189,6 +199,9 @@ function ask(listener, msg, timeoutMs = 2000, sender = {}) {
     const o = await ask(listener, { type: 'ybocr', op: 'recognize', url: 'u', langs: 'eng' });
     assert.strictEqual(calls.sends[1].route, 'ocr');
     assert.strictEqual(o.value.ok, true);
+    const f = await ask(listener, { type: 'ybface', op: 'score', videoId: 'quzTROdLmU4' });
+    assert.strictEqual(calls.sends[2].route, 'face');
+    assert.strictEqual(f.value.ok, true);
   }
 
   /* --- Statusmeldung aus dem Offscreen-Dokument landet in storage --- */

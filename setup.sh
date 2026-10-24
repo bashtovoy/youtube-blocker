@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # setup.sh — lädt die Bibliotheken für die Erweiterung Youtube Blocker
-# (OCR: PaddleOCR.js; optional: whisper.cpp für die Spracherkennung)
+# (Semantik: SigLIP; Gesichter: MediaPipe; OCR: PaddleOCR.js; optional: whisper.cpp)
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
 
 LIB="extension/lib"
 MODELS="extension/models"
+MP="$LIB/mediapipe"
 SEMANTIC_MODEL="$MODELS/siglip-base-patch16-224"
-mkdir -p "$LIB" "$MODELS" "$SEMANTIC_MODEL"
+mkdir -p "$LIB" "$MODELS" "$SEMANTIC_MODEL" "$MP/wasm"
 
 echo "==> Transformers.js + SigLIP: semantische Bilderkennung (optional, lokal)"
 curl -fsSL -o "$LIB/transformers.min.js" \
@@ -46,6 +47,35 @@ curl -fL --progress-bar -o "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
 # wird von Chrome aber als eval-Warnung im AMO-Bericht gemeldet.
 node "$ROOT/tools/patch-ort-wasm.js" "$LIB/ort-wasm-simd-threaded.jsep.mjs"
 echo "SigLIP bereit: Bild- und Text-Turm je q4f16 (WebGPU) + q8 (WASM) + lokale ONNX-WASM-Runtime; Inferenz — lokal im Browser."
+echo
+echo "==> MediaPipe Face Landmarker: Gesichter im Vorschaubild (lokal)"
+MP_BASE="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1"
+MP_MODEL="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+fetch_mp() {
+  local out="$1" url="$2"
+  if [[ -s "$out" ]]; then echo "OK  vorhanden: $(basename "$out")"; return 0; fi
+  curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 \
+    --progress-bar -o "$out" "$url"
+}
+fetch_mp "$MP/vision_bundle.js" "$MP_BASE/vision_bundle.js"
+fetch_mp "$MP/wasm/vision_wasm_internal.js" "$MP_BASE/wasm/vision_wasm_internal.js"
+fetch_mp "$MP/wasm/vision_wasm_internal.wasm" "$MP_BASE/wasm/vision_wasm_internal.wasm"
+fetch_mp "$MP/wasm/vision_wasm_nosimd_internal.js" "$MP_BASE/wasm/vision_wasm_nosimd_internal.js"
+fetch_mp "$MP/wasm/vision_wasm_nosimd_internal.wasm" "$MP_BASE/wasm/vision_wasm_nosimd_internal.wasm"
+fetch_mp "$MP/face_landmarker.task" "$MP_MODEL"
+curl -fsSL -o "$MP/LICENSE" "https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/LICENSE"
+cat > "$MP/NOTICE.md" <<'NOTICE'
+# MediaPipe Face Landmarker — local assets
+
+- `vision_bundle.js`, `wasm/*`: npm package
+  `@mediapipe/tasks-vision` version `1.1.1`.
+- `face_landmarker.task`: MediaPipe Face Landmarker, float16, version 1.
+
+MediaPipe is licensed under the Apache License 2.0; see `LICENSE`. The model is
+used locally on the user's machine. No image, landmark or embedding is uploaded
+or persisted by the extension.
+NOTICE
+echo "MediaPipe bereit: Face Landmarker (CPU/WASM) + beide Wasm-Varianten."
 echo
 echo "==> PaddleOCR.js (OCR der Vorschaubilder) — 0.4.2"
 # Das npm-Paket ist ESM und zieht OpenCV/ONNX nach; für die Erweiterung wird
@@ -153,6 +183,12 @@ for F in \
   "$LIB/eslav_ppocrv5_mobile_rec.tar" \
   "$LIB/ort-wasm-simd-threaded.jsep.mjs" \
   "$LIB/ort-wasm-simd-threaded.jsep.wasm" \
+  "$MP/vision_bundle.js" \
+  "$MP/wasm/vision_wasm_internal.js" \
+  "$MP/wasm/vision_wasm_internal.wasm" \
+  "$MP/wasm/vision_wasm_nosimd_internal.js" \
+  "$MP/wasm/vision_wasm_nosimd_internal.wasm" \
+  "$MP/face_landmarker.task" \
   "$SEMANTIC_MODEL/onnx/vision_model_q4f16.onnx" \
   "$SEMANTIC_MODEL/onnx/vision_model_quantized.onnx" \
   "$SEMANTIC_MODEL/onnx/text_model_q4f16.onnx" \

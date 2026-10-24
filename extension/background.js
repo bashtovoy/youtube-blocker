@@ -40,7 +40,7 @@ async function ensureOffscreen() {
     offscreenCreating = api.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['BLOBS'],
-      justification: 'Lokale WASM-Worker (SigLIP, PaddleOCR) ausführen — der Service Worker kann keine Worker erzeugen'
+      justification: 'Lokale WASM-Modelle (SigLIP, PaddleOCR, MediaPipe) ausführen — der Service Worker kann keine Worker erzeugen'
     }).catch(e => {
       /* Race: parallel wurde doch schon eines erstellt — kein Fehler. */
       if (!/single offscreen|already exists/i.test(String((e && e.message) || e))) throw e;
@@ -72,6 +72,18 @@ async function offStatus(route) {
   if (route === 'sem') {
     const cached = self.YB_MODEL_CACHE ? await self.YB_MODEL_CACHE.check() : null;
     return { ok: true, status: { state: 'off', device: null, error: null, initMs: 0, lastScoreMs: 0, lastUsedAt: 0, dl: null, cached } };
+  }
+  if (route === 'face') {
+    /* Die MediaPipe-Dateien liegen im Paket; geladen wird das Modell erst beim
+       ersten Vorschaubild. „off“ ist daher kein Fehler, sondern Bereitschaft. */
+    return {
+      ok: true,
+      status: {
+        state: 'off', model: 'face-landmarker', delegate: 'CPU', error: null,
+        initMs: 0, lastScoreMs: 0, lastUsedAt: 0, cacheSize: 0, lastSkipped: '',
+        assets: true
+      }
+    };
   }
   return {
     ok: true,
@@ -579,11 +591,12 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(sendResponse)
       .catch(e => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
-  } else if (msg.type === 'ybsem' || msg.type === 'ybocr') {
+  } else if (msg.type === 'ybsem' || msg.type === 'ybocr' || msg.type === 'ybface') {
     /* Antwort via sendResponse + return true: das erwartet Chrome von asynchronen
        Listenern; Firefox akzeptiert diese Form ebenfalls. sendResponse hält den
        Kanal offen — wichtig für lange Erstbezüge (ensure lädt die Modelle). */
-    callHost(msg.type === 'ybsem' ? 'sem' : 'ocr', msg)
+    const route = msg.type === 'ybsem' ? 'sem' : msg.type === 'ybocr' ? 'ocr' : 'face';
+    callHost(route, msg)
       .then(sendResponse)
       .catch(e => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;

@@ -1,8 +1,8 @@
 # Youtube Blocker (Firefox & Chrome)
 
-Browser-Erweiterung für Firefox und Chrome, die unerwünschte YouTube-Inhalte **anhand des Titels und
-des Vorschaubilds** erkennt und für Treffer aus deiner Liste das offizielle
-YouTube-Signal **„Kein Interesse“** sendet.
+Browser-Erweiterung für Firefox und Chrome, die unerwünschte YouTube-Inhalte **anhand des Titels,
+des Vorschaubilds und übertriebener Gesichtsausdrücke** erkennt und für Treffer aus deiner Liste
+das offizielle YouTube-Signal **„Kein Interesse“** sendet.
 
 ## Wie es funktioniert
 
@@ -12,6 +12,7 @@ YouTube-Signal **„Kein Interesse“** sendet.
 | Foto — OCR | Text im Vorschaubild wird mit PaddleOCR.js (PP-OCRv5 mobile) erkannt und in der Wortliste gesucht. Ein Detektor und zwei Erkenner liegen lokal im Paket: `en` für Latein, `eslav` für Kyrillisch. Bei `eng+rus` entscheidet die Schrift von Titel/Kanal, welche Pipeline zuerst läuft; beide können vom Popup vorgewärmt werden. ONNX-Runtime und OpenCV kommen ebenfalls aus `lib/` — kein CDN, kein Modell-Download zur Laufzeit | `ocr-host.js` + `lib/paddle.bundle.js` + `lib/opencv_js.wasm` + `lib/*_ppocrv5_*.tar` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
+| Gesichter im Vorschaubild *(optional)* | Lokaler MediaPipe Face Landmarker (CPU/WASM): offener Mund + gehobene Brauen/weite Augen + ausreichend großes Gesicht. Lächeln, Reden und Singen werden gedämpft; nur Feed-Thumbnails, nie das Video | `face-host.js` + `lib/mediapipe/` |
 | Sprache im Video *(optional)* | Die ersten N Sekunden Audio laufen durch whisper.cpp (WASM) in einem separaten Worker, das Transkript wird in der Liste gesucht | `lib/whisper.js` + Modell in `models/` |
 
 Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
@@ -23,13 +24,16 @@ Bei einem Treffer wird die im Popup gewählte Aktion ausgeführt:
   unabhängig vom Layout).
 
 Alle Daten (Liste, Transkripte) werden nur lokal gespeichert
-(`storage.local`) und nirgendwohin gesendet.
+(`storage.local`) und nirgendwohin gesendet. Gesichts-Scores bleiben ausschließlich
+im Arbeitsspeicher von Host und Content (LRU, höchstens 500 Video-IDs); Bilder,
+Landmarken und Embeddings werden weder gespeichert noch exportiert.
 
 ## Bibliotheken installieren
 
 ```bash
 ./setup.sh          # baut PaddleOCR.js als IIFE-Bundle und lädt Detektor + Erkenner (en, eslav)
-                    # außerdem die SigLIP-Modelle für die Semantik (siehe unten)
+                    # lädt die SigLIP-Modelle für die Semantik und die gepinnten
+                    # MediaPipe-Dateien für Gesichter (siehe unten)
                     # optional — whisper.cpp und ein Modell für Sprache
 ```
 
@@ -84,10 +88,13 @@ Bestätigung nach. Mindestversion: Chrome 116.
    lokal, ohne „Kein Interesse“-Klick. Die Regeln liegen als Daten in
    `extension/promo-rules.js`; unter **„Diagnose der Werbeformate“** zeigt das
    Popup einen lokalen Bericht unbekannter Verdachtsfälle zum Kopieren.
-6. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
+6. Für **Gesichter im Vorschaubild** zunächst **„Nur markieren“** wählen und
+   die Treffer mit dem 😱-Badge prüfen. Erst danach **„Ausblenden“** aktivieren
+   (siehe eigener Abschnitt unten).
+7. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
    werden automatisch gespeichert (Auto-Speichern mit kurzem Debounce) und
    sofort auf alle YouTube-Tabs angewendet.
-7. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
+8. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
    scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
    über einen MutationObserver.
 
@@ -121,6 +128,54 @@ Wichtig:
 - Der Modus **„Ausblenden“** wurde in 1.6.0 bewusst entfernt. Bis eine
   Rücknahme-/Freigabeliste existiert, sind nur **Aus**, **Nur markieren** und
   **Abdunkeln** verfügbar.
+
+## Gesichter im Vorschaubild (ab 1.8.0)
+
+Der optionale Face-Kanal erkennt **übertriebene Schock-/Schrei-Gesichter** auf
+Feed-Thumbnails. Er ist standardmäßig **aus** und arbeitet vollständig lokal mit
+dem mitgelieferten **MediaPipe Face Landmarker** (float16, CPU/WASM, `runningMode:
+'IMAGE'`, höchstens zwei Gesichter). Es ist keine Emotionserkennung und kein
+Gesichtsabgleich: Bewertet werden nur Blendshape-Geometrie und die Gesichtsgröße.
+
+- **Treffer:** offener Mund **und** gehobene Brauen/weite Augen, ein ausreichend
+  großes Gesicht (mindestens 12 % Bildbreite) und ein Score über der Schwelle.
+  Lächeln wird vom Score abgezogen, damit Lachen nicht als Schock gilt; ein
+  offener Mund allein (Reden/Singen) bleibt unter der Schwelle.
+- **Modi:** `Aus` (Default), `Nur markieren` (Kalibrierung, 😱-Badge) und
+  `Ausblenden` (lokale CSS-Ausblendung mit Grund `face:shock`). Der Mark-Modus
+  blockiert Semantik/OCR nicht; im Hide-Modus wird die Karte nur lokal
+  ausgeblendet — es wird **kein** „Kein Interesse“ an YouTube gesendet.
+- **Schwelle:** Standard `0.65`, einstellbar von `0.30` bis `0.95`. Höher =
+  strenger. Für den Start `Nur markieren` und `0.65` verwenden; erst nach
+  Sichtprüfung auf `Ausblenden` wechseln.
+- **Grenzen:** Cartoons, Masken, stark abgewandte oder im Profil gezeigte
+  Gesichter, Sonnenbrillen und kleine Gesichter werden oft übersehen. Das ist
+  Absicht (fail open): lieber eine Karte stehen lassen als normale Mimik
+  ausblenden.
+- **Nur Feed:** Der Filter läuft ausschließlich auf Karten in Feed/Suche/
+  Empfehlungen. Das Videobild selbst wird nie analysiert oder verändert.
+
+### Lokal, ohne Upload und ohne Telemetrie
+
+Die Dateien liegen gepinnt unter `extension/lib/mediapipe/` (MediaPipe-Bundle,
+beide Wasm-Varianten und `face_landmarker.task`, zusammen rund 30 MB). Sie werden
+erst beim Einschalten des Kanals geladen; `setup.sh` lädt dieselben Versionen für
+Entwicklungs-Builds. Der Host liest höchstens `mqdefault.jpg` (Fallback
+`hqdefault.jpg`) von `i.ytimg.com` — die Host-Berechtigung ist bereits vorhanden.
+Bilder, Landmarken und Blendshapes verlassen den Host nicht und werden nicht
+gespeichert; im Speicher bleiben nur aggregierte Scores (maximal 500 Video-IDs)
+für die erneute Markierung nach einem YouTube-Re-Render.
+
+MediaPipe 1.1.1 versucht beim Start standardmäßig, aggregierte Nutzungsdaten an
+`odml.pa.googleapis.com` zu senden. Die Erweiterung blockiert das über die CSP:
+`connect-src` erlaubt lokale Quellen (`'self'`, `blob:`, `data:`), den
+Thumbnail-Host `https://i.ytimg.com` und HuggingFace (`https://huggingface.co`,
+`https://*.huggingface.co`, `https://hf.co`, `https://*.hf.co`) für den
+bestehenden SigLIP-Erstbezug. Die Telemetrie zu `odml.pa.googleapis.com` ist
+damit wirkungslos, ohne das Vendor-Bundle zu patchen; Thumbnail-Abruf und
+Semantik funktionieren weiterhin. Schlägt das Modell fehl, wird nur der
+Face-Kanal für die Seitensession deaktiviert — Titel, Semantik und OCR laufen
+unverändert weiter.
 
 ## Ausnahmen je Schlüsselwort (ab 1.5.13)
 
@@ -256,6 +311,10 @@ Erweiterung verwendet deshalb in Chrome die File System Access API:
   Begriffs (Drone/Dron/UAV) sind füreinander Konkurrenten und drücken die
   Margin — pro Konzept möglichst eine Schreibweise verwenden. Weitere
   Kalibrierung: `gui-test-assets/padexp/`.
+- `Gesichts-Modus` — `Aus`, `Nur markieren` oder `Ausblenden`; Default `Aus`.
+  Im Mark-Modus erscheint ein 😱-Badge, im Hide-Modus wird die Karte lokal
+  ausgeblendet. Die Schwelle (`Gesichts-Schwelle`, Default `0.65`) lässt sich
+  direkt darunter einstellen; das Popup zeigt Modellstatus und Ladezeit an.
 - `OCR-Sprachen` — standardmäßig `eng+rus`. Beim Öffnen des Popups werden
   die aktivierten Modelle vorgeladen; Status und Fortschritt stehen direkt
   unter der OCR-Zeile. Bei `eng+rus` laufen beide Erkenner als getrennte
@@ -343,6 +402,13 @@ Vorschaubild-Vergleich. Waren Karten währenddessen schon geprüft, werden sie
 automatisch neu bewertet, sobald der Kanal steht. Ein signierter Build
 (`web-ext build` / AMO) bleibt unverändert unter dem Uploadlimit.
 
+Die **MediaPipe-Dateien für Gesichter** sind dagegen vollständig im Paket
+enthalten (rund 30 MB, gepinnte Version 1.1.1). Sie werden nicht von einem CDN
+geladen; der Host injiziert das UMD-Bundle erst beim ersten Bedarf. Die
+Firefox-Background-Seite und das Chrome-Offscreen-Dokument nutzen dieselben
+Dateien. Thumbnail-Bilder kommen ausschließlich von `i.ytimg.com`; die CSP
+erlaubt daneben lokale Quellen und HuggingFace für den SigLIP-Erstbezug.
+
 ## Debugging und Prüfung (Dev-Modus)
 
 Für End-to-End-Prüfungen ohne manuelles Öffnen der DevTools gibt es eine Dev-Infrastruktur:
@@ -375,6 +441,11 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   Sekunden pro Vorschaubild. Bei `eng+rus` entscheidet die Schrift von Titel
   und Kanal über die Pipeline — ein Thumbnail mit der jeweils anderen Schrift
   wird nicht zusätzlich geprüft.
+- Der Face-Filter ist konservativ und läuft nur auf Feed-Thumbnails. Kleine,
+  im Profil gezeigte, maskierte oder gezeichnete Gesichter werden oft nicht erkannt;
+  die Schwelle muss an die eigene Nische kalibriert werden. Bei einem Modellfehler
+  bleibt der Kanal für die Seitensession aus (fail open), andere Filter laufen
+  weiter. Die MediaPipe-Dateien vergrößern das Paket um rund 30 MB.
 - Die Spracherkennung ist experimentell: lädt die Watch-Seite und den Audio-Stream,
   transkribiert nur die ersten N Sekunden. Für Russisch — multilinguales
   Modell (`small`), das sind ~460 MB im Worker.
@@ -394,6 +465,10 @@ extension/
   semantic.js     — Content-Client: Text → Bild semantisches Matching (Messaging)
   semantic-host.js — SigLIP-Worker-Host in der Background-Seite (umgeht CSP/Trusted Types)
   semantic-worker.js — Text-/Bild-Embeddings + roher Kosinus (Bild-Turm resident, Text einmal je Liste)
+  face.js         — Content-Client: Messaging und Badge-Texte
+  face-host.js    — MediaPipe-Host: Modell-Lebenszyklus, Thumbnail-Abruf, Queue/Cache
+  face-score.js   — reine Blendshape-Bewertung, Mindestgröße, Thumbnail-URLs
+  face.css        — 😱-Badge im Mark-Modus
   ocr.js          — Content-Client: Vorschaubild-OCR (Messaging)
   ocr-host.js     — PaddleOCR-Host in der Background-Seite (umgeht CSP/Trusted Types)
   speech.js       — whisper.cpp im Worker (optional)
@@ -403,9 +478,9 @@ extension/
   ai.js           — offizielle KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
   ai-channel.js   — lokaler Kanalzähler für wiederholte offizielle KI-Badges
   ai-channel.css  — Markierung/Abdunkeln von Karten auffälliger Kanäle
-  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-Routing, Kontrollbilder
+  background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-/Face-Routing, Kontrollbilder
   popup/          — Verwaltung von Liste und Einstellungen
-  lib/ models/    — externe Bibliotheken; Modelle nur lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
+  lib/ models/    — externe Bibliotheken; Face-/OCR-Modelle im Paket, SigLIP lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
 ```
 
 ## Änderungen in 1.1.0
@@ -439,8 +514,12 @@ node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome
 node tests/test-folder-store.js  # Chrome-Ordner: IndexedDB-Warteschlange, Freigabe, Kollisionsnamen
 node tests/test-i18n.js          # Modultest der Oberflächensprachen (de/en/ru/uk)
 node tests/test-shots.js         # Kontrollbilder: Dateiname mit vollständigem Grund, Sichtbarkeit, Zuschnitt
+node tests/test-face-score.js    # Gesichtsbewertung: Schock vs. Lächeln, Mindestgröße, stärkstes Gesicht
+node tests/test-face-host.js     # Face-Host: Modell-Lebenszyklus, Cache/Queue, Fallback, Fehler
+node tests/test-face-assets.js   # MediaPipe-Dateien, Manifest-Reihenfolge, keine Laufzeit-CDNs
 node tests/e2e-chrome-fsa.js     # echter Chrome: OPFS-Handle, Service-Worker-Schreiben, captureVisibleTab
 node tests/e2e-chrome-ocr.js     # echter Chrome: Offscreen-OCR, lokale Paddle-Assets, keine externen Anfragen
+node tests/e2e-chrome-face.js    # echter Chrome: MediaPipe-Modellstart, lokale Assets, CSP blockt Telemetrie
 node tests/test-ai.js            # KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
 node tests/test-ai-channel.js    # Kanalzähler: zwei Videos/180 Tage, Markier-/Dim-Modi, Freigaben
 node tests/test-chrome-manifest.js # MV2→MV3-Transformation (Host-Muster, Service Worker, CSP, offscreen)
@@ -455,5 +534,7 @@ npx web-ext run  --source-dir extension --start-url https://www.youtube.com/
 Die Änderungshistorie steht in [`CHANGELOG.md`](CHANGELOG.md). Lizenz: [`LICENSE`](LICENSE) (MIT).
 Gebündelte Drittanbieter: PaddleOCR.js und die PP-OCRv5-Modelle (Apache-2.0,
 Details in [`experiments/paddleocr/README.md`](experiments/paddleocr/README.md)),
-ONNX Runtime (Apache-2.0), OpenCV über `fast-opencv-wasm` (BSD-3-Clause),
-clipper-lib (BSL-1.0), js-yaml (MIT).
+MediaPipe Tasks Vision und Face Landmarker (Apache-2.0, siehe
+`extension/lib/mediapipe/LICENSE` und `NOTICE.md`), ONNX Runtime (Apache-2.0),
+OpenCV über `fast-opencv-wasm` (BSD-3-Clause), clipper-lib (BSL-1.0),
+js-yaml (MIT).

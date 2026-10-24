@@ -1,6 +1,6 @@
-/* host-routes.js — gemeinsame Weitergabe der Semantik-/OCR-Anfragen an die Hosts.
+/* host-routes.js — gemeinsame Weitergabe der Semantik-/OCR-/Face-Anfragen an die Hosts.
    Wird geladen:
-   - Firefox: im Hintergrundkontext (nach semantic-host.js/ocr-host.js) — direkter Aufruf.
+   - Firefox: im Hintergrundkontext (nach semantic-host.js/ocr-host.js/face-host.js) — direkter Aufruf.
    - Chrome MV3: im Offscreen-Dokument, in dem die Hosts leben (Service Worker können
      keine Worker erzeugen); der Service Worker reicht die Anfragen dorthin weiter.
    Darum definiert diese Datei nur self.YB_ROUTES und registriert selbst keine Listener.
@@ -51,5 +51,30 @@
     }
   }
 
-  self.YB_ROUTES = { sem, ocr };
+  async function face(msg) {
+    const host = self.YB_FACE_HOST;
+    try {
+      if (!host) throw new Error('Face-Host nicht geladen');
+      if (msg.op === 'prepare') {
+        const res = await host.prepare();
+        return { ok: true, status: res };
+      }
+      if (msg.op === 'score') {
+        return { ok: true, result: await host.score(msg.videoId) };
+      }
+      if (msg.op === 'status') {
+        return { ok: true, status: host.status() };
+      }
+      if (msg.op === 'reset') {
+        host.reset();
+        return { ok: true };
+      }
+      throw new Error('Unbekannte Face-Operation');
+    } catch (e) {
+      const err = e || {};
+      return { ok: false, error: String(err.message || err), fatal: !!err.fatal };
+    }
+  }
+
+  self.YB_ROUTES = { sem, ocr, face };
 })();

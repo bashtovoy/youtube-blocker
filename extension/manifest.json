@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Youtube Blocker",
-  "version": "1.7.2",
-  "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal und an der semantischen Übereinstimmung deiner Liste mit dem Inhalt des Vorschaubilds (lokales SigLIP, OCR) und sendet das Signal „Kein Interesse“.",
+  "version": "1.8.0",
+  "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal, an der semantischen Übereinstimmung deiner Liste mit dem Vorschaubild (lokales SigLIP, OCR) und an übertriebenen Gesichtsausdrücken (lokales MediaPipe).",
   "icons": {
     "48": "icons/icon48.png",
     "96": "icons/icon96.png"
@@ -27,6 +27,8 @@
       "folder-store.js",
       "semantic-host.js",
       "ocr-host.js",
+      "face-score.js",
+      "face-host.js",
       "host-routes.js",
       "ai-channel.js",
       "background.js"
@@ -46,6 +48,7 @@
         "promo.js",
         "image.js",
         "semantic.js",
+        "face.js",
         "speech.js",
         "ocr.js",
         "dismiss.js",
@@ -54,12 +57,14 @@
         "content.js"
       ],
       "css": [
-        "ai-channel.css"
+        "ai-channel.css",
+        "face.css"
       ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' blob: data: https://i.ytimg.com https://huggingface.co https://*.huggingface.co https://hf.co https://*.hf.co",
   "browser_action": {
     "default_title": "Youtube Blocker",
     "default_popup": "popup/popup.html",

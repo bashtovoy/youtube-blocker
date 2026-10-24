@@ -11,7 +11,8 @@ $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Bu
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
-const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode'];
+const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode', 'faceMode', 'faceThreshold'];
+const FACE_MODES = ['off', 'mark', 'hide'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -19,6 +20,8 @@ const DEFAULT_SETTINGS = {
   checkSemanticImage: true,
   checkThumbOcr: false,
   checkSpeech: false,
+  faceMode: 'off',
+  faceThreshold: 0.65,
   hideMembersOnly: false,
   hideAiGenerated: true,
   aiChannelMode: 'off',
@@ -112,6 +115,9 @@ let ocrStatus = null;          /* letzter Status des OCR-Hosts */
 let ocrPollTimer = null;       /* Popup offen halten, solange OCR lädt */
 let ocrPrepareRequest = null;  /* laufende prepare-Anfrage */
 let ocrPrepareKey = '';        /* Sprachsatz der laufenden Anfrage */
+let faceStatus = null;         /* letzter Status des Face-Hosts */
+let facePollTimer = null;      /* Popup offen halten, solange das Modell lädt */
+let facePrepareRequest = null; /* laufende prepare-Anfrage */
 let whisperState = 'pending';  /* pending | ok | missing — siehe checkWhisper() */
 let whisperChecked = false;    /* Bibliothek nur einmal je Popup-Öffnung prüfen */
 let shotsPermOk = null;        /* null = noch nicht geprüft */
@@ -154,6 +160,17 @@ function renderStats() {
   else if (ocrStatus && ocrStatus.state === 'error') ocr = ['err', 'stat_err'];
   else if (ocrStatus && ocrStatus.state === 'ready') ocr = ['ok', 'stat_ok'];
   setStat('statOcr', ocr[0], ocr[1]);
+
+  /* Gesichter: eigenes MediaPipe-Modell. „off“ mit assets/lastUsedAt heißt
+     bereit auf Abruf (die Dateien liegen im Paket), nicht abgeschaltet. */
+  let face = ['pending', 'stat_pending'];
+  const faceModeEl = $('faceMode');
+  if (!faceModeEl || faceModeEl.value === 'off') face = ['off', 'stat_off'];
+  else if (faceStatus && faceStatus.state === 'loading') face = ['wait', 'stat_wait'];
+  else if (faceStatus && faceStatus.state === 'error') face = ['err', 'stat_err'];
+  else if (faceStatus && faceStatus.state === 'ready') face = ['ok', 'stat_ok'];
+  else if (faceStatus && faceStatus.state === 'off' && (faceStatus.lastUsedAt || faceStatus.assets)) face = ['ok', 'stat_ok_idle'];
+  setStat('statFace', face[0], face[1]);
 
   /* Sprache: Whisper-Bibliothek installiert? (Modelldatei wird nicht geprüft) */
   let sp = ['pending', 'stat_pending'];
@@ -286,6 +303,102 @@ function prepareOcr() {
         ocrPrepareKey = '';
       }
     });
+}
+
+/* ---- Face-Modell: Status und Vorbereitung ----------------------------------
+   Das Modell liegt lokal unter lib/mediapipe/. Beim Einschalten des Kanals
+   startet das Popup die Initialisierung im Host und zeigt den Zustand; die
+   eigentliche Bildarbeit läuft später im Content/Host. */
+function faceStatusView(st) {
+  if (!st) return { text: t('face_idle'), cls: '' };
+  if (st.state === 'error') {
+    return { text: t('face_error', { msg: st.error || t('unknown') }), cls: 'err' };
+  }
+  if (st.state === 'loading') return { text: t('face_loading'), cls: '' };
+  if (st.state === 'ready') {
+    const ms = Math.round(Number(st.lastScoreMs || st.initMs || 0));
+    return { text: t('face_ready', { ms: ms > 0 ? ms : '—' }), cls: 'ok' };
+  }
+  if (st.state === 'off' && st.lastUsedAt) return { text: t('face_cached'), cls: '' };
+  return { text: t('face_idle'), cls: '' };
+}
+
+function renderFaceStatus() {
+  const block = $('faceBlock');
+  if (!block) return;
+  const enabled = $('faceMode').value !== 'off';
+  block.hidden = !enabled;
+  if (!enabled) return;
+  const v = faceStatusView(faceStatus);
+  const text = $('faceModelStatus');
+  if (text) {
+    text.textContent = v.text;
+    text.classList.toggle('ok', v.cls === 'ok');
+    text.classList.toggle('err', v.cls === 'err');
+  }
+  const btn = $('facePrepare');
+  if (btn) {
+    const busy = faceStatus && faceStatus.state === 'loading';
+    btn.hidden = busy || !!(faceStatus && faceStatus.state === 'ready');
+    btn.disabled = busy;
+    btn.textContent = t(faceStatus && faceStatus.state === 'error' ? 'face_retry' : 'face_prepare');
+  }
+  renderStats();
+}
+
+function stopFacePoll() {
+  if (facePollTimer) clearTimeout(facePollTimer);
+  facePollTimer = null;
+}
+
+function scheduleFacePoll() {
+  stopFacePoll();
+  if ($('faceMode').value === 'off') return;
+  if (faceStatus && (faceStatus.state === 'ready' || faceStatus.state === 'error')) return;
+  facePollTimer = setTimeout(refreshFaceStatus, 700);
+}
+
+async function refreshFaceStatus() {
+  try {
+    const res = await api.runtime.sendMessage({ type: 'ybface', op: 'status' });
+    if (res && res.ok && res.status) faceStatus = res.status;
+    else faceStatus = { state: 'error', error: (res && res.error) || t('unknown') };
+  } catch (e) {
+    faceStatus = { state: 'error', error: String((e && e.message) || e) };
+  }
+  renderStats();
+  renderFaceStatus();
+  scheduleFacePoll();
+}
+
+function prepareFace() {
+  if ($('faceMode').value === 'off') {
+    stopFacePoll();
+    renderFaceStatus();
+    return;
+  }
+  /* Auch bei gespeichertem „ready“ den Host fragen: Nach einem Browserstart
+     ist der Status in storage veraltet, das Modell aber noch nicht geladen. */
+  /* Sofort als „lädt“ anzeigen; die Wahrheit kommt anschließend vom Host. */
+  if (!faceStatus || faceStatus.state !== 'loading') faceStatus = { state: 'loading' };
+  renderStats();
+  renderFaceStatus();
+  stopFacePoll();
+  facePollTimer = setTimeout(refreshFaceStatus, 250);
+  if (facePrepareRequest) return;
+  facePrepareRequest = api.runtime.sendMessage({ type: 'ybface', op: 'prepare' })
+    .then(res => {
+      if (res && res.ok && res.status) faceStatus = res.status;
+      else if (res && !res.ok) faceStatus = { state: 'error', error: res.error || t('unknown') };
+      return refreshFaceStatus();
+    })
+    .catch(e => {
+      stopFacePoll();
+      faceStatus = { state: 'error', error: String((e && e.message) || e) };
+      renderStats();
+      renderFaceStatus();
+    })
+    .finally(() => { facePrepareRequest = null; });
 }
 
 /* ---- Kontrollbilder: optionale Berechtigungen -------------------------------
@@ -507,6 +620,7 @@ function checkWhisper() {
 
 api.storage.onChanged.addListener(changes => {
   if (changes.semStatus) renderSemStatus(changes.semStatus.newValue);
+  if (changes.faceStatus) { faceStatus = changes.faceStatus.newValue || null; renderStats(); renderFaceStatus(); }
   if (changes.promoSuspects) {
     promoSuspects = Array.isArray(changes.promoSuspects.newValue) ? changes.promoSuspects.newValue : [];
     renderPromoDiag();
@@ -538,6 +652,7 @@ function applyLanguage(lang) {
   renderKeywords();
   renderSemStatus(lastSemStatus);
   renderOcrStatus();
+  renderFaceStatus();
   renderCounts();
   renderLastShot();
   renderPromoDiag();
@@ -688,19 +803,23 @@ function syncAiChannelUi() {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, promoSuspects: [], lastShot: null
+    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, faceStatus: null, promoSuspects: [], lastShot: null
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   s.actionDelayMs = numberOr(s.actionDelayMs, DEFAULT_SETTINGS.actionDelayMs);
   s.speechMaxSeconds = numberOr(s.speechMaxSeconds, DEFAULT_SETTINGS.speechMaxSeconds);
   s.semanticMargin = numberOr(s.semanticMargin, DEFAULT_SETTINGS.semanticMargin);
   s.hashThreshold = numberOr(s.hashThreshold, DEFAULT_SETTINGS.hashThreshold);
+  s.faceThreshold = numberOr(s.faceThreshold, DEFAULT_SETTINGS.faceThreshold);
+  if (s.faceThreshold < 0.3 || s.faceThreshold > 0.95) s.faceThreshold = DEFAULT_SETTINGS.faceThreshold;
   if (!AI_CHANNEL_MODES.includes(s.aiChannelMode)) s.aiChannelMode = DEFAULT_SETTINGS.aiChannelMode;
+  if (!FACE_MODES.includes(s.faceMode)) s.faceMode = DEFAULT_SETTINGS.faceMode;
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage'); });
   VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
   keywords = normalizeKeywords(data.keywords);
   counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
   lastSemStatus = data.semStatus;
+  faceStatus = data.faceStatus || null;
   promoSuspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
   lastShot = data.lastShot || null;
   /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
@@ -717,6 +836,10 @@ async function load() {
   refreshOcrStatus();
   if ($('checkThumbOcr').checked) prepareOcr();
   else renderOcrStatus();
+  /* Face-Modell beim Öffnen vorbereiten, wenn der Kanal aktiv ist. Der
+     Host lädt lokal; das Popup kann sofort wieder schließen. */
+  if ($('faceMode').value !== 'off') prepareFace();
+  else renderFaceStatus();
   /* Whisper-Bibliothek nur prüfen, wenn die Spracherkennung eingeschaltet ist */
   if ($('checkSpeech').checked) checkWhisper();
   /* Optionale Berechtigungen der Kontrollbilder prüfen (Häkchen + Warnhinweis) */
@@ -853,6 +976,13 @@ async function persist() {
   settings.aiChannelMode = AI_CHANNEL_MODES.includes(settings.aiChannelMode)
     ? settings.aiChannelMode
     : DEFAULT_SETTINGS.aiChannelMode;
+  settings.faceMode = FACE_MODES.includes(settings.faceMode)
+    ? settings.faceMode
+    : DEFAULT_SETTINGS.faceMode;
+  const faceThrRaw = Number(settings.faceThreshold);
+  settings.faceThreshold = Number.isFinite(faceThrRaw) && faceThrRaw >= 0.3 && faceThrRaw <= 0.95
+    ? faceThrRaw
+    : DEFAULT_SETTINGS.faceThreshold;
   const marginRaw = Number(settings.semanticMargin);
   settings.semanticMargin = Number.isFinite(marginRaw) && marginRaw >= 0 && marginRaw <= 1
     ? marginRaw
@@ -1004,6 +1134,12 @@ VALUE_IDS.forEach(id => {
   const isText = el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number');
   el.addEventListener(isText ? 'input' : 'change', () => {
     if (id === 'ocrLangs' && $('checkThumbOcr').checked) prepareOcr();
+    if (id === 'faceMode') {
+      renderStats();
+      renderFaceStatus();
+      if (el.value !== 'off') prepareFace();
+      else stopFacePoll();
+    }
     schedulePersist(isText ? 700 : 0);
   });
 });
@@ -1016,9 +1152,10 @@ $('uiLang').addEventListener('change', () => {
 });
 
 /* Wird das Popup mit ausstehendem Debounce geschlossen, wird das Speichern nachgeholt */
-window.addEventListener('beforeunload', () => { stopOcrPoll(); if (dirty) persist(); });
+window.addEventListener('beforeunload', () => { stopOcrPoll(); stopFacePoll(); if (dirty) persist(); });
 
 $('ocrPrepare').onclick = () => prepareOcr();
+$('facePrepare').onclick = () => prepareFace();
 
 $('export').onclick = async () => {
   const data = await api.storage.local.get(['settings', 'keywords']);

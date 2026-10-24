@@ -29,6 +29,7 @@
     'semantic-image': 'semantic',
     semantic: 'semantic',
     ocr: 'ocr',
+    face: 'face',
     speech: 'speech',
     test: 'test'
   };

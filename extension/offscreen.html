@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<!-- offscreen.html — Chrome MV3: unsichtbares Dokument, in dem die Worker-Hosts
-     (Semantik, OCR) leben — Service Worker können keine Worker erzeugen.
-     Reihenfolge ist wichtig: offscreen.js setzt YB_STATUS_SINK, bevor
-     semantic-host.js seinen Startstatus veröffentlicht (storage ist hier nicht
-     verfügbar, der Status geht per runtime.sendMessage an den Service Worker). -->
+<!-- offscreen.html — Chrome MV3: unsichtbares Dokument, in dem die Hosts
+     (Semantik, OCR, Gesicht) leben — Service Worker können keine Worker erzeugen.
+     Reihenfolge ist wichtig: offscreen.js setzt YB_STATUS_SINK, bevor die Hosts
+     ihren Startstatus veröffentlichen (storage ist hier nicht verfügbar, der
+     Status geht per runtime.sendMessage an den Service Worker). -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -14,6 +14,8 @@
 <script src="offscreen.js"></script>
 <script src="semantic-host.js"></script>
 <script src="ocr-host.js"></script>
+<script src="face-score.js"></script>
+<script src="face-host.js"></script>
 <script src="host-routes.js"></script>
 </body>
 </html>

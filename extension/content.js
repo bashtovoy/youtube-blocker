@@ -58,6 +58,10 @@
     checkThumbOcr: false,
     checkSemanticImage: true,
     checkSpeech: false,
+    /* Lokaler Face-Filter: standardmäßig aus. „mark“ zeigt nur ein Badge
+       (Kalibrierung), „hide“ blendet die Karte lokal aus. */
+    faceMode: 'off',
+    faceThreshold: 0.65,
     hideMembersOnly: false,
     hideAiGenerated: true,
     /* Kanalweite KI-Markierung: standardmäßig aus, nur auf Basis offizieller Befunde. */
@@ -124,6 +128,8 @@
     semanticFailed: false,
     semanticRetryNeeded: false,
     ocrFailed: false,
+    faceFailed: false,
+    faceResults: new Map(),   /* videoId → Face-Ergebnis (nur im Speicher) */
     disposed: false   /* true, wenn eine neuere Skript-Instanz die Seite übernommen hat */
   };
 
@@ -134,7 +140,8 @@
 
   function hasDetectionTargets() {
     return state.keywords.length > 0 || state.settings.hideMembersOnly ||
-      state.settings.hideAiGenerated || state.settings.hidePromoted;
+      state.settings.hideAiGenerated || state.settings.hidePromoted ||
+      state.settings.faceMode !== 'off';
   }
 
   /* YouTube hat die Badges auf neue View-Model-Komponenten umgestellt:
@@ -388,6 +395,8 @@
   }
 
   async function loadConfig() {
+    const prevFaceMode = state.settings.faceMode;
+    const prevFaceThreshold = state.settings.faceThreshold;
     const data = await api.storage.local.get({
       settings: DEFAULTS, keywords: [], promoSuspects: [], aiBlockedIds: [],
       aiChannels: {}, aiFeedback: {}
@@ -401,7 +410,24 @@
     s.hashThreshold = settingNumber(s.hashThreshold, 8, 0, 30);
     s.aiChannelMode = ['off', 'badge', 'dim'].includes(s.aiChannelMode)
       ? s.aiChannelMode : 'off';
+    s.faceMode = ['off', 'mark', 'hide'].includes(s.faceMode) ? s.faceMode : 'off';
+    s.faceThreshold = settingNumber(s.faceThreshold, DEFAULTS.faceThreshold, 0.3, 0.95);
     state.settings = s;
+    /* Ein Wechsel von Modus/Schwelle macht alte Markierungen ungültig. Noch
+       nicht ausgeblendete Karten müssen erneut geprüft werden, sonst würde
+       der neue Modus erst nach einem Scroll/Reload greifen. */
+    if (prevFaceMode !== s.faceMode || prevFaceThreshold !== s.faceThreshold) {
+      clearFaceMarks();
+      state.faceResults.clear();
+      state.faceFailed = false;
+      /* Beim Ausschalten gibt es nichts neu zu bewerten; beim Einschalten oder
+         einer neuen Schwelle schon. */
+      if (s.faceMode !== 'off') {
+        for (const [key, reason] of state.processed) {
+          if (!reason) state.processed.delete(key);
+        }
+      }
+    }
     const kwObjects = (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && String(k.text || '').trim() && k.enabled !== false);
@@ -440,7 +466,9 @@
       ocr: state.ocrKeywords.length,
       exceptions: state.allEntries.filter(e => e.exceptions.length).length,
       aiChannelMode: state.settings.aiChannelMode,
-      aiChannels: Object.keys(state.aiChannels).length
+      aiChannels: Object.keys(state.aiChannels).length,
+      faceMode: state.settings.faceMode,
+      faceThreshold: state.settings.faceThreshold
     });
     if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
       safeApi(() => api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }));
@@ -964,6 +992,83 @@
     return null;
   }
 
+  /* ---------- lokaler Face-Filter ---------- */
+  function faceBadgeText() {
+    try {
+      return window.YB.face.badgeText(state.settings.uiLang || 'de');
+    } catch (e) {
+      return { mark: '😱', aria: 'Übertriebener Gesichtsausdruck', hint: '' };
+    }
+  }
+
+  function markFace(item, result) {
+    if (!item || !result) return;
+    const text = faceBadgeText();
+    item.classList.add('yb-face-badge');
+    item.setAttribute('data-yb-face', 'mark');
+    let mark = item.querySelector('.yb-face-mark');
+    if (!mark) {
+      mark = document.createElement('span');
+      mark.className = 'yb-face-mark';
+      mark.setAttribute('role', 'img');
+      item.appendChild(mark);
+    }
+    mark.textContent = text.mark;
+    mark.title = text.hint;
+    mark.setAttribute('aria-label', text.aria);
+  }
+
+  function clearFaceMarks() {
+    for (const item of document.querySelectorAll('[data-yb-face]')) {
+      item.classList.remove('yb-face-badge');
+      item.removeAttribute('data-yb-face');
+      for (const mark of item.querySelectorAll('.yb-face-mark')) mark.remove();
+    }
+  }
+
+  function rememberFace(videoId, result) {
+    if (!videoId || !result) return;
+    state.faceResults.delete(videoId);
+    state.faceResults.set(videoId, result);
+    while (state.faceResults.size > 500) {
+      state.faceResults.delete(state.faceResults.keys().next().value);
+    }
+  }
+
+  /* null = kein Treffer/kein Modell; ein Ergebnis nur bei Score ≥ Schwelle.
+     Bildfehler sind wiederholbar; ein fatales Modellproblem schaltet den
+     Kanal für diese Seitensession ab, ohne Semantik/OCR zu beeinflussen. */
+  async function matchFace(v) {
+    const mode = state.settings.faceMode;
+    if (mode !== 'mark' && mode !== 'hide') return null;
+    if (state.faceFailed || !window.YB.face || !v || !v.videoId) return null;
+    try {
+      const result = await window.YB.face.score(v.videoId);
+      if (!result || result.skipped) {
+        if (result && result.skipped) log('face skip', v.videoId, result.skipped);
+        return null;
+      }
+      const threshold = settingNumber(
+        state.settings.faceThreshold, DEFAULTS.faceThreshold, 0.3, 0.95
+      );
+      const score = Number(result.score);
+      if (!Number.isFinite(score) || score < threshold) return null;
+      log('face hit', v.videoId,
+        'score=' + score.toFixed(3),
+        'width=' + Number(result.faceWidth || 0).toFixed(3),
+        'thr=' + threshold.toFixed(2));
+      return result;
+    } catch (e) {
+      if (e && e.fatal) {
+        state.faceFailed = true;
+        log('face channel unavailable:', e.message);
+      } else {
+        log('face image fail', v.videoId, e.message);
+      }
+      return null;
+    }
+  }
+
   async function ensureSemanticTexts() {
     if (!state.settings.checkSemanticImage || !state.imageKeywords.length) return false;
     const key = state.imageKeywords.join('\u0001');
@@ -1143,6 +1248,22 @@
         const reason = titleHit.source + ':' + titleHit.keyword;
         state.processed.set(key, reason);
         await applyAction(current, reason);
+        return;
+      }
+      /* Gesichtsprüfung vor Semantik/OCR: im Mark-Modus läuft sie bewusst
+         weiter (kein Short-Circuit), im Hide-Modus ist sie ein lokaler Treffer. */
+      const faceHit = await matchFace(current);
+      /* Modus nach dem Warten erneut lesen: Wurde der Kanal inzwischen
+         ausgeschaltet, darf ein spätes Ergebnis nicht mehr ausblenden. */
+      const faceMode = state.settings.faceMode;
+      if (faceHit && faceMode === 'mark') {
+        rememberFace(current.videoId, faceHit);
+        markFace(current.item, faceHit);
+      } else if (faceHit && faceMode === 'hide') {
+        rememberFace(current.videoId, faceHit);
+        const reason = 'face:shock';
+        state.processed.set(key, reason);
+        hideLocally(current, reason);
         return;
       }
       const thumbHit = await matchThumbnail(current);
@@ -1347,6 +1468,15 @@
           continue;
         }
       }
+      /* Mark-Modus: YouTube kann Karten neu rendern und verliert dabei das
+         Badge. Ergebnis aus dem Speicher erneut anbringen, ohne das Modell zu
+         fragen. Im Hide-Modus übernimmt hiddenIds das Re-Hide. */
+      if (state.settings.faceMode === 'mark') {
+        const faceVid = quickVideoId(item);
+        if (faceVid && state.faceResults.has(faceVid)) {
+          markFace(item, state.faceResults.get(faceVid));
+        }
+      }
       /* Kanalweite KI-Markierung: nur auf Basis mehrerer offizieller Befunde.
          Sie markiert oder dunkelt ab; die normale Keyword-Prüfung läuft weiter. */
       const channelMode = channelModeFor(item, quickVideoId(item));
@@ -1515,6 +1645,11 @@
       checkThumbOcr: state.settings.checkThumbOcr,
       checkSemanticImage: state.settings.checkSemanticImage,
       checkSpeech: state.settings.checkSpeech,
+      faceMode: state.settings.faceMode,
+      faceThreshold: state.settings.faceThreshold,
+      faceFailed: state.faceFailed,
+      faceResults: state.faceResults.size,
+      faceMarks: document.querySelectorAll('[data-yb-face]').length,
       keywords: state.keywords.slice(),
       imageKeywords: state.imageKeywords.slice(),
       exceptions: state.allEntries.filter(e => e.exceptions.length).length,
@@ -1541,10 +1676,13 @@
         if (!v) { out.push({ status: 'extract-null', hidden }); continue; }
         const hit = matchTitle(v);
         const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
+        const face = state.faceResults.get(v.videoId);
         out.push({
           status: hit ? 'MATCH' : 'no-match',
           keyword: hit ? hit.keyword : '',
           badge: matchBadge({ item }),
+          faceScore: face ? Number(face.score.toFixed(3)) : null,
+          faceMarked: item.hasAttribute('data-yb-face'),
           processed: state.processed.has(key),
           reason: state.processed.get(key) || null,
           id: v.videoId,
@@ -1556,6 +1694,13 @@
       return { total: out.length, matches: out.filter(r => r.status === 'MATCH').length, items: out };
     },
     promoSuspects: () => state.suspects.slice(),
+    faces: () => Array.from(state.faceResults, ([videoId, r]) => ({
+      videoId,
+      score: r.score,
+      faceWidth: r.faceWidth,
+      faces: r.faces,
+      signals: r.signals
+    })),
     /* Aggregat für Tests: nutzt exakt extract/matchBadge/processed des Contents. */
     audit: () => {
       const res = {
@@ -1611,6 +1756,8 @@
     clearTimeout(state.suspectTimer);
     clearTimeout(configReloadTimer);
     state.pending.clear();
+    clearFaceMarks();
+    state.faceResults.clear();
     removeAiOverlay();
     state.observer = null;
   }

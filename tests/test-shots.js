@@ -36,6 +36,9 @@ assert.strictEqual(s.fileName(d, 'abcdefghijk', 'ocr:x'),
   'YouTube Blocker/2026-10-20/163015_abcdefghijk_ocr_x.jpg');
 assert.strictEqual(s.fileName(d, 'abcdefghijk', 'speech:y'),
   'YouTube Blocker/2026-10-20/163015_abcdefghijk_speech_y.jpg');
+assert.strictEqual(s.fileName(d, 'abcdefghijk', 'face:shock'),
+  'YouTube Blocker/2026-10-20/163015_abcdefghijk_face_shock.jpg',
+  'Gesichts-Treffer bekommt einen lesbaren Dateinamen');
 assert.strictEqual(s.fileName(d, 'test', 'test'), 'YouTube Blocker/2026-10-20/163015_test_test.jpg');
 assert.strictEqual(s.fileName(d, 'abcdefghijk', 'unknown'),
   'YouTube Blocker/2026-10-20/163015_abcdefghijk_other_unknown.jpg',
@@ -66,6 +69,8 @@ const longReason = s.fileName(d, 'abcdefghijk', 'title:' + 'x'.repeat(200));
 assert.ok(longReason.length < 120, 'Dateiname bleibt kurz genug: ' + longReason);
 assert.strictEqual(s.reasonPart(''), 'other');
 assert.strictEqual(s.reasonCode('title:foo'), 'title', 'Kurzcode bleibt für die Diagnose erhalten');
+assert.strictEqual(s.reasonCode('face:shock'), 'face');
+assert.strictEqual(s.reasonPart('face:shock'), 'face_shock');
 
 /* ---- 2) Vollständig sichtbar: Fenster plus verdeckende Balken ---- */
 const vp = { w: 1000, h: 800 };

@@ -3,6 +3,58 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] — 2026-10-24
+
+### Hinzugefügt
+- **Lokaler Filter für übertriebene Schock-/Schrei-Gesichter in
+  Feed-Thumbnails.** Der mitgelieferte MediaPipe Face Landmarker (Tasks Vision
+  1.1.1, float16, CPU/WASM, `runningMode: 'IMAGE'`, höchstens zwei Gesichter)
+  bewertet Blendshapes und Gesichtsgröße. Ein Treffer braucht offenen Mund,
+  gehobene Brauen/weite Augen, mindestens 12 % Bildbreite und einen Score über
+  der Schwelle; Lächeln wird abgezogen, ein offener Mund allein (Reden/Singen)
+  bleibt unter der Schwelle. Der Filter läuft nur auf Feed-/Such-/
+  Empfehlungskarten, nie auf dem Videobild.
+- **Drei Modi im Popup:** `Aus` (Default), `Nur markieren` (Kalibrierung mit
+  😱-Badge) und `Ausblenden` (lokale CSS-Ausblendung, Grund `face:shock`).
+  Der Mark-Modus blockiert Semantik/OCR nicht; im Hide-Modus wird **kein**
+  „Kein Interesse“ an YouTube gesendet. Schwelle `0.30–0.95`, Default `0.65`.
+  Modellstatus, Ladezeit und „Modell laden“ stehen direkt unter der Zeile.
+- **Firefox und Chrome teilen denselben Host:** Firefox nutzt die
+  Background-Seite, Chrome das Offscreen-Dokument. Das MediaPipe-UMD-Bundle
+  wird erst beim Einschalten lokal nachgeladen; `face-score.js` bleibt eine
+  reine, testbare Bewertungsfunktion.
+- **Kontrollbilder** kennen den Grund `face:shock` und schreiben ihn lesbar in
+  den Dateinamen.
+- **Vier Oberflächensprachen** (de/en/ru/uk) für Modus, Schwelle, Status und
+  Fehlermeldungen des Face-Kanals.
+
+### Sicherheit und Datenschutz
+- **Keine Uploads, keine neuen Berechtigungen:** Bilder, Landmarken und
+  Blendshapes bleiben im Host; gespeichert werden nur aggregierte Scores im
+  Arbeitsspeicher (LRU, max. 500 Video-IDs). Der Thumbnail-Abruf nutzt die
+  bereits vorhandene `i.ytimg.com`-Berechtigung.
+- **MediaPipe-Telemetrie wird blockiert.** Tasks Vision 1.1.1 sendet
+  standardmäßig aggregierte Nutzungsdaten an `odml.pa.googleapis.com`. Die CSP
+  erlaubt per `connect-src` lokale Quellen, `https://i.ytimg.com` und
+  HuggingFace für den bestehenden SigLIP-Erstbezug; `odml.pa.googleapis.com`
+  bleibt gesperrt. Das Vendor-Bundle bleibt ungepatcht, Thumbnail-Abruf und
+  Semantik funktionieren weiter. Der Chrome-E2E-Test bestätigt den
+  Modellstart ohne externe HTTP(S)-Anfrage.
+- **Fail open:** Modellfehler deaktivieren nur den Face-Kanal für die
+  Seitensession; Titel-, Semantik- und OCR-Filter laufen unverändert weiter.
+
+### Build und Tests
+- `setup.sh` lädt die gepinnten MediaPipe-Dateien (Bundle, beide Wasm-Varianten,
+  `face_landmarker.task`, Lizenz/Notice); `build-chrome.js` bricht ab, wenn
+  eines der benötigten Assets fehlt.
+- 21/21 Unit-Tests grün, darunter neu: `test-face-score`, `test-face-host`
+  (Lebenszyklus, Queue/Cache, hqdefault-Fallback, Modell-/Bildfehler) und
+  `test-face-assets` (Manifest-Reihenfolge, lokale Pfade, Wasm-Magic).
+- `tests/e2e-chrome-face.js` startet den echten Face Landmarker im
+  Chrome-Offscreen-Dokument (CPU, ca. 1,2–2,5 s), prüft `ready`/`reset` und
+  dass Bundle, Wasm und Modell ausschließlich aus dem Paket geladen werden.
+- `web-ext lint` und Firefox-/Chrome-Build (je ca. 37 MB) erfolgreich.
+
 ## [1.7.2] — 2026-10-23
 
 ### Behoben
