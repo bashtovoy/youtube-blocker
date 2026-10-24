@@ -6,13 +6,14 @@ const $ = id => document.getElementById(id);
 console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'fuzzy'];
-const VALUE_IDS = ['mode', 'ocrLangs', 'semanticThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkExtremeFaces', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'fuzzy'];
+const VALUE_IDS = ['mode', 'ocrLangs', 'semanticThreshold', 'extremeFaceThreshold', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds'];
 
 const DEFAULT_SETTINGS = {
   enabled: true,
   checkTitle: true,
   checkSemanticImage: true,
+  checkExtremeFaces: false,
   checkThumbOcr: false,
   checkSpeech: false,
   hideMembersOnly: false,
@@ -21,6 +22,7 @@ const DEFAULT_SETTINGS = {
   ocrLangs: 'eng+rus',
   hashThreshold: 8,
   semanticThreshold: 0.15,
+  extremeFaceThreshold: 0.45,
   actionDelayMs: 2500,
   speechLang: 'ru',
   speechModel: 'models/ggml-base.bin',
@@ -147,6 +149,10 @@ async function persist() {
   settings.semanticThreshold = Number.isFinite(semanticRaw) && semanticRaw >= 0.05 && semanticRaw <= 0.95
     ? semanticRaw
     : DEFAULT_SETTINGS.semanticThreshold;
+  const faceRaw = Number(settings.extremeFaceThreshold);
+  settings.extremeFaceThreshold = Number.isFinite(faceRaw) && faceRaw >= 0.05 && faceRaw <= 0.95
+    ? faceRaw
+    : DEFAULT_SETTINGS.extremeFaceThreshold;
   const hashRaw = Number(settings.hashThreshold);
   settings.hashThreshold = Number.isFinite(hashRaw) && hashRaw >= 0
     ? hashRaw
