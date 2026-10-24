@@ -3,6 +3,16 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] — 2026-10-24
+
+### Hinzugefügt
+- Optionaler Filter für stark übertriebene Gesichtsausdrücke in Vorschaubildern auf Basis des vorhandenen lokalen SigLIP-Modells.
+- Separater Schwellenwert; Funktion ist standardmäßig deaktiviert.
+- Keine neue Modellabhängigkeit und keine Übertragung von Vorschaubildern.
+
+### Hinweise
+- Erste Version bewertet das ganze Vorschaubild statt einer ausgeschnittenen Gesichtsregion; Ergebnisse müssen anhand realer Beispiele kalibriert werden.
+
 ## [1.2.2] — 2026-10-16
 
 ### Hinzugefügt
