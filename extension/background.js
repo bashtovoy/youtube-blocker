@@ -622,6 +622,15 @@ function isYoutubeUrl(u) {
     return h === 'youtube.com' || h.endsWith('.youtube.com');
   } catch (e) { return false; }
 }
+
+/* Der MAIN-World-Controller ist nur für www.youtube.com deklariert (kein Music,
+   keine Embeds); Music-Tabs bekommen weiterhin nur die Isolated-Skripte. */
+function isWwwYoutubeUrl(u) {
+  try {
+    const url = new URL(String(u || ''));
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname === 'www.youtube.com';
+  } catch (e) { return false; }
+}
 api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'loading' && isYoutubeUrl(tab.url || changeInfo.url || '')) {
     api.storage.local.set({ dismissedCount: 0, hiddenCount: 0 });
@@ -680,9 +689,17 @@ async function doReinjectStaleTabs(force) {
   if (api.storage.session) {
     try { await api.storage.session.set({ [SESSION_BOOT_KEY]: now }); } catch (e) { /* optional */ }
   }
-  const cs = (api.runtime.getManifest().content_scripts || [])[0];
+  const contentScripts = api.runtime.getManifest().content_scripts || [];
+  const cs = contentScripts[0];
   const files = cs && cs.js;
   if (!Array.isArray(files) || !files.length) return;
+  /* Der MAIN-World-Controller (Videoqualität) wird in Chrome separat injiziert:
+     Content-Scripts aus dem Manifest ersetzen sich in offenen Tabs nicht, und
+     `world: 'MAIN'` kann nur die scripting-API setzen. Firefox hat in diesem
+     Manifest keine scripting-Berechtigung — dort greift die Steuerung nach
+     einem normalen Neuladen. */
+  const mainCs = contentScripts.find(entry => String(entry.world || '').toUpperCase() === 'MAIN');
+  const mainFiles = mainCs && Array.isArray(mainCs.js) ? mainCs.js : [];
   const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
   let injected = 0;
   for (const tab of tabs) {
@@ -702,6 +719,15 @@ async function doReinjectStaleTabs(force) {
         throw new Error('keine Injektions-API verfügbar');
       }
       injected++;
+      if (mainFiles.length && api.scripting && api.scripting.executeScript && isWwwYoutubeUrl(tab.url)) {
+        try {
+          await api.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: mainFiles,
+            world: 'MAIN'
+          });
+        } catch (e) { /* ältere Chrome-Version: nach dem nächsten Neuladen aktiv */ }
+      }
     } catch (e) { /* geschützte/verworfene Tabs: content_scripts injizieren beim nächsten Laden normal */ }
   }
   await api.storage.local.set({ [CONTENT_VERSION_KEY]: version, [CONTENT_CHECKED_KEY]: Date.now() });

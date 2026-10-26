@@ -11,7 +11,7 @@ $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Bu
 const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
-const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode', 'faceMode', 'faceThreshold'];
+const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode', 'faceMode', 'faceThreshold', 'videoQuality'];
 const FACE_MODES = ['off', 'mark', 'hide'];
 
 const DEFAULT_SETTINGS = {
@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   checkSpeech: false,
   faceMode: 'off',
   faceThreshold: 0.65,
+  videoQuality: 'hd1080',
   hideMembersOnly: false,
   hideAiGenerated: true,
   aiChannelMode: 'off',
@@ -45,6 +46,21 @@ function numberOr(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+const qualityRules = globalThis.YBQualityRules || null;
+
+function normalizeVideoQuality(value) {
+  return qualityRules
+    ? qualityRules.normalize(value, qualityRules.DEFAULT_QUALITY)
+    : 'hd1080';
+}
+
+function qualityLabel(value) {
+  if (value === 'auto') return t('quality_auto');
+  if (value === 'off') return t('quality_off');
+  if (value === 'max') return t('quality_max');
+  return qualityRules ? qualityRules.labelOf(value) : String(value || '');
+}
+
 /* Erkennungskanäle je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1):
    '' = Auto (alle Kanäle, bisheriges Verhalten). Zweiter Wert = i18n-Schlüssel. */
 const ROUTE_OPTIONS = [
@@ -59,6 +75,11 @@ let keywords = [];   /* [{ text, enabled, route? }] */
 let lastSemStatus = null;   /* für Neu-Beschriftung beim Sprachwechsel */
 let counts = { dis: 0, hid: 0 };   /* Kopfzeile: YouTube-Signale / lokale Ausblendungen */
 let lastShot = null;  /* letzter Aufnahmeversuch aus storage.local */
+let lastQualityStatus = null;   /* Status aus der MAIN-World (quality.js) */
+let qualityStatusTimer = null;
+let qualityStatusBusy = false;
+let qualityStatusTabId = null;
+let qualityMissingTicks = 0;
 
 /* Status des Semantik-Hosts (semantic-host.js speichert unter „semStatus“):
    zeigt, ob die Modelle bereit sind bzw. der einmalige Erstbezug läuft.
@@ -644,6 +665,140 @@ function renderCounts() {
     : '';
 }
 
+function qualityTabInfo(url) {
+  try {
+    const u = new URL(url);
+    if (!qualityRules || !qualityRules.isQualityHost(u.hostname)) return 'unsupported';
+    return qualityRules.isWatchPath(u.pathname) ? 'watch' : 'not-watch';
+  } catch (e) {
+    return 'unsupported';
+  }
+}
+
+/* Der Status kommt aus dem Content-Skript; quality.js schreibt ihn in ein
+   DOM-Attribut. Das Popup fragt ihn beim Öffnen und danach jede Sekunde ab,
+   damit Qualitätswechsel und manuelle Auswahl sichtbar werden. */
+async function refreshQualityStatus() {
+  if (qualityStatusBusy) return;
+  qualityStatusBusy = true;
+  try {
+    const setting = normalizeVideoQuality($('videoQuality') ? $('videoQuality').value : DEFAULT_SETTINGS.videoQuality);
+    if (setting === 'off') {
+      lastQualityStatus = { mode: 'off' };
+      qualityStatusTabId = null;
+      qualityMissingTicks = 0;
+      renderQualityStatus();
+      return;
+    }
+    let tab = null;
+    try {
+      [tab] = await api.tabs.query({ active: true, currentWindow: true });
+    } catch (e) {
+      tab = null;
+    }
+    if (!tab) {
+      lastQualityStatus = { mode: 'unsupported' };
+      renderQualityStatus();
+      return;
+    }
+    if (qualityStatusTabId !== tab.id) {
+      qualityStatusTabId = tab.id;
+      qualityMissingTicks = 0;
+      lastQualityStatus = null;
+    }
+    const info = qualityTabInfo(tab.url || '');
+    if (info === 'unsupported') {
+      lastQualityStatus = { mode: 'unsupported' };
+      renderQualityStatus();
+      return;
+    }
+    if (info === 'not-watch') {
+      lastQualityStatus = { mode: 'not-watch' };
+      renderQualityStatus();
+      return;
+    }
+    if (tab.status === 'loading') {
+      lastQualityStatus = { mode: 'waiting' };
+      renderQualityStatus();
+      return;
+    }
+    let res = null;
+    try {
+      res = await api.tabs.sendMessage(tab.id, { type: 'ybquality-status' });
+    } catch (e) {
+      res = null;
+    }
+    if (res && res.ok && res.status) {
+      qualityMissingTicks = 0;
+      lastQualityStatus = res.status;
+    } else if (res && res.ok) {
+      /* Content-Skript lebt, aber quality.js hat noch keinen Status gesetzt:
+         nach drei Durchläufen ist die MAIN-World-Instanz wahrscheinlich alt. */
+      qualityMissingTicks += 1;
+      lastQualityStatus = { mode: qualityMissingTicks >= 3 ? 'unavailable' : 'waiting' };
+    } else {
+      lastQualityStatus = { mode: 'unavailable' };
+    }
+    renderQualityStatus();
+  } finally {
+    qualityStatusBusy = false;
+  }
+}
+
+function renderQualityStatus() {
+  const el = $('qualityStatus');
+  if (!el) return;
+  const setting = normalizeVideoQuality($('videoQuality') ? $('videoQuality').value : DEFAULT_SETTINGS.videoQuality);
+  const st = lastQualityStatus || {};
+  let text = '';
+  let cls = '';
+  if (setting === 'off') {
+    text = t('quality_status_off');
+  } else {
+    switch (st.mode) {
+      case 'active':
+        text = t('quality_status_active', { quality: qualityLabel(st.actual || st.current || setting) });
+        cls = 'ok';
+        break;
+      case 'fallback':
+        text = t('quality_status_fallback', {
+          wanted: qualityLabel(st.requested || setting),
+          actual: qualityLabel(st.actual)
+        });
+        break;
+      case 'manual':
+        text = t('quality_status_manual', { quality: qualityLabel(st.actual || st.current) });
+        break;
+      case 'ad':
+        text = t('quality_status_ad');
+        break;
+      case 'error':
+        text = t('quality_status_error');
+        cls = 'err';
+        break;
+      case 'not-watch':
+        text = t('quality_status_not_watch');
+        break;
+      case 'unsupported':
+        text = t('quality_status_unsupported');
+        break;
+      case 'unavailable':
+        text = t('quality_status_reload');
+        cls = 'err';
+        break;
+      case 'off':
+        text = t('quality_status_off');
+        break;
+      case 'waiting':
+      default:
+        text = t('quality_status_waiting');
+        break;
+    }
+  }
+  el.textContent = text;
+  el.className = 'hint' + (cls ? ' ' + cls : '');
+}
+
 /* Sprache anwenden: Wörterbuch aufs DOM plus alle dynamischen Teile neu beschriften */
 function applyLanguage(lang) {
   i18n.set(lang);
@@ -657,6 +812,7 @@ function applyLanguage(lang) {
   renderLastShot();
   renderPromoDiag();
   renderFolderStatus();
+  renderQualityStatus();
   syncAiChannelUi();
 }
 
@@ -812,6 +968,7 @@ async function load() {
   s.hashThreshold = numberOr(s.hashThreshold, DEFAULT_SETTINGS.hashThreshold);
   s.faceThreshold = numberOr(s.faceThreshold, DEFAULT_SETTINGS.faceThreshold);
   if (s.faceThreshold < 0.3 || s.faceThreshold > 0.95) s.faceThreshold = DEFAULT_SETTINGS.faceThreshold;
+  s.videoQuality = normalizeVideoQuality(s.videoQuality);
   if (!AI_CHANNEL_MODES.includes(s.aiChannelMode)) s.aiChannelMode = DEFAULT_SETTINGS.aiChannelMode;
   if (!FACE_MODES.includes(s.faceMode)) s.faceMode = DEFAULT_SETTINGS.faceMode;
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage'); });
@@ -854,6 +1011,7 @@ async function load() {
   }
   /* Läuft in einem offenen YouTube-Tab noch die alte Skript-Instanz? */
   checkStaleTabs();
+  refreshQualityStatus();
 }
 
 function updateCount() {
@@ -973,6 +1131,7 @@ async function persist() {
   const settings = {};
   SETTING_IDS.forEach(id => settings[id] = $(id).checked);
   VALUE_IDS.forEach(id => settings[id] = $(id).value);
+  settings.videoQuality = normalizeVideoQuality(settings.videoQuality);
   settings.aiChannelMode = AI_CHANNEL_MODES.includes(settings.aiChannelMode)
     ? settings.aiChannelMode
     : DEFAULT_SETTINGS.aiChannelMode;
@@ -1140,6 +1299,12 @@ VALUE_IDS.forEach(id => {
       if (el.value !== 'off') prepareFace();
       else stopFacePoll();
     }
+    if (id === 'videoQuality') {
+      lastQualityStatus = null;
+      qualityMissingTicks = 0;
+      renderQualityStatus();
+      setTimeout(refreshQualityStatus, 350);
+    }
     schedulePersist(isText ? 700 : 0);
   });
 });
@@ -1152,7 +1317,12 @@ $('uiLang').addEventListener('change', () => {
 });
 
 /* Wird das Popup mit ausstehendem Debounce geschlossen, wird das Speichern nachgeholt */
-window.addEventListener('beforeunload', () => { stopOcrPoll(); stopFacePoll(); if (dirty) persist(); });
+window.addEventListener('beforeunload', () => {
+  stopOcrPoll();
+  stopFacePoll();
+  if (qualityStatusTimer) clearInterval(qualityStatusTimer);
+  if (dirty) persist();
+});
 
 $('ocrPrepare').onclick = () => prepareOcr();
 $('facePrepare').onclick = () => prepareFace();
@@ -1184,4 +1354,7 @@ $('import').onclick = () => {
 /* Statusspans liegen in den labels — ein Klick darauf darf die Einstellung nicht umschalten */
 document.querySelectorAll('.stat').forEach(el => el.addEventListener('click', e => e.preventDefault()));
 
-loadReady = load();
+loadReady = load().then(() => {
+  refreshQualityStatus();
+  qualityStatusTimer = setInterval(refreshQualityStatus, 1200);
+});

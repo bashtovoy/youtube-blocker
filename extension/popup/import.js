@@ -72,6 +72,15 @@ $('file').onchange = async (e) => {
        bleiben lesbar, die früheren Felder werden nicht weiter gespeichert. */
     delete settings.allowAll;
     delete settings.fuzzy;
+    /* Alte Exporte kennen videoQuality nicht: dann bleibt der gespeicherte Wert
+       (bzw. der Default beim ersten Start) erhalten. Ungültige Kennungen aus
+       fremden Exporten werden auf die Standardqualität normalisiert. */
+    if (settings.videoQuality !== undefined) {
+      const rules = globalThis.YBQualityRules;
+      settings.videoQuality = rules
+        ? rules.normalize(settings.videoQuality, rules.DEFAULT_QUALITY)
+        : 'hd1080';
+    }
     /* Leere Zahlfelder aus alten Exporten auf gültige Defaults heben. */
     for (const [key, fallback] of Object.entries({
       actionDelayMs: 2500, semanticMargin: 0.03, hashThreshold: 8, speechMaxSeconds: 120

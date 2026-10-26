@@ -21,6 +21,21 @@ assert.ok(ff.content_scripts[0].css.includes('ai-channel.css'));
 assert.ok(m.content_scripts[0].js.includes('ai-channel.js'));
 assert.ok(m.content_scripts[0].css.includes('ai-channel.css'));
 
+/* Videoqualität (ab 1.9.0): Die Regeln stehen im Isolated-Skript vor content.js;
+   der MAIN-World-Controller ist ein eigener Eintrag mit quality.js nach den Regeln. */
+assert.strictEqual(ff.version, '1.9.0');
+assert.ok(ff.content_scripts[0].js.includes('quality-rules.js'), 'quality-rules.js im Isolated-Skript');
+assert.ok(ff.content_scripts[0].js.indexOf('quality-rules.js') < ff.content_scripts[0].js.indexOf('content.js'),
+  'quality-rules.js vor content.js');
+assert.strictEqual(ff.content_scripts.length, 2, 'ein Isolated- und ein MAIN-Eintrag');
+const qualityMain = ff.content_scripts.find(cs => cs.world === 'MAIN');
+assert.ok(qualityMain, 'MAIN-World-Eintrag vorhanden');
+assert.deepStrictEqual(qualityMain.matches, ['*://www.youtube.com/*'], 'MAIN nur auf www.youtube.com');
+assert.deepStrictEqual(qualityMain.js, ['quality-rules.js', 'quality.js'], 'Regeln vor dem Controller');
+assert.strictEqual(qualityMain.run_at, 'document_start');
+assert.strictEqual(qualityMain.all_frames, false);
+assert.deepStrictEqual(m.content_scripts, ff.content_scripts, 'MAIN-Eintrag übersteht den Chrome-Build');
+
 /* Face-Filter: Bewertung, Host und Client müssen in beiden Builds vorhanden
    sein; der Host steht nach den Hosts und vor der Routentabelle. */
 const scripts = ff.background.scripts;

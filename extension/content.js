@@ -62,6 +62,8 @@
        (Kalibrierung), „hide“ blendet die Karte lokal aus. */
     faceMode: 'off',
     faceThreshold: 0.65,
+    /* Erzwungene Videoqualität: Default 1080p, nur auf watch/live angewendet. */
+    videoQuality: 'hd1080',
     hideMembersOnly: false,
     hideAiGenerated: true,
     /* Kanalweite KI-Markierung: standardmäßig aus, nur auf Basis offizieller Befunde. */
@@ -394,6 +396,31 @@
     );
   }
 
+  function qualityRules() {
+    return globalThis.YBQualityRules || null;
+  }
+
+  /* Die MAIN-World kann keine Extension-APIs lesen. Deshalb veröffentlicht
+     dieses Isolated-Skript die Einstellung als DOM-Attribut; quality.js liest
+     sie dort und wendet sie auf den Player an. */
+  function publishVideoQuality(value) {
+    const rules = qualityRules();
+    const normalized = rules ? rules.normalize(value, rules.DEFAULT_QUALITY) : 'hd1080';
+    try {
+      document.documentElement.setAttribute('data-yb-video-quality', normalized);
+    } catch (e) { /* Dokument noch nicht bereit */ }
+    return normalized;
+  }
+
+  function readQualityStatus() {
+    try {
+      const raw = document.documentElement.getAttribute('data-yb-quality-status');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function loadConfig() {
     const prevFaceMode = state.settings.faceMode;
     const prevFaceThreshold = state.settings.faceThreshold;
@@ -413,6 +440,7 @@
     s.faceMode = ['off', 'mark', 'hide'].includes(s.faceMode) ? s.faceMode : 'off';
     s.faceThreshold = settingNumber(s.faceThreshold, DEFAULTS.faceThreshold, 0.3, 0.95);
     state.settings = s;
+    state.settings.videoQuality = publishVideoQuality(s.videoQuality);
     /* Ein Wechsel von Modus/Schwelle macht alte Markierungen ungültig. Noch
        nicht ausgeblendete Karten müssen erneut geprüft werden, sonst würde
        der neue Modus erst nach einem Scroll/Reload greifen. */
@@ -1611,6 +1639,10 @@
       sendResponse({ ok: true, version: VERSION });
       return;
     }
+    if (msg.type === 'ybquality-status') {
+      sendResponse({ ok: true, status: readQualityStatus(), setting: state.settings.videoQuality });
+      return;
+    }
     if (msg.type === 'config-changed') {
       reloadConfigSoon(0);
     } else if (msg.type === 'rescan' || msg.type === 'dev-rescan') {
@@ -1647,6 +1679,8 @@
       checkSpeech: state.settings.checkSpeech,
       faceMode: state.settings.faceMode,
       faceThreshold: state.settings.faceThreshold,
+      videoQuality: state.settings.videoQuality,
+      qualityStatus: readQualityStatus(),
       faceFailed: state.faceFailed,
       faceResults: state.faceResults.size,
       faceMarks: document.querySelectorAll('[data-yb-face]').length,

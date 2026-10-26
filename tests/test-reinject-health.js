@@ -26,7 +26,13 @@ function makeSandbox({ store = {}, session = {}, withSession = true, tabs = [], 
   };
   const api = {
     runtime: {
-      getManifest: () => ({ version: VERSION, content_scripts: [{ js: ['matcher.js', 'content.js'] }] }),
+      getManifest: () => ({
+        version: VERSION,
+        content_scripts: [
+          { js: ['matcher.js', 'content.js'] },
+          { js: ['quality-rules.js', 'quality.js'], world: 'MAIN', matches: ['*://www.youtube.com/*'] }
+        ]
+      }),
       onMessage: { addListener: () => {} }
     },
     storage: {
@@ -100,6 +106,29 @@ const settle = () => new Promise(r => setTimeout(r, 25));
     assert.ok(sb.sess().contentSessionAt >= t0, 'Sitzungs-Marker gesetzt');
     assert.ok(sb.local().contentCheckedAt >= t0, 'Prüfzeit aktualisiert');
     assert.ok(sb.calls.logs.some(l => l.includes('reinjected into 1')), 'Injektion protokolliert');
+  }
+
+  /* 2b. MAIN-World-Steuerung der Videoqualität: Nach demselben verwaisten Tab
+     wird zusätzlich quality-rules.js + quality.js in der MAIN-Welt injiziert —
+     aber nur auf www.youtube.com, nicht auf Music. */
+  {
+    const sb = makeSandbox({
+      store: { contentScriptVersion: VERSION, contentCheckedAt: now - 60 * 1000 },
+      session: {},
+      tabs: [
+        { id: 1, status: 'complete', url: 'https://www.youtube.com/watch?v=abc' },
+        { id: 2, status: 'complete', url: 'https://music.youtube.com/watch?v=abc' }
+      ]
+    });
+    await settle();
+    assert.strictEqual(sb.calls.inject.length, 3, 'Content in beiden Tabs, MAIN nur auf www');
+    assert.deepStrictEqual(sb.calls.inject[0].files, ['matcher.js', 'content.js']);
+    assert.strictEqual(sb.calls.inject[0].world, undefined, 'Isolated-Skripte behalten die Standardwelt');
+    assert.strictEqual(sb.calls.inject[1].world, 'MAIN');
+    assert.deepStrictEqual(sb.calls.inject[1].files, ['quality-rules.js', 'quality.js']);
+    assert.strictEqual(sb.calls.inject[1].target.tabId, 1);
+    assert.deepStrictEqual(sb.calls.inject[2].files, ['matcher.js', 'content.js']);
+    assert.strictEqual(sb.calls.inject[2].target.tabId, 2);
   }
 
   /* 3. Gesunde Tabs (antworten mit laufender Version) bleiben unangetastet;

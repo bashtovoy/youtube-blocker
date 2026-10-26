@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Youtube Blocker",
-  "version": "1.8.0",
-  "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal, an der semantischen Übereinstimmung deiner Liste mit dem Vorschaubild (lokales SigLIP, OCR) und an übertriebenen Gesichtsausdrücken (lokales MediaPipe).",
+  "version": "1.9.0",
+  "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal, an der semantischen Übereinstimmung deiner Liste mit dem Vorschaubild (lokales SigLIP, OCR), an übertriebenen Gesichtsausdrücken (lokales MediaPipe) und hält optional die Videoqualität.",
   "icons": {
     "48": "icons/icon48.png",
     "96": "icons/icon96.png"
@@ -42,6 +42,7 @@
       ],
       "js": [
         "lib/whisper.js",
+        "quality-rules.js",
         "ai-channel.js",
         "matcher.js",
         "promo-rules.js",
@@ -61,6 +62,18 @@
         "face.css"
       ],
       "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "quality-rules.js",
+        "quality.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
       "all_frames": false
     }
   ],

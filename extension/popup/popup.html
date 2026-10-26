@@ -227,6 +227,28 @@
     </fieldset>
 
     <fieldset>
+      <legend data-i18n="quality_legend">Videoqualität</legend>
+      <label class="row"><span data-i18n="quality_label">Qualität:</span>
+        <select id="videoQuality">
+          <option value="off" data-i18n="quality_off">Automatisch (aus)</option>
+          <option value="max" data-i18n="quality_max">Maximal verfügbar</option>
+          <option value="highres">4320p</option>
+          <option value="hd2880">2880p</option>
+          <option value="hd2160">2160p</option>
+          <option value="hd1440">1440p</option>
+          <option value="hd1080" selected>1080p</option>
+          <option value="hd720">720p</option>
+          <option value="large">480p</option>
+          <option value="medium">360p</option>
+          <option value="small">240p</option>
+          <option value="tiny">144p</option>
+        </select>
+      </label>
+      <div class="hint" data-i18n="quality_hint">Fixiert die Qualität und verhindert, dass YouTube sie bei schwacher Verbindung senkt. Bei langsamem Internet kann das Video stattdessen puffern.</div>
+      <div class="hint" id="qualityStatus" aria-live="polite"></div>
+    </fieldset>
+
+    <fieldset>
       <legend data-i18n="shots_legend">Kontrolle der Ausblendungen</legend>
       <label class="row"><input type="checkbox" id="shotBeforeHide"> <span data-i18n="check_shots">Screenshot vor dem Ausblenden (nur Kartenbereich)</span> <span class="stat" id="statShots"></span></label>
       <div class="hint" data-i18n="shots_hint">Speichert ein JPEG im gewählten Ordner unter „YouTube Blocker/JJJJ-MM-TT/“ (Chrome) bzw. unter „Downloads/YouTube Blocker/JJJJ-MM-TT/“ (Firefox) — nur den Bereich der Karte, etwa 3–25 KB. Ein Bild entsteht beim Ausblenden einer neuen Karte: vollständig sichtbar, sonst der sichtbare Ausschnitt. Ganz außerhalb des Fensters wird die Karte erst beim Erscheinen aufgenommen und dann ausgeblendet. Bereits ausgeblendete Karten und die Zahl „verdächtig“ in der Diagnose werden nicht nachträglich aufgenommen.</div>
@@ -260,6 +282,7 @@
     <div id="status"></div>
   </main>
   <script src="../matcher.js"></script>
+  <script src="../quality-rules.js"></script>
   <script src="../image.js"></script>
   <script src="../semantic.js"></script>
   <script src="../folder-store.js"></script>

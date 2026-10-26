@@ -3,6 +3,55 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — 2026-10-26
+
+### Hinzugefügt
+- **Feste Videoqualität im Popup.** Neuer Selektor „Videoqualität“ mit
+  `Automatisch (aus)`, `Maximal verfügbar` und den festen Stufen `4320p` bis
+  `144p`; Default ist **1080p**. Die Wahl wird lokal in `settings.videoQuality`
+  gespeichert und reist im JSON-Export mit. Alte Exporte ohne das Feld behalten
+  beim Import den gespeicherten Wert.
+- **Durchsetzung über die YouTube-Player-API.** Das MAIN-World-Skript
+  `quality.js` setzt `setPlaybackQualityRange(ziel, ziel)` auf Watch- und
+  Live-Seiten (`/watch`, `/live/…`). Es prüft regelmäßig nach, reagiert auf
+  SPA-Navigation und Player-Ereignisse und verhindert so, dass YouTube die
+  Qualität bei schwacher Verbindung automatisch senkt. Shorts, YouTube Music,
+  eingebettete Player und die mobile Web-App bleiben unverändert.
+- **Fallback und Werbung.** Fehlt die Wunschstufe, wird die nächstkleinere
+  angebotene Stufe gewählt (keine kleinere vorhanden: die kleinste); `Maximal
+  verfügbar` nimmt die höchste Stufe. Während Werbung pausiert die Steuerung
+  und greift danach wieder.
+- **Manuelle Wahl bleibt respektiert.** Eine Auswahl im Player-Menü gilt bis
+  zum nächsten Video oder bis zum Neuladen der Seite; erst dann setzt die
+  Erweiterung die Popup-Einstellung erneut durch.
+- **Statuszeile und vier Sprachen.** Das Popup zeigt aktiv, Fallback, manuelle
+  Wahl, Werbung, fehlenden Player oder die Notwendigkeit eines Reloads — auf
+  Deutsch, Englisch, Russisch und Ukrainisch.
+- **Selbstheilung in Chrome.** Die bestehende Nachinjektion verwaister
+  Content-Scripts reicht jetzt zusätzlich `quality-rules.js` und `quality.js`
+  mit `world: 'MAIN'` in offene `www.youtube.com`-Tabs nach. Firefox-Tabs
+  erhalten die MAIN-Steuerung nach einem Update mit dem nächsten Neuladen.
+- **Hinweis für Bestandsinstallationen:** Da die Einstellung neu ist, gilt
+  nach dem Update zunächst 1080p. `Automatisch (aus)` stellt das frühere
+  Verhalten wieder her.
+
+### Sicherheit und Datenschutz
+- **Keine neuen Berechtigungen, keine Netzwerkzugriffe.** Die Einstellung wird
+  vom Isolated-Skript nur als DOM-Attribut (`data-yb-video-quality`) an die
+  MAIN-Welt übergeben; der Status kommt als `data-yb-quality-status` zurück.
+  Gespeichert wird ausschließlich lokal.
+- **Fail open:** Fehlt `setPlaybackQualityRange` oder ändert YouTube die
+  Player-API, wird nicht eingegriffen; die übrigen Filter laufen unverändert
+  weiter. Die MAIN-Steuerung fasst den Player außerhalb von Watch/Live und
+  während Werbung nicht an.
+
+### Build und Tests
+- Version **1.9.0**; `quality-rules.js` liegt vor `content.js` im
+  Isolated-Skript und vor `quality.js` im MAIN-Eintrag.
+- 22/22 Unit-Tests grün, darunter neu `test-quality` (Regeln, Fallback,
+  Geltungsbereich, Werbung, manuelle Wahl, Doppel-Injektion); Manifest- und
+  Reinjektionstests prüfen den MAIN-Eintrag und die Chrome-Nachinjektion.
+
 ## [1.8.0] — 2026-10-24
 
 ### Hinzugefügt

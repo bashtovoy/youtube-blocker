@@ -2,7 +2,8 @@
 
 Browser-Erweiterung für Firefox und Chrome, die unerwünschte YouTube-Inhalte **anhand des Titels,
 des Vorschaubilds und übertriebener Gesichtsausdrücke** erkennt und für Treffer aus deiner Liste
-das offizielle YouTube-Signal **„Kein Interesse“** sendet.
+das offizielle YouTube-Signal **„Kein Interesse“** sendet. Optional hält sie auf Watch-/Live-Seiten
+die im Popup gewählte **Videoqualität** fest.
 
 ## Wie es funktioniert
 
@@ -97,6 +98,9 @@ Bestätigung nach. Mindestversion: Chrome 116.
 8. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
    scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
    über einen MutationObserver.
+9. Optional unter **„Videoqualität“** eine feste Stufe wählen (Default
+   **1080p**). Die Erweiterung verhindert damit, dass YouTube bei schwacher
+   Verbindung automatisch herunterschaltet (siehe eigener Abschnitt unten).
 
 Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 (im Firefox-Popup würde der Datei-Dialog das Popup sofort schließen).
@@ -176,6 +180,38 @@ damit wirkungslos, ohne das Vendor-Bundle zu patchen; Thumbnail-Abruf und
 Semantik funktionieren weiterhin. Schlägt das Modell fehl, wird nur der
 Face-Kanal für die Seitensession deaktiviert — Titel, Semantik und OCR laufen
 unverändert weiter.
+
+## Videoqualität (ab 1.9.0)
+
+Im Popup unter **„Videoqualität“** lässt sich eine feste Stufe wählen:
+`Automatisch (aus)`, `Maximal verfügbar` oder `4320p` bis `144p`. Der Default
+ist **1080p**. Die Steuerung läuft im MAIN-World-Skript `quality.js` über die
+Player-API (`setPlaybackQualityRange`) und gilt nur auf **Watch- und
+Live-Seiten** (`/watch`, `/live/…`). Shorts, YouTube Music, eingebettete Player
+und die mobile Web-App bleiben unverändert.
+
+- **Feste Stufe:** Ist die Wunschqualität nicht verfügbar, wählt die
+  Erweiterung die nächstkleinere angebotene Stufe (z. B. 1080p → 720p). Gibt
+  es keine kleinere, bleibt die kleinste verfügbare Stufe. `Maximal verfügbar`
+  nimmt die höchste angebotene Stufe.
+- **Schwache Verbindung:** YouTube kann die Qualität nicht mehr automatisch
+  senken. Stattdessen kann das Video puffern oder stehen bleiben — die
+  Erweiterung kann physisch nicht mehr Bandbreite erzeugen.
+- **Werbung:** Während einer Werbeunterbrechung wird nicht eingegriffen; nach
+  der Werbung wird die gewählte Qualität erneut gesetzt.
+- **Manuelle Wahl:** Wählt man im YouTube-Player-Menü selbst eine andere
+  Qualität, wird diese bis zum nächsten Video (oder Neuladen der Seite)
+  respektiert. Ein Wechsel der Einstellung im Popup wirkt sofort wieder.
+- **Status:** Unter dem Selektor zeigt das Popup, ob die Qualität aktiv ist,
+  auf eine niedrigere Stufe ausgewichen wurde, gerade Werbung läuft oder der
+  YouTube-Tab neu geladen werden muss.
+- **Fail open:** Fehlt die Player-API oder ändert YouTube sie, greift die
+  Erweiterung nicht ein; die übrigen Filter laufen unverändert weiter.
+- **Keine neuen Rechte, keine Netzwerkzugriffe:** Das Isolated-Skript
+  veröffentlicht die Einstellung nur als DOM-Attribut für die MAIN-Welt;
+  gespeichert wird sie wie bisher lokal in `storage.local`. Nach einem Update
+  reicht Chrome die MAIN-Steuerung in offene Tabs nach; in Firefox kann dafür
+  einmalig ein Neuladen des YouTube-Tabs nötig sein.
 
 ## Ausnahmen je Schlüsselwort (ab 1.5.13)
 
@@ -315,6 +351,9 @@ Erweiterung verwendet deshalb in Chrome die File System Access API:
   Im Mark-Modus erscheint ein 😱-Badge, im Hide-Modus wird die Karte lokal
   ausgeblendet. Die Schwelle (`Gesichts-Schwelle`, Default `0.65`) lässt sich
   direkt darunter einstellen; das Popup zeigt Modellstatus und Ladezeit an.
+- `Videoqualität` — `Automatisch (aus)`, `Maximal verfügbar` oder eine feste
+  Stufe von `4320p` bis `144p`; Default `1080p`. Wirkt nur auf Watch-/Live-
+  Seiten, siehe „Videoqualität (ab 1.9.0)“.
 - `OCR-Sprachen` — standardmäßig `eng+rus`. Beim Öffnen des Popups werden
   die aktivierten Modelle vorgeladen; Status und Fortschritt stehen direkt
   unter der OCR-Zeile. Bei `eng+rus` laufen beide Erkenner als getrennte
@@ -451,6 +490,7 @@ beeinflusst die Erweiterung nicht. Alle Logs werden zusätzlich in `dev.log` ges
   Modell (`small`), das sind ~460 MB im Worker.
 - Shorts haben einen eigenen Renderer und sind im Erkennungsbereich enthalten; die Verfügbarkeit des offiziellen „Kein Interesse“ hängt vom aktuellen YouTube-Layout ab — wird kein eindeutiger Menüpunkt gefunden, wählt die Erweiterung keine zufällige Aktion, sondern blendet lokal aus.
 - Die Werbekarten-Erkennung ist regelbasiert: YouTube benennt Badges und Layouts gelegentlich um. Dank mehrstufiger Signale (Text, Struktur, Container) trägt sie das meist weiter; ganz neue Formate erscheinen als Verdachtsfall im lokalen Diagnosebericht des Popups („Diagnose der Werbeformate“) und werden mit dem nächsten Release zur Regel. Es werden keine Daten gesendet.
+- Die feste Videoqualität kann nur angebotene Stufen wählen und ersetzt keine Bandbreite: Bei zu langsamem Internet puffert das Video, statt automatisch herunterzuschalten. Sie gilt nicht für Shorts, YouTube Music, eingebettete Player oder die mobile Web-App. Ändert YouTube die interne Player-API, bleibt die Steuerung wirkungslos (fail open) und das Popup zeigt den fehlenden Status; die übrigen Filter laufen weiter.
 
 ## Struktur
 
@@ -478,6 +518,8 @@ extension/
   ai.js           — offizielle KI-Kennzeichnung: Watch-Links, Badge-Suche, Sperrtexte
   ai-channel.js   — lokaler Kanalzähler für wiederholte offizielle KI-Badges
   ai-channel.css  — Markierung/Abdunkeln von Karten auffälliger Kanäle
+  quality-rules.js — reine Qualitätsregeln: IDs, Normalisierung, Fallback, Geltungsbereich
+  quality.js      — MAIN-World-Controller: Player-API, Watchdog, Werbung, manuelle Wahl
   background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-/Face-Routing, Kontrollbilder
   popup/          — Verwaltung von Liste und Einstellungen
   lib/ models/    — externe Bibliotheken; Face-/OCR-Modelle im Paket, SigLIP lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
