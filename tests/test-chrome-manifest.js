@@ -23,7 +23,7 @@ assert.ok(m.content_scripts[0].css.includes('ai-channel.css'));
 
 /* Videoqualität (ab 1.9.0): Die Regeln stehen im Isolated-Skript vor content.js;
    der MAIN-World-Controller ist ein eigener Eintrag mit quality.js nach den Regeln. */
-assert.strictEqual(ff.version, '1.9.0');
+assert.strictEqual(ff.version, '1.9.1');
 assert.ok(ff.content_scripts[0].js.includes('quality-rules.js'), 'quality-rules.js im Isolated-Skript');
 assert.ok(ff.content_scripts[0].js.indexOf('quality-rules.js') < ff.content_scripts[0].js.indexOf('content.js'),
   'quality-rules.js vor content.js');
