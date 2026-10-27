@@ -3,6 +3,29 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] — 2026-10-27
+
+### Geändert
+- **Kartenprüfung in zwei Stufen.** Titel, Kanal, bekannte KI-Kennungen, Badges,
+  Werbe-Marker und Keywords werden jetzt sofort nach dem Sichtbarwerden der
+  Karte geprüft; Gesicht, SigLIP und OCR laufen erst danach und nur, wenn die
+  Textprüfung ohne Treffer blieb. Das Warten auf das Vorschaubild (bis zu 1,6 s)
+  blockiert die billigen Prüfungen nicht mehr und entfällt ganz, wenn keine
+  Bildprüfung aktiv ist. Die Transkription bleibt weiterhin der letzte Schritt.
+- **Gemessene Wirkung.** Auf derselben Suchseite sank der Median der
+  Treffer-Erkennung von 411 ms auf 80 ms (p90: 4670 ms → 192 ms; Maximum:
+  5489 ms → 285 ms); bei identischen Video-IDs 352 ms → 47 ms. Stufe A selbst
+  benötigt 0–16 ms.
+- **Keine neuen Berechtigungen, Modelle oder Netzwerkzugriffe.** Treffer,
+  „Kein Interesse“, lokales Ausblenden und Kontrollbilder verhalten sich
+  unverändert; ein fehlendes Menü fällt wie bisher auf lokales Ausblenden
+  zurück.
+
+### Tests
+- Firefox-E2E: lokales Ausblenden, positives „Kein Interesse“ über ein
+  Testmenü, Rückfall ohne Menü sowie Kontrollbilder geprüft; Unit-Tests für
+  Matcher und Shots grün.
+
 ## [1.9.0] — 2026-10-26
 
 ### Hinzugefügt

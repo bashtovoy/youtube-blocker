@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Youtube Blocker",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Erkennt unerwünschte YouTube-Inhalte am Titel, am Kanal, an der semantischen Übereinstimmung deiner Liste mit dem Vorschaubild (lokales SigLIP, OCR), an übertriebenen Gesichtsausdrücken (lokales MediaPipe) und hält optional die Videoqualität.",
   "icons": {
     "48": "icons/icon48.png",

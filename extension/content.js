@@ -111,6 +111,13 @@
     ioExtractNull: 0,
     processStarted: 0,
     lastProcessError: '',
+    /* Laufzeit der Prüfstufen: belegt, dass Texttreffer nicht mehr auf das
+       Vorschaubild warten. Nur im Speicher, keine Übertragung. */
+    timing: {
+      textHit: { count: 0, total: 0, max: 0 },
+      imageWait: { count: 0, total: 0, max: 0 },
+      imageHit: { count: 0, total: 0, max: 0 }
+    },
     aiBlockedIds: new Set(),    /* lokal erkannte, offiziell KI-gekennzeichnete Videos */
     aiChannels: {},             /* lokaler Kanalzähler: storage.aiChannels */
     aiFeedback: { allowChannels: {}, allowVideos: {} },
@@ -601,6 +608,13 @@
     return { videoId, title, channel, channelRef, thumb, item, img };
   }
 
+  /* Stabiler Schlüssel über die Lebensdauer einer Karte. Die Bild-URL gehört
+     bewusst nicht hinein: currentSrc ändert sich beim Laden, und dann würde
+     dieselbe Karte nach einem Re-Render als neu gelten. */
+  function cardKey(v) {
+    return v.videoId + '|' + v.title.slice(0, 100);
+  }
+
   function waitForImage(img, timeout = 1600) {
     if (!img || img.complete && img.naturalWidth > 0) return Promise.resolve(true);
     return new Promise(resolve => {
@@ -713,6 +727,28 @@
       timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), ms);
     });
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  function nowMs() {
+    return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+  }
+
+  function recordTiming(name, ms) {
+    const bucket = state.timing[name];
+    if (!bucket) return;
+    bucket.count += 1;
+    bucket.total += ms;
+    if (ms > bucket.max) bucket.max = ms;
+  }
+
+  function timingSummary(bucket) {
+    return {
+      count: bucket.count,
+      avgMs: bucket.count ? Math.round(bucket.total / bucket.count) : 0,
+      maxMs: Math.round(bucket.max)
+    };
   }
 
   /* Letzten Aufnahmeversuch auch dann sichtbar machen, wenn das Bild gar nicht
@@ -1122,9 +1158,25 @@
     return true;
   }
 
+  /* Welche Prüfungen brauchen überhaupt ein Vorschaubild? Nur dann lohnt
+     Stufe B samt Wartezeit; Sprache läuft unabhängig davon zuletzt. */
+  function imageChecks() {
+    return {
+      face: (state.settings.faceMode === 'mark' || state.settings.faceMode === 'hide') && !state.faceFailed,
+      semantic: state.settings.checkSemanticImage && state.imageKeywords.length > 0 && !state.semanticFailed,
+      ocr: state.settings.checkThumbOcr && state.ocrKeywords.length > 0 && !state.ocrFailed
+    };
+  }
+
+  function hasImageChecks() {
+    const checks = imageChecks();
+    return checks.face || checks.semantic || checks.ocr;
+  }
+
   async function matchThumbnail(v) {
-    const semanticNeeded = state.settings.checkSemanticImage && state.imageKeywords.length > 0 && !state.semanticFailed;
-    const ocrNeeded = state.settings.checkThumbOcr && state.ocrKeywords.length > 0 && !state.ocrFailed;
+    const checks = imageChecks();
+    const semanticNeeded = checks.semantic;
+    const ocrNeeded = checks.ocr;
     if (!semanticNeeded && !ocrNeeded) return null;
 
     if (semanticNeeded) {
@@ -1204,59 +1256,70 @@
     return null;
   }
 
+  function noteTextHit(v, reason, startedAt) {
+    const elapsed = nowMs() - startedAt;
+    recordTiming('textHit', elapsed);
+    log('stage A hit', v.videoId, '←', reason, elapsed.toFixed(0) + 'ms');
+  }
+
+  /* Zweistufig: Stufe A prüft Text und Metadaten sofort nach dem Sichtbarwerden
+     der Karte. Nur wenn dort kein Treffer entsteht, wartet Stufe B auf das
+     Vorschaubild für Gesicht, SigLIP und OCR. Die Transkription bleibt zuletzt. */
   async function processVideo(v) {
     if (!v || state.disposed) return;
-    await waitForImage(v.img).catch(() => false);
+    const startedAt = nowMs();
     const current = extract(v.item) || v;
-    if (state.settings.hideAiGenerated && state.aiBlockedIds.has(current.videoId)) {
-      hideLocally(current, 'ai-generated');
-      if (state.io && current.item) state.io.unobserve(current.item);
-      return;
-    }
-    const channelMode = channelModeFor(current.item, current.videoId);
-    if (channelMode !== 'off') markAiChannel(current.item, channelMode);
-    const key = current.videoId + '|' + current.title.slice(0, 100) + '|' + current.thumb;
-    if (state.inFlight.has(key)) return;
-    if (state.processed.has(key)) {
-      /* YouTube rendert Karten neu (Shelf-/Feed-Recycling) und verliert dabei unsere Klasse.
-         Bereits getroffene Karten lokal erneut ausblenden — ohne zweites offizielles Signal
-         und ohne den Zähler erneut zu erhöhen. */
-      let reason = state.processed.get(key);
-      /* Neu gerenderter Knoten ohne Treffer: Badge kann jetzt — oder später —
-         vorhanden sein. Prüfen und ggf. vormerken, sonst bleibt genau diese
-         Karte dauerhaft sichtbar (früher `return` ohne Badge-Test). */
-      if (!reason && (state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted)) {
-        const lateHit = matchBadge(current);
-        if (lateHit) {
-          state.processed.set(key, lateHit);
-          hideLocally(current, lateHit);
-          if (state.io && current.item) state.io.unobserve(current.item);
-          return;
-        }
-        /* Auch der Werbe-Marker („YouTube empfiehlt“) kann spät gerendert werden. */
-        const latePromo = promoInfo(current);
-        if (latePromo && latePromo.isHit) {
-          state.processed.set(key, 'promo');
-          hideLocally(current, 'promo');
-          if (state.io && current.item) state.io.unobserve(current.item);
-          return;
-        }
-        state.badgeWatched.add(current.item);
-      }
-      if (reason && !current.item.classList.contains('yb-hidden')) {
-        /* Neuer Knoten nach YouTube-Re-Render: die Aufnahme muss noch einmal
-           versucht werden, statt den Rahmen ohne Kontrollbild zu verstecken. */
-        requestHide(current, reason, 'local').catch(e => log('re-hide failed:', e.message));
-        log('re-hide (re-render)', current.videoId, '←', reason);
-      }
-      if (state.io && current.item) state.io.unobserve(current.item);
-      return;
-    }
-    state.inFlight.add(key);
+    let claimedKey = '';
     try {
+      /* ---- Stufe A: billige Signale ohne Vorschaubild ---- */
+      if (state.settings.hideAiGenerated && state.aiBlockedIds.has(current.videoId)) {
+        noteTextHit(current, 'ai-generated', startedAt);
+        hideLocally(current, 'ai-generated');
+        return;
+      }
+      const channelMode = channelModeFor(current.item, current.videoId);
+      if (channelMode !== 'off') markAiChannel(current.item, channelMode);
+      const key = cardKey(current);
+      if (state.inFlight.has(key)) return;
+      if (state.processed.has(key)) {
+        /* YouTube rendert Karten neu (Shelf-/Feed-Recycling) und verliert dabei unsere Klasse.
+           Bereits getroffene Karten lokal erneut ausblenden — ohne zweites offizielles Signal
+           und ohne den Zähler erneut zu erhöhen. */
+        let reason = state.processed.get(key);
+        /* Neu gerenderter Knoten ohne Treffer: Badge kann jetzt — oder später —
+           vorhanden sein. Prüfen und ggf. vormerken, sonst bleibt genau diese
+           Karte dauerhaft sichtbar (früher `return` ohne Badge-Test). */
+        if (!reason && (state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted)) {
+          const lateHit = matchBadge(current);
+          if (lateHit) {
+            state.processed.set(key, lateHit);
+            hideLocally(current, lateHit);
+            return;
+          }
+          /* Auch der Werbe-Marker („YouTube empfiehlt“) kann spät gerendert werden. */
+          const latePromo = promoInfo(current);
+          if (latePromo && latePromo.isHit) {
+            state.processed.set(key, 'promo');
+            hideLocally(current, 'promo');
+            return;
+          }
+          state.badgeWatched.add(current.item);
+        }
+        if (reason && !current.item.classList.contains('yb-hidden')) {
+          /* Neuer Knoten nach YouTube-Re-Render: die Aufnahme muss noch einmal
+             versucht werden, statt den Rahmen ohne Kontrollbild zu verstecken. */
+          requestHide(current, reason, 'local').catch(e => log('re-hide failed:', e.message));
+          log('re-hide (re-render)', current.videoId, '←', reason);
+        }
+        return;
+      }
+      state.inFlight.add(key);
+      claimedKey = key;
+
       const badgeHit = matchBadge(current);
       if (badgeHit) {
         state.processed.set(key, badgeHit);
+        noteTextHit(current, badgeHit, startedAt);
         /* Badge-Treffer („Members only“ / KI-Hinweis) sind Eigenschaften des
            Angebots, kein Interessensignal: lokal ausblenden, kein Klick. */
         if (badgeHit === 'ai-generated') sendAiChannelHit(current);
@@ -1266,6 +1329,7 @@
       const promo = promoInfo(current);
       if (promo && promo.isHit) {
         state.processed.set(key, 'promo');
+        noteTextHit(current, 'promo', startedAt);
         /* Werbekarten sind eine Eigenschaft des Angebots, kein Interessensignal:
            lokal ausblenden, kein „Kein Interesse“-Klick. */
         hideLocally(current, 'promo');
@@ -1275,31 +1339,51 @@
       if (titleHit) {
         const reason = titleHit.source + ':' + titleHit.keyword;
         state.processed.set(key, reason);
+        noteTextHit(current, reason, startedAt);
         await applyAction(current, reason);
         return;
       }
-      /* Gesichtsprüfung vor Semantik/OCR: im Mark-Modus läuft sie bewusst
-         weiter (kein Short-Circuit), im Hide-Modus ist sie ein lokaler Treffer. */
-      const faceHit = await matchFace(current);
-      /* Modus nach dem Warten erneut lesen: Wurde der Kanal inzwischen
-         ausgeschaltet, darf ein spätes Ergebnis nicht mehr ausblenden. */
-      const faceMode = state.settings.faceMode;
-      if (faceHit && faceMode === 'mark') {
-        rememberFace(current.videoId, faceHit);
-        markFace(current.item, faceHit);
-      } else if (faceHit && faceMode === 'hide') {
-        rememberFace(current.videoId, faceHit);
-        const reason = 'face:shock';
-        state.processed.set(key, reason);
-        hideLocally(current, reason);
-        return;
-      }
-      const thumbHit = await matchThumbnail(current);
-      if (thumbHit) {
-        const reason = thumbHit.source + ':' + thumbHit.keyword;
-        state.processed.set(key, reason);
-        await applyAction(current, reason);
-        return;
+
+      /* ---- Stufe B: Bildanalyse erst nach textlichem Nicht-Treffer ---- */
+      if (hasImageChecks()) {
+        const waitStart = nowMs();
+        const ready = await waitForImage(current.img).catch(() => false);
+        const waitMs = nowMs() - waitStart;
+        recordTiming('imageWait', waitMs);
+        /* Nach dem Laden liefert currentSrc die endgültige Bild-URL. Titel und
+           Schlüssel bleiben unverändert, damit ein Re-Render dieselbe Karte
+           wiedererkennt. */
+        const refreshed = extract(current.item);
+        if (refreshed && refreshed.videoId === current.videoId && refreshed.thumb) {
+          current.thumb = refreshed.thumb;
+        }
+        log('stage B image', current.videoId, ready ? 'ready' : 'not-ready',
+          waitMs.toFixed(0) + 'ms');
+        /* Gesichtsprüfung vor Semantik/OCR: im Mark-Modus läuft sie bewusst
+           weiter (kein Short-Circuit), im Hide-Modus ist sie ein lokaler Treffer. */
+        const faceHit = await matchFace(current);
+        /* Modus nach dem Warten erneut lesen: Wurde der Kanal inzwischen
+           ausgeschaltet, darf ein spätes Ergebnis nicht mehr ausblenden. */
+        const faceMode = state.settings.faceMode;
+        if (faceHit && faceMode === 'mark') {
+          rememberFace(current.videoId, faceHit);
+          markFace(current.item, faceHit);
+        } else if (faceHit && faceMode === 'hide') {
+          rememberFace(current.videoId, faceHit);
+          const reason = 'face:shock';
+          state.processed.set(key, reason);
+          recordTiming('imageHit', nowMs() - startedAt);
+          hideLocally(current, reason);
+          return;
+        }
+        const thumbHit = await matchThumbnail(current);
+        if (thumbHit) {
+          const reason = thumbHit.source + ':' + thumbHit.keyword;
+          state.processed.set(key, reason);
+          recordTiming('imageHit', nowMs() - startedAt);
+          await applyAction(current, reason);
+          return;
+        }
       }
       if (state.settings.checkSpeech) {
         const speechHit = await matchSpeech(current);
@@ -1316,7 +1400,7 @@
          vormerken und in scanNow erneut auf Badges prüfen. */
       if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && current.item) state.badgeWatched.add(current.item);
     } finally {
-      state.inFlight.delete(key);
+      if (claimedKey) state.inFlight.delete(claimedKey);
       if (state.io && current.item) state.io.unobserve(current.item);
     }
   }
@@ -1525,7 +1609,7 @@
             const latePromo = lateV ? promoInfo(lateV) : null;
             if (latePromo && latePromo.isHit) {
               state.badgeWatched.delete(item);
-              const lateKey = lateV.videoId + '|' + lateV.title.slice(0, 100) + '|' + lateV.thumb;
+              const lateKey = cardKey(lateV);
               state.processed.set(lateKey, 'promo');
               hideLocally(lateV, 'promo');
             }
@@ -1698,6 +1782,11 @@
       ioExtractNull: state.ioExtractNull,
       processStarted: state.processStarted,
       lastProcessError: state.lastProcessError,
+      timing: {
+        textHit: timingSummary(state.timing.textHit),
+        imageWait: timingSummary(state.timing.imageWait),
+        imageHit: timingSummary(state.timing.imageHit)
+      },
       aiBlockedIds: state.aiBlockedIds.size,
       aiOverlay: !!state.aiOverlay,
       promoSuspects: state.suspects.length
@@ -1709,7 +1798,7 @@
         const v = extract(item);
         if (!v) { out.push({ status: 'extract-null', hidden }); continue; }
         const hit = matchTitle(v);
-        const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
+        const key = cardKey(v);
         const face = state.faceResults.get(v.videoId);
         out.push({
           status: hit ? 'MATCH' : 'no-match',
@@ -1749,7 +1838,7 @@
         const badge = matchBadge({ item });
         const promo = state.settings.hidePromoted ? window.YB.promo.analyze(item, { title: v.title }) : null;
         const promoHit = !!(promo && promo.isHit);
-        const key = v.videoId + '|' + v.title.slice(0, 100) + '|' + v.thumb;
+        const key = cardKey(v);
         const hidden = item.classList.contains('yb-hidden');
         if (badge === 'members-only') {
           res.members++;
