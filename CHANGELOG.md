@@ -3,6 +3,48 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] — 2026-10-27
+
+### Geändert
+- **Begriffsmatrix statt flacher Wortliste.** 25 kuratierte Sinnkonzepte
+  bündeln die 54 bisherigen Wörter und ergänzen explizite Varianten
+  (Schreibweisen, Fälle, Transliterationen, typische Tippfehler) — insgesamt
+  451 Varianten. Es bleibt beim exakten Abgleich: kein Fuzzy, keine
+  Edit-Distanz.
+- **Ein SigLIP-Prompt pro Gruppe.** Der Bildkanal bewertet nur noch einen
+  visuellen Satz je Konzept. Dadurch konkurrieren Synonyme wie
+  `Дрон`/`Drone`/`Dron` nicht mehr in der kontrastiven Margin.
+- **Popup und Matrix-Editor.** Das Popup zeigt Gruppen mit Schalter, Route
+  und Variantenzahl. Die neue breite Seite `popup/lexicon.html` bearbeitet
+  Varianten, Ausnahmen, Prompt und Route, sucht Gruppen und speichert
+  automatisch. Änderungen gehen sofort an offene YouTube-Tabs.
+- **Neue Route `text`** für rein textliche Konzepte ohne SigLIP: Новости,
+  Утечки, Скандал, Хакеры, Кликбейт, Политика, Россия, Китай. Alle übrigen
+  Startgruppen bleiben `auto`.
+- **Gruppen-Ausnahmen:** Роботы → Tennis/настольный теннис/пинг-понг;
+  Tesla → `no tesla`; Новости → `breaking bad`; Смерть → `kill bill`.
+- **Import/Export** schreiben `lexicon` und weiterhin das flache `keywords`.
+  Der Import akzeptiert `{lexicon}`, `{keywords}` und reine Arrays.
+- **Dev-Brücke:** `config`-Kommandos mit flacher Wortliste setzen `lexicon`
+  zurück, damit Testkonfigurationen nicht von einer alten Matrix überdeckt
+  werden.
+
+### Migration
+- Beim ersten Öffnen werden bekannte Wörter ihren kuratierten Gruppen
+  zugeordnet; alle Varianten der Vorlage kommen mit. Unbekannte Wörter bleiben
+  als Einzelgruppe erhalten, Ausnahmen und `enabled` werden übernommen.
+- Ist `storage.local.lexicon` ein Array, liest der Content nur die Matrix;
+  andernfalls gilt weiterhin das flache `keywords`-Array. Alte Exporte und
+  Downgrades funktionieren unverändert.
+
+### Tests
+- Neuer `tests/test-lexicon.js` prüft die Migration der 54-Wörter-Fixtur
+  (kein Wort verloren, keine Duplikate), Kanäle, einen Prompt pro Gruppe,
+  das flache Mirror-Format und die defensive Normalisierung.
+- `test-routes.js` deckt `text` und den Transkript-Kanal ab;
+  `test-chrome-manifest.js` prüft Version 1.10.0 und die Ladereihenfolge von
+  `lexicon.js`; `test-i18n.js` scannt Matrix-Seite und Matrix-Editor mit.
+
 ## [1.9.2] — 2026-10-27
 
 ### Geändert

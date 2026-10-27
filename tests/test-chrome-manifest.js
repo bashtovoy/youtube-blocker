@@ -23,10 +23,16 @@ assert.ok(m.content_scripts[0].css.includes('ai-channel.css'));
 
 /* Videoqualität (ab 1.9.0): Die Regeln stehen im Isolated-Skript vor content.js;
    der MAIN-World-Controller ist ein eigener Eintrag mit quality.js nach den Regeln. */
-assert.strictEqual(ff.version, '1.9.2');
+assert.strictEqual(ff.version, '1.10.0');
 assert.ok(ff.content_scripts[0].js.includes('quality-rules.js'), 'quality-rules.js im Isolated-Skript');
 assert.ok(ff.content_scripts[0].js.indexOf('quality-rules.js') < ff.content_scripts[0].js.indexOf('content.js'),
   'quality-rules.js vor content.js');
+/* Begriffsmatrix (ab 1.10.0): lexicon.js folgt matcher.js und steht vor content.js. */
+assert.ok(ff.content_scripts[0].js.includes('lexicon.js'), 'lexicon.js im Content-Skript');
+assert.ok(ff.content_scripts[0].js.indexOf('matcher.js') < ff.content_scripts[0].js.indexOf('lexicon.js'),
+  'lexicon.js nach matcher.js');
+assert.ok(ff.content_scripts[0].js.indexOf('lexicon.js') < ff.content_scripts[0].js.indexOf('content.js'),
+  'lexicon.js vor content.js');
 assert.strictEqual(ff.content_scripts.length, 2, 'ein Isolated- und ein MAIN-Eintrag');
 const qualityMain = ff.content_scripts.find(cs => cs.world === 'MAIN');
 assert.ok(qualityMain, 'MAIN-World-Eintrag vorhanden');

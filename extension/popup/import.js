@@ -21,25 +21,20 @@ function status(msg, ok = true) {
   el.className = ok ? '' : 'err';
 }
 
-/* Einträge auf { text, enabled, route? } normalisieren — Strings oder Objekte, wie im Popup.
-   route ∈ title|ocr|image|hybrid (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1);
-   fehlende/ungültige Route = Auto (alle Kanäle). */
-function normRoute(r) {
-  return (r === 'title' || r === 'ocr' || r === 'image' || r === 'hybrid') ? r : '';
-}
-
-function normalizeKeywords(list) {
-  return (list || [])
-    .map(k => {
-      if (typeof k === 'string') return { text: k.trim(), enabled: true };
-      const o = { text: String((k && k.text) || '').trim(), enabled: !k || k.enabled !== false };
-      const r = normRoute(k && k.route);
-      if (r) o.route = r;
-      const ex = YB.matcher.normalizeExceptions(k && k.exceptions);
-      if (ex.length) o.exceptions = ex;
-      return o;
-    })
-    .filter(k => k.text);
+/* Einträge auf die Matrix normalisieren. Neue Exporte enthalten `lexicon`;
+   alte Exporte (Array oder { keywords: [...] }) werden über die kuratierten
+   Vorlagen migriert, damit die Gruppen und Varianten sofort greifen. */
+function lexiconFromImport(data) {
+  if (data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.lexicon)) {
+    return YB.lexicon.normalizeLexicon(data.lexicon);
+  }
+  const raw = Array.isArray(data)
+    ? data
+    : (data && typeof data === 'object' ? data.keywords : null);
+  if (!Array.isArray(raw)) throw new Error(t('import_no_list'));
+  const templates = YB.lexiconData && Array.isArray(YB.lexiconData.groups)
+    ? YB.lexiconData.groups : [];
+  return YB.lexicon.migrate(raw, templates).lexicon;
 }
 
 async function applyToTabs() {
@@ -55,12 +50,9 @@ $('file').onchange = async (e) => {
   try {
     const text = await f.text();
     const data = JSON.parse(text);
-    const raw = Array.isArray(data)
-      ? data
-      : (data && typeof data === 'object' ? data.keywords : null);
-    if (!Array.isArray(raw)) throw new Error(t('import_no_list'));
-    const kws = normalizeKeywords(raw);
-    if (!kws.length) throw new Error(t('import_empty_list'));
+    const lex = lexiconFromImport(data);
+    if (!lex.length) throw new Error(t('import_empty_list'));
+    const kws = YB.lexicon.toKeywords(lex);
     /* Nur die im Import enthaltenen Einstellungen überschreiben; der Rest
        bleibt erhalten. Eine reine Wortliste (Array) darf keine Einstellungen
        zurücksetzen. */
@@ -91,9 +83,9 @@ $('file').onchange = async (e) => {
         ? fallback
         : n;
     }
-    await api.storage.local.set({ settings, keywords: kws });
+    await api.storage.local.set({ settings, lexicon: lex, keywords: kws });
     await applyToTabs();
-    status(t('import_ok', { n: kws.length }));
+    status(t('import_ok', { n: kws.length, groups: lex.length }));
   } catch (err) {
     status(t('import_error', { msg: err.message }), false);
   }

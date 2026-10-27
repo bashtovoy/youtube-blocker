@@ -45,7 +45,7 @@ for (const lang of langs) {
 /* 2) Alle data-i18n-Markierungen im HTML sind abgedeckt */
 const used = new Set();
 let found = 0;
-for (const f of ['popup.html', 'import.html', path.join('..', 'folder-access.html')]) {
+for (const f of ['popup.html', 'import.html', 'lexicon.html', path.join('..', 'folder-access.html')]) {
   const html = fs.readFileSync(path.join(POPUP, f), 'utf8');
   const re = /data-i18n(?:-title|-placeholder)?="([^"]+)"/g;
   let m;
@@ -61,7 +61,7 @@ assert.ok(found > 20, 'HTML-Markierungen gefunden: ' + found);
 /* 3) Alle t('…')-Aufrufe im JS existieren im Wörterbuch;
    dynamisch verwendete Schlüssel (z. B. ROUTE_OPTIONS) als String-Literale mitzählen */
 let calls = 0;
-for (const f of ['popup.js', 'import.js', path.join('..', 'folder-access.js')]) {
+for (const f of ['popup.js', 'import.js', 'lex-table.js', path.join('..', 'folder-access.js')]) {
   const src = fs.readFileSync(path.join(POPUP, f), 'utf8');
   const reCall = /\bt\(\s*['"]([a-z0-9_]+)['"]/g;
   let m;

@@ -35,15 +35,17 @@
     <div id="status"></div>
     <ul class="tips">
       <li data-i18n="import_tip1">Geeignet ist die Datei „JSON exportieren“ aus dieser Erweiterung.</li>
-      <li><span data-i18n="import_tip2_a">Format</span> <code data-i18n="import_fmt_arr1">{ "keywords": ["krieg", …] }</code> <span data-i18n="import_tip2_b">oder einfach ein Array</span> <code data-i18n="import_fmt_arr2">["krieg", …]</code>.</li>
-      <li><span data-i18n="import_tip3_a">Einträge dürfen Strings oder Objekte sein:</span> <code data-i18n="import_fmt_obj">{ "text": "…", "enabled": true, "exceptions": ["…"] }</code>.</li>
+      <li><span data-i18n="import_tip2_a">Format</span> <code data-i18n="import_fmt_arr1">{ "lexicon": [ … ] }</code> <span data-i18n="import_tip2_b">oder die alte Wortliste</span> <code data-i18n="import_fmt_arr2">{ "keywords": ["krieg", …] }</code>.</li>
+      <li data-i18n="import_tip3">Die alte Wortliste wird automatisch in Gruppen überführt; neue Exporte enthalten die Matrix direkt.</li>
       <li data-i18n="import_tip4">Das Feld exceptions bleibt erhalten; ältere Dateien funktionieren weiter. Das frühere Feld allowAll wird ignoriert.</li>
     </ul>
   </div>
 
   <script src="../matcher.js"></script>
+  <script src="../lexicon.js"></script>
   <script src="../quality-rules.js"></script>
   <script src="i18n.js"></script>
+  <script src="lexicon-data.js"></script>
   <script src="import.js"></script>
 </body>
 </html>

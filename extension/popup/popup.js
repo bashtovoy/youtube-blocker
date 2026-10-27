@@ -61,17 +61,7 @@ function qualityLabel(value) {
   return qualityRules ? qualityRules.labelOf(value) : String(value || '');
 }
 
-/* Erkennungskanäle je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1):
-   '' = Auto (alle Kanäle, bisheriges Verhalten). Zweiter Wert = i18n-Schlüssel. */
-const ROUTE_OPTIONS = [
-  ['', 'route_auto'],
-  ['title', 'route_title_lbl'],
-  ['ocr', 'route_ocr'],
-  ['image', 'route_image'],
-  ['hybrid', 'route_hybrid']
-];
-
-let keywords = [];   /* [{ text, enabled, route? }] */
+let lexicon = [];    /* [{ id, label, enabled, route, prompt, variants, exceptions }] */
 let lastSemStatus = null;   /* für Neu-Beschriftung beim Sprachwechsel */
 let counts = { dis: 0, hid: 0 };   /* Kopfzeile: YouTube-Signale / lokale Ausblendungen */
 let lastShot = null;  /* letzter Aufnahmeversuch aus storage.local */
@@ -803,8 +793,8 @@ function renderQualityStatus() {
 function applyLanguage(lang) {
   i18n.set(lang);
   $('uiLang').value = i18n.current;
-  $('kwList').dataset.empty = t('kw_empty');
-  renderKeywords();
+  $('kwList').dataset.empty = t('lex_empty');
+  renderLexicon();
   renderSemStatus(lastSemStatus);
   renderOcrStatus();
   renderFaceStatus();
@@ -814,10 +804,6 @@ function applyLanguage(lang) {
   renderFolderStatus();
   renderQualityStatus();
   syncAiChannelUi();
-}
-
-function normRoute(r) {
-  return (r === 'title' || r === 'ocr' || r === 'image' || r === 'hybrid') ? r : '';
 }
 
 function status(msg, ok = true) {
@@ -903,48 +889,24 @@ $('promoDiagClear').onclick = async () => {
   status(t('promo_diag_cleared'));
 };
 
-function normalizeKeywords(list) {
-  return (list || [])
-    .map(k => {
-      const isObj = k !== null && typeof k === 'object';
-      const o = {
-        text: String((isObj ? k.text : k) || '').trim(),
-        enabled: isObj ? k.enabled !== false : true,
-        route: isObj ? normRoute(k.route) : ''
-      };
-      const ex = YB.matcher.normalizeExceptions(isObj ? k.exceptions : null);
-      if (ex.length) o.exceptions = ex;
-      return o;
-    })
-    .filter(k => k.text);
+/* Migration beim ersten Öffnen nach dem Update: liegt noch kein lexicon vor,
+   wird das flache keywords-Array über die kuratierten Vorlagen in Gruppen
+   überführt. Unbekannte Wörter bleiben als Einzelgruppe erhalten. */
+function ensureLexicon(data) {
+  if (Array.isArray(data.lexicon)) {
+    return { lexicon: YB.lexicon.normalizeLexicon(data.lexicon), migrated: false };
+  }
+  const flat = Array.isArray(data.keywords) ? data.keywords : [];
+  if (!flat.length) return { lexicon: [], migrated: false };
+  const templates = YB.lexiconData && Array.isArray(YB.lexiconData.groups)
+    ? YB.lexiconData.groups : [];
+  const res = YB.lexicon.migrate(flat, templates);
+  return { lexicon: res.lexicon, migrated: true, unmatched: res.unmatched };
 }
 
-/* Eine Zeile im Massenfeld: „Wort => Tennis, Tischtennis“. */
-function formatKeywordLine(k) {
-  const ex = YB.matcher.normalizeExceptions(k && k.exceptions);
-  return String((k && k.text) || '').trim() + (ex.length ? ' => ' + ex.join(', ') : '');
-}
-
-/* Massenfeld übernehmen: enabled/route bereits vorhandener Wörter bleiben
-   erhalten, damit das Bearbeiten der Freigaben keine Häkchen zurücksetzt. */
-function parseKeywordLines(text) {
-  const prev = new Map(keywords.map(k => [String(k.text || '').trim().toLowerCase(), k]));
-  return String(text || '').split('\n').map(line => {
-    const raw = line.trim();
-    if (!raw) return null;
-    const at = raw.indexOf('=>');
-    const word = (at >= 0 ? raw.slice(0, at) : raw).trim();
-    if (!word) return null;
-    const ex = at >= 0 ? YB.matcher.normalizeExceptions(raw.slice(at + 2)) : [];
-    const old = prev.get(word.toLowerCase());
-    const o = {
-      text: word,
-      enabled: old ? old.enabled !== false : true,
-      route: old ? normRoute(old.route) : ''
-    };
-    if (ex.length) o.exceptions = ex;
-    return o;
-  }).filter(Boolean);
+function routeLabel(route) {
+  const key = route === 'title' ? 'route_title_lbl' : ('route_' + (route || 'auto'));
+  return t(key);
 }
 
 const AI_CHANNEL_MODES = ['off', 'badge', 'dim'];
@@ -959,7 +921,7 @@ function syncAiChannelUi() {
 
 async function load() {
   const data = await api.storage.local.get({
-    settings: {}, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, faceStatus: null, promoSuspects: [], lastShot: null
+    settings: {}, lexicon: null, keywords: [], blockedCount: 0, dismissedCount: 0, hiddenCount: 0, semStatus: null, faceStatus: null, promoSuspects: [], lastShot: null
   });
   const s = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
   s.actionDelayMs = numberOr(s.actionDelayMs, DEFAULT_SETTINGS.actionDelayMs);
@@ -973,7 +935,16 @@ async function load() {
   if (!FACE_MODES.includes(s.faceMode)) s.faceMode = DEFAULT_SETTINGS.faceMode;
   SETTING_IDS.forEach(id => { $(id).checked = id in s ? s[id] : (id === 'enabled' || id === 'checkTitle' || id === 'checkSemanticImage'); });
   VALUE_IDS.forEach(id => { if (id !== 'uiLang') $(id).value = s[id]; });
-  keywords = normalizeKeywords(data.keywords);
+  const ensured = ensureLexicon(data);
+  lexicon = ensured.lexicon;
+  /* Migration sofort persistieren: Content-Scripts und Exporte sehen dann
+     dieselbe Matrix, auch wenn das Popup gleich wieder geschlossen wird. */
+  if (ensured.migrated) {
+    await api.storage.local.set({
+      lexicon,
+      keywords: YB.lexicon.toKeywords(lexicon)
+    });
+  }
   counts = { dis: data.dismissedCount || 0, hid: data.hiddenCount || 0 };
   lastSemStatus = data.semStatus;
   faceStatus = data.faceStatus || null;
@@ -981,6 +952,7 @@ async function load() {
   lastShot = data.lastShot || null;
   /* Sprache: gespeicherte Wahl; ohne Wahl einmalig aus der Browsersprache ableiten */
   applyLanguage(i18n.normalize(s.uiLang) || i18n.detect(api));
+  if (ensured.migrated) status(t('lex_migrated', { groups: lexicon.length }));
   syncAiChannelUi();
   /* Live-Status beim Host erfragen: der gespeicherte semStatus kann fehlen oder
      veraltet sein (z. B. direkt nach dem Browserstart, bevor etwas lief). */
@@ -1015,88 +987,72 @@ async function load() {
 }
 
 function updateCount() {
-  const on = keywords.filter(k => k.enabled !== false && String(k.text).trim()).length;
-  $('kwCount').textContent = keywords.length ? t('kw_count', { n: keywords.length, on }) : '';
+  const st = YB.lexicon.stats(lexicon);
+  $('kwCount').textContent = st.groups
+    ? t('lex_count', { groups: st.groups, variants: st.variants, on: st.enabled })
+    : '';
 }
 
-function renderKeywords() {
+function openLexicon(id) {
+  const base = api.runtime.getURL('popup/lexicon.html');
+  api.tabs.create({ url: base + (id ? '#' + encodeURIComponent(id) : '') });
+}
+
+function renderLexicon() {
   const box = $('kwList');
   box.innerHTML = '';
-  keywords.forEach((kw, idx) => {
+  lexicon.forEach(g => {
     const row = document.createElement('div');
-    row.className = 'kwrow' + (kw.enabled ? '' : ' off');
+    row.className = 'lexrow' + (g.enabled === false ? ' off' : '');
 
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = kw.enabled !== false;
+    cb.checked = g.enabled !== false;
     cb.title = t('kw_use_title');
     cb.onchange = () => {
-      kw.enabled = cb.checked;
+      g.enabled = cb.checked;
       row.classList.toggle('off', !cb.checked);
       updateCount();
       schedulePersist(0);
     };
 
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.className = 'kwtext';
-    inp.value = kw.text;
-    inp.oninput = () => {
-      kw.text = inp.value;
-      updateCount();
-      schedulePersist(700);
-    };
+    const label = document.createElement('span');
+    label.className = 'lexlabel';
+    label.textContent = g.label || g.id;
+    label.title = g.label || g.id;
 
-    const route = document.createElement('select');
-    route.className = 'route';
-    ROUTE_OPTIONS.forEach(([val, lblKey]) => {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = t(lblKey);
-      route.appendChild(opt);
-    });
-    route.value = kw.route || '';
+    const route = document.createElement('span');
+    route.className = 'lexroute';
+    route.textContent = routeLabel(g.route);
     route.title = t('route_title');
-    route.onchange = () => { kw.route = route.value; schedulePersist(0); };
 
-    const del = document.createElement('button');
-    del.className = 'del';
-    del.textContent = '×';
-    del.title = t('del_title');
-    del.onclick = () => { keywords.splice(idx, 1); renderKeywords(); schedulePersist(0); };
+    const meta = document.createElement('span');
+    meta.className = 'lexmeta';
+    meta.textContent = t('lex_meta', { n: (g.variants || []).length });
 
-    const exc = document.createElement('input');
-    exc.type = 'text';
-    exc.className = 'kwexcinput';
-    exc.value = YB.matcher.normalizeExceptions(kw.exceptions).join(', ');
-    exc.placeholder = t('kw_exc_ph');
-    exc.title = t('kw_exc_hint');
-    exc.oninput = () => {
-      kw.exceptions = YB.matcher.normalizeExceptions(exc.value);
-      schedulePersist(700);
-    };
-    const excRow = document.createElement('div');
-    excRow.className = 'kwexc';
-    excRow.appendChild(exc);
+    const edit = document.createElement('button');
+    edit.className = 'lexedit';
+    edit.textContent = '✎';
+    edit.title = t('lex_edit_title');
+    edit.onclick = () => openLexicon(g.id);
 
-    row.append(cb, inp, route, del, excRow);
+    row.append(cb, label, route, meta, edit);
     box.appendChild(row);
   });
+  box.dataset.empty = t('lex_empty');
   updateCount();
-  /* Massenbearbeitungsfeld synchronisieren, wenn es eingeklappt ist */
-  const bulk = $('keywordsBulk');
-  if (bulk && !bulk.closest('details').open) bulk.value = keywords.map(formatKeywordLine).join('\n');
 }
 
-function addKeyword(text) {
+function addLexiconEntry(text) {
   const v = String(text || '').trim();
   if (!v) return false;
-  if (keywords.some(k => k.text.toLowerCase() === v.toLowerCase())) {
-    status(t('kw_dup'), false);
+  const existing = YB.lexicon.findVariant(lexicon, v);
+  if (existing) {
+    status(t('lex_dup', { group: existing.label }), false);
     return false;
   }
-  keywords.push({ text: v, enabled: true, route: '', exceptions: [] });
-  renderKeywords();
+  lexicon.push(YB.lexicon.createGroup(v, lexicon));
+  renderLexicon();
   schedulePersist(0);
   return true;
 }
@@ -1159,18 +1115,13 @@ async function persist() {
     ? secsRaw
     : DEFAULT_SETTINGS.speechMaxSeconds;
   settings.logMatch = true;
-  const kws = keywords
-    .map(k => {
-      const o = { text: String(k.text || '').trim(), enabled: k.enabled !== false };
-      const r = normRoute(k.route);
-      if (r) o.route = r;   /* '' = Auto → Feld weglassen (Altformat-kompatibel) */
-      const ex = YB.matcher.normalizeExceptions(k.exceptions);
-      if (ex.length) o.exceptions = ex;
-      return o;
-    })
-    .filter(k => k.text);
+  /* Nicht lexicon = normalized: die DOM-Zeilen halten Referenzen auf die
+     Gruppenobjekte; ein Austausch würde weitere Änderungen ins Leere laufen
+     lassen. Normalisiert wird nur die gespeicherte Kopie. */
+  const normalized = YB.lexicon.normalizeLexicon(lexicon);
+  const kws = YB.lexicon.toKeywords(normalized);
   try {
-    await api.storage.local.set({ settings, keywords: kws });
+    await api.storage.local.set({ settings, lexicon: normalized, keywords: kws });
     /* alle YouTube-Tabs benachrichtigen */
     const tabs = await api.tabs.query({ url: ['*://*.youtube.com/*', '*://music.youtube.com/*'] });
     await Promise.all(tabs.map(t => api.tabs.sendMessage(t.id, { type: 'config-changed' }).catch(() => {})));
@@ -1181,21 +1132,14 @@ async function persist() {
     dirty = true;
     status(t('save_error', { msg: e.message }), false);
   }
-  return kws;
+  return { lexicon: normalized, keywords: kws };
 }
 
-$('kwAdd').onclick = () => { if (addKeyword($('kwInput').value)) $('kwInput').value = ''; };
+$('kwAdd').onclick = () => { if (addLexiconEntry($('kwInput').value)) $('kwInput').value = ''; };
 $('kwInput').onkeydown = (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); if (addKeyword($('kwInput').value)) $('kwInput').value = ''; }
+  if (e.key === 'Enter') { e.preventDefault(); if (addLexiconEntry($('kwInput').value)) $('kwInput').value = ''; }
 };
-$('kwApplyBulk').onclick = () => {
-  keywords = parseKeywordLines($('keywordsBulk').value);
-  renderKeywords();
-  schedulePersist(0);
-};
-document.querySelector('#kwBulk').addEventListener('toggle', (e) => {
-  if (e.target.open) $('keywordsBulk').value = keywords.map(formatKeywordLine).join('\n');
-});
+$('lexOpen').onclick = () => openLexicon();
 
 /* Automatisches Speichern der Einstellungen: Häkchen/Auswahl wirken sofort, Text/Zahl mit Debounce */
 SETTING_IDS.forEach(id => {
@@ -1328,7 +1272,9 @@ $('ocrPrepare').onclick = () => prepareOcr();
 $('facePrepare').onclick = () => prepareFace();
 
 $('export').onclick = async () => {
-  const data = await api.storage.local.get(['settings', 'keywords']);
+  if (loadReady) await loadReady;
+  if (dirty) await persist();
+  const data = await api.storage.local.get(['settings', 'lexicon', 'keywords']);
   const settings = Object.assign({}, data.settings || {});
   /* Entfernte Felder nicht in neue Exporte weiterschleppen. */
   delete settings.allowAll;
@@ -1336,7 +1282,14 @@ $('export').onclick = async () => {
   if (!AI_CHANNEL_MODES.includes(settings.aiChannelMode)) {
     settings.aiChannelMode = DEFAULT_SETTINGS.aiChannelMode;
   }
-  const out = { settings, keywords: data.keywords || [] };
+  /* Die im Popup bearbeitete Matrix ist maßgeblich; data.lexicon kann bei
+     einem noch laufenden Debounce einen älteren Stand haben. */
+  const lex = YB.lexicon.normalizeLexicon(lexicon);
+  const out = {
+    settings,
+    lexicon: lex,
+    keywords: lex.length ? YB.lexicon.toKeywords(lex) : (data.keywords || [])
+  };
   const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

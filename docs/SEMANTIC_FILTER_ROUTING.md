@@ -1,5 +1,13 @@
 # Semantik-Filter-Routing — Implementierungsaufgabe
 
+> **Umsetzungsstand 1.10.0 (Begriffsmatrix).** Die flache Schlüsselwortliste
+> ist durch `storage.local.lexicon` ersetzt: 25 kuratierte Sinnkonzepte, jedes
+> mit expliziten Varianten (kein Fuzzy), Gruppen-Ausnahmen, optionaler Route
+> und genau einem SigLIP-Prompt. `storage.local.keywords` bleibt als flaches
+> Mirror-Format für alte Versionen und Exporte. Die Abschnitte unten sind die
+> historische Aufgabenstellung; die aktuellen Regeln stehen in
+> „Matrix und Routen (1.10.0)“ am Ende dieses Dokuments.
+
 ## Umfang
 
 Die semantische Filterschicht für den realen Produktumfang von Youtube Blocker implementieren.
@@ -340,3 +348,45 @@ Wortfolge verglichen, das letzte Wort darf ein Stamm sein (`No Tesla` →
 Abwärtskompatibilität: `exceptions` ist optional; alte JSON-Listen ohne dieses
 Feld bleiben gültig. Das frühere Feld `allowAll` wird beim Import verworfen und
 im Content nicht mehr ausgewertet.
+
+## Matrix und Routen (1.10.0)
+
+Die Matrix ersetzt die flache Liste als Quelle der Wahrheit. Ein Konzept ist
+eine Zeile mit `{ id, label, enabled, route, prompt, variants, exceptions }`.
+`lexicon.js` normalisiert die Zeilen, expandiert sie für die Textkanäle und
+erzeugt für den Bildkanal **genau einen Prompt pro Gruppe** — Synonyme
+konkurrieren dadurch nicht in der kontrastiven Margin.
+
+Routen:
+
+| Route | Titel/Kanal | OCR | Transkript | SigLIP |
+|---|---|---|---|---|
+| `auto` | ja | ja (wenn global aktiv) | ja | ja |
+| `text` | ja | ja (wenn global aktiv) | ja | **nein** |
+| `title` | ja | nein | nein | nein |
+| `ocr` | nein | ja | nein | nein |
+| `image` | nein | nein | nein | ja |
+| `hybrid` | ja | ja | ja | ja |
+
+Die acht Textgruppen: `news`, `leaks`, `scandal`, `hackers`, `clickbait`,
+`politics`, `russia`, `china`. Alle anderen Startgruppen laufen als `auto`.
+`speech` ist ein reiner Textkanal: `title`-, `ocr`- und `image`-Routen tauchen
+dort nicht auf; `text`, `hybrid` und Einträge ohne Route schon.
+
+Migration: Das alte flache `keywords`-Array wird über die kuratierten Vorlagen
+in Gruppen überführt. Bekannte Wörter bringen alle Varianten ihrer Vorlage
+mit; unbekannte Wörter werden zur Einzelgruppe. Ausnahmen werden pro Gruppe
+zusammengeführt, `enabled=false` bleibt erhalten. Danach gilt: Ist
+`storage.local.lexicon` ein Array (auch leer), liest der Content nur die
+Matrix; sonst fällt er auf `keywords` zurück. `toKeywords()` schreibt das
+flache Mirror-Format zurück (Auto-Route wird weggelassen, Gruppen-Ausnahmen
+auf jede Variante kopiert).
+
+Diagnose: Ein Treffer meldet nach außen die ASCII-Gruppen-ID als `keyword`
+(DateFormat `/`, z. B. `semantic-image:drones`), dazu `label` und intern
+`variant`. Der SigLIP-Prompt selbst bleibt im Log, nicht im Dateinamen.
+
+UI: Das Popup zeigt Gruppen mit Schalter, Route und Variantenzahl; die breite
+Seite `popup/lexicon.html` bearbeitet Varianten, Ausnahmen, Prompt und Route
+und speichert automatisch in `lexicon` + `keywords`. Import und Export
+unterstützen beide Formate; `{lexicon:[…]}` hat Vorrang.

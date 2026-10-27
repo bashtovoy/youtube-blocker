@@ -128,10 +128,12 @@
     titleKeywords: [],
     imageKeywords: [],
     ocrKeywords: [],
+    lexicon: [],
     allEntries: [],
     titleEntries: [],
     imageEntries: [],
     ocrEntries: [],
+    speechEntries: [],
     semanticKeywordsKey: '',
     semanticReady: false,
     semanticFailed: false,
@@ -148,7 +150,10 @@
   };
 
   function hasDetectionTargets() {
-    return state.keywords.length > 0 || state.settings.hideMembersOnly ||
+    /* imageKeywords enthält die SigLIP-Prompts: eine Gruppe kann auch ohne
+       Textvarianten nur visuell aktiv sein. */
+    return state.keywords.length > 0 || state.imageKeywords.length > 0 ||
+      state.settings.hideMembersOnly ||
       state.settings.hideAiGenerated || state.settings.hidePromoted ||
       state.settings.faceMode !== 'off';
   }
@@ -432,7 +437,7 @@
     const prevFaceMode = state.settings.faceMode;
     const prevFaceThreshold = state.settings.faceThreshold;
     const data = await api.storage.local.get({
-      settings: DEFAULTS, keywords: [], promoSuspects: [], aiBlockedIds: [],
+      settings: DEFAULTS, keywords: [], lexicon: null, promoSuspects: [], aiBlockedIds: [],
       aiChannels: {}, aiFeedback: {}
     });
     const s = Object.assign({}, DEFAULTS, data.settings || {});
@@ -463,7 +468,8 @@
         }
       }
     }
-    const kwObjects = (data.keywords || [])
+    const hasLexicon = Array.isArray(data.lexicon);
+    const kwObjects = hasLexicon ? [] : (data.keywords || [])
       .map(k => typeof k === 'string' ? { text: k, enabled: true } : k)
       .filter(k => k && String(k.text || '').trim() && k.enabled !== false);
     state.suspects = Array.isArray(data.promoSuspects) ? data.promoSuspects : [];
@@ -475,16 +481,37 @@
       allowChannels: feedback.allowChannels && typeof feedback.allowChannels === 'object' ? feedback.allowChannels : {},
       allowVideos: feedback.allowVideos && typeof feedback.allowVideos === 'object' ? feedback.allowVideos : {}
     };
-    /* Kanalspezifische Listen aus den optionalen Routen (matcher.channelEntries):
-       ohne Route gilt ein Schlüsselwort weiterhin für alle Kanäle. Einträge
-       tragen ihre Freigaben mit; state.*Keywords bleibt für Host/Debug. */
-    state.allEntries = kwObjects.map(k => ({
-      text: String(k.text || '').trim(),
-      exceptions: window.YB.matcher.exceptionsOf(k)
-    })).filter(e => e.text);
-    state.titleEntries = window.YB.matcher.channelEntries(kwObjects, 'title');
-    state.imageEntries = window.YB.matcher.channelEntries(kwObjects, 'image');
-    state.ocrEntries = window.YB.matcher.channelEntries(kwObjects, 'ocr');
+    /* Matrix (ab 1.10.0): Gruppen werden für die Textkanäle zu flachen
+       Varianten, für den Bildkanal zu genau einem Prompt je Gruppe. Ohne
+       lexicon (Altbestand oder Downgrade) gilt weiter das flache keywords-Array. */
+    if (hasLexicon) {
+      state.lexicon = window.YB.lexicon.normalizeLexicon(data.lexicon);
+      state.allEntries = [];
+      state.lexicon.forEach(g => {
+        if (g.enabled === false) return;
+        const exceptions = window.YB.matcher.normalizeExceptions(g.exceptions);
+        (g.variants || []).forEach(v => {
+          state.allEntries.push({
+            text: v, exceptions,
+            group: g.id, label: g.label
+          });
+        });
+      });
+      state.titleEntries = window.YB.lexicon.entriesFor(state.lexicon, 'title');
+      state.imageEntries = window.YB.lexicon.entriesFor(state.lexicon, 'image');
+      state.ocrEntries = window.YB.lexicon.entriesFor(state.lexicon, 'ocr');
+      state.speechEntries = window.YB.lexicon.entriesFor(state.lexicon, 'speech');
+    } else {
+      state.lexicon = [];
+      state.allEntries = kwObjects.map(k => ({
+        text: String(k.text || '').trim(),
+        exceptions: window.YB.matcher.exceptionsOf(k)
+      })).filter(e => e.text);
+      state.titleEntries = window.YB.matcher.channelEntries(kwObjects, 'title');
+      state.imageEntries = window.YB.matcher.channelEntries(kwObjects, 'image');
+      state.ocrEntries = window.YB.matcher.channelEntries(kwObjects, 'ocr');
+      state.speechEntries = window.YB.matcher.channelEntries(kwObjects, 'speech');
+    }
     state.keywords = state.allEntries.map(e => e.text);
     state.titleKeywords = state.titleEntries.map(e => e.text);
     state.imageKeywords = state.imageEntries.map(e => e.text);
@@ -496,16 +523,18 @@
     state.ocrFailed = false;
     log('config loaded', {
       keywords: state.keywords.length,
+      groups: state.lexicon.length,
       title: state.titleKeywords.length,
       image: state.imageKeywords.length,
       ocr: state.ocrKeywords.length,
+      speech: state.speechEntries.length,
       exceptions: state.allEntries.filter(e => e.exceptions.length).length,
       aiChannelMode: state.settings.aiChannelMode,
       aiChannels: Object.keys(state.aiChannels).length,
       faceMode: state.settings.faceMode,
       faceThreshold: state.settings.faceThreshold
     });
-    if (state.settings.checkSpeech && state.settings.enabled && state.keywords.length) {
+    if (state.settings.checkSpeech && state.settings.enabled && state.speechEntries.length) {
       safeApi(() => api.runtime.sendMessage({ type: 'ybcfg', cfg: { keywords: state.keywords, settings: state.settings } }));
       initSpeechSoon();
     }
@@ -1043,15 +1072,27 @@
   window.addEventListener('resize', () => schedulePendingCheck(80));
   document.addEventListener('visibilitychange', () => schedulePendingCheck(80));
 
+  /* Ein Treffer trägt nach außen den Gruppennamen als Grund (ASCII-id für
+     Dateinamen/Logs), intern aber die konkrete Variante für die Diagnose. */
+  function matchResult(source, hit, extra) {
+    const group = hit && hit.group;
+    return Object.assign({
+      source,
+      keyword: group || (hit && hit.text) || '',
+      label: (hit && hit.label) || '',
+      variant: group ? (hit && hit.text) || '' : ''
+    }, extra || {});
+  }
+
   function matchTitle(v) {
     if (!state.settings.checkTitle) return null;
     const contextText = [v.title, v.channel].filter(Boolean).join(' ');
     const opt = { contextText };
     const t = window.YB.matcher.matchEntries(v.title, state.titleEntries, opt);
-    if (t) return { source: 'title', keyword: t.text };
+    if (t) return matchResult('title', t);
     if (v.channel) {
       const c = window.YB.matcher.matchEntries(v.channel, state.titleEntries, opt);
-      if (c) return { source: 'channel', keyword: c.text };
+      if (c) return matchResult('channel', c);
     }
     return null;
   }
@@ -1190,9 +1231,11 @@
         }
         const m = window.YB.semantic.marginDecision(active, state.settings.semanticMargin);
         if (m) {
+          const hitEntry = state.imageEntries.find(e => e.text === m.text) || null;
           /* Diagnose (Punkt 10 des Routing-Dokuments): Ziel-Kosinus, beste
-             Konkurrenz, kontrastive Margin, Schwelle und Profilkennung. */
-          log('semantic hit', m.text,
+             Konkurrenz, kontrastive Margin, Schwelle und Profilkennung.
+             Der Prompt bleibt im Log; nach außen zählt die Gruppe. */
+          log('semantic hit', m.text, hitEntry ? '→ ' + hitEntry.group : '',
             'cos=' + m.cos.toFixed(4),
             'ref=' + (m.refText || '-') + ' ' + (Number.isFinite(m.refCos) ? m.refCos.toFixed(4) : '-'),
             'margin=' + m.margin.toFixed(4),
@@ -1200,7 +1243,9 @@
             'profile=margin-v1');
           return {
             source: 'semantic-image',
-            keyword: m.text,
+            keyword: (hitEntry && hitEntry.group) || m.text,
+            label: (hitEntry && hitEntry.label) || '',
+            variant: (hitEntry && hitEntry.group) ? m.text : '',
             score: Number(m.cos.toFixed(4)),
             margin: Number(m.margin.toFixed(4))
           };
@@ -1230,7 +1275,7 @@
           trimmed ? '« ' + trimmed.slice(0, 60) + ' »' : '(kein Text)');
         const contextText = [v.title, v.channel, text].filter(Boolean).join(' ');
         const kw = window.YB.matcher.matchEntries(text, state.ocrEntries, { contextText });
-        if (kw) return { source: 'ocr', keyword: kw.text };
+        if (kw) return matchResult('ocr', kw);
       } catch (e) {
         /* Nur fatale Fehler (Bibliothek/Worker/Sprachdaten defekt) schalten den
            Kanal für diese Seitensession ab; einzelne Bildfehler nicht. */
@@ -1246,12 +1291,12 @@
   }
 
   async function matchSpeech(v) {
-    if (!state.settings.checkSpeech || !window.YB.speech.isAvailable() || !state.allEntries.length) return null;
+    if (!state.settings.checkSpeech || !window.YB.speech.isAvailable() || !state.speechEntries.length) return null;
     try {
       const text = await window.YB.speech.transcribeVideo(v.videoId, state.settings.speechMaxSeconds);
       const contextText = [v.title, v.channel, text].filter(Boolean).join(' ');
-      const kw = window.YB.matcher.matchEntries(text, state.allEntries, { contextText });
-      if (kw) return { source: 'speech', keyword: kw.text };
+      const kw = window.YB.matcher.matchEntries(text, state.speechEntries, { contextText });
+      if (kw) return matchResult('speech', kw);
     } catch (e) { log('speech fail', v.videoId, e.message); }
     return null;
   }
@@ -1701,17 +1746,20 @@
       };
       refreshAiChannelMarks();
     }
-    if (!changes.settings) return;
-    /* Nur bei einem AI-relevanten Wechsel alte Kanal-Markierungen
-       zurücknehmen. Ein Sprach- oder OCR-Wechsel darf keine erneuten
-       Zähler/Screenshots auslösen. */
-    const prevSettings = state.settings || {};
-    const nextSettings = changes.settings.newValue || {};
-    if (prevSettings.hideAiGenerated !== nextSettings.hideAiGenerated ||
-        prevSettings.aiChannelMode !== nextSettings.aiChannelMode) {
-      clearAiChannelMarks();
+    if (changes.settings) {
+      /* Nur bei einem AI-relevanten Wechsel alte Kanal-Markierungen
+         zurücknehmen. Ein Sprach- oder OCR-Wechsel darf keine erneuten
+         Zähler/Screenshots auslösen. */
+      const prevSettings = state.settings || {};
+      const nextSettings = changes.settings.newValue || {};
+      if (prevSettings.hideAiGenerated !== nextSettings.hideAiGenerated ||
+          prevSettings.aiChannelMode !== nextSettings.aiChannelMode) {
+        clearAiChannelMarks();
+      }
     }
-    reloadConfigSoon();
+    /* Matrix/Wortliste können sich auch aus dem Popup oder dem Matrix-Editor
+       ändern; beide Wege müssen die Karten sofort neu bewerten. */
+    if (changes.settings || changes.lexicon || changes.keywords) reloadConfigSoon();
   });
 
   api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -1769,7 +1817,9 @@
       faceResults: state.faceResults.size,
       faceMarks: document.querySelectorAll('[data-yb-face]').length,
       keywords: state.keywords.slice(),
+      groups: state.lexicon.length,
       imageKeywords: state.imageKeywords.slice(),
+      speechKeywords: state.speechEntries.map(e => e.text),
       exceptions: state.allEntries.filter(e => e.exceptions.length).length,
       semanticReady: state.semanticReady,
       semanticFailed: state.semanticFailed,

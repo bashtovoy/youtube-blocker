@@ -96,6 +96,19 @@
     #promoDiagOut { max-height: 160px; overflow: auto; background: #fff; border: 1px solid #eadfe9;
       border-radius: 10px; padding: 8px; font-size: 11px; white-space: pre-wrap; }
     .kwcount { color: #7a7391; font-size: 11px; margin-top: 5px; }
+    .lexhead { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-bottom: 6px; }
+    .lexhead .kwcount { margin: 0; text-align: right; }
+    .lexrow { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-bottom: 1px solid #f2ecf6; }
+    .lexrow:last-child { border-bottom: 0; }
+    .lexrow:hover { background: #faf6ff; }
+    .lexrow.off { opacity: .5; }
+    .lexrow input[type=checkbox] { accent-color: #2dd4bf; margin: 0; width: 15px; height: 15px; }
+    .lexlabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .lexrow.off .lexlabel { text-decoration: line-through; color: #a49bb5; }
+    .lexmeta { color: #8b84a6; font-size: 10px; white-space: nowrap; }
+    .lexroute { background: #f3edff; color: #6b3fd6; border-radius: 999px; padding: 1px 6px; font-size: 9px; font-weight: 700; }
+    .lexedit { background: transparent; color: #6b3fd6; border: 0; font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1; }
+    .lexedit:hover { color: #ff5c8a; }
     /* Hinweis: In offenen Tabs läuft nach einem Update noch die alte Skript-Instanz */
     #staleTabs { display: flex; gap: 8px; align-items: center; justify-content: space-between;
       margin: 0 0 10px; padding: 8px 10px; border: 1px solid #f0cf6b; border-radius: 12px;
@@ -125,21 +138,17 @@
     </label>
 
     <fieldset>
-      <legend data-i18n="kw_legend">Wortliste zum Blockieren</legend>
-      <div id="kwList" class="kwlist" data-empty="Liste ist leer — Wörter unten hinzufügen 🌱"></div>
+      <legend data-i18n="lex_legend">Begriffsmatrix</legend>
+      <div class="lexhead">
+        <button id="lexOpen" class="secondary" data-i18n="lex_open">Matrix öffnen</button>
+        <span class="kwcount" id="kwCount"></span>
+      </div>
+      <div id="kwList" class="kwlist lexlist" data-empty="Matrix ist leer — Konzept unten hinzufügen 🌱"></div>
       <div class="kwadd">
-        <input type="text" id="kwInput" data-i18n-placeholder="kw_input_ph" placeholder="neues Wort oder Satz, Enter — hinzufügen">
+        <input type="text" id="kwInput" data-i18n-placeholder="lex_add_ph" placeholder="neues Konzept, Enter — hinzufügen">
         <button id="kwAdd" class="secondary" data-i18n="kw_add">Hinzufügen</button>
       </div>
-      <div class="kwcount" id="kwCount"></div>
-      <details class="bulk" id="kwBulk">
-        <summary data-i18n="kw_bulk_summary">Massenbearbeitung</summary>
-        <textarea id="keywordsBulk" data-i18n-placeholder="kw_bulk_ph" placeholder="ein Wort/Satz pro Zeile"></textarea>
-        <div class="hint" data-i18n="kw_bulk_exc_hint">Format: Wort => Ausnahmen, durch Kommas getrennt. Beispiel: Roboter => Tennis, Tischtennis</div>
-        <div class="rowbtns"><button id="kwApplyBulk" class="secondary" data-i18n="kw_bulk_apply">Aus Text übernehmen</button></div>
-      </details>
-      <div class="hint" data-i18n="kw_hint">Jeder Eintrag ist ein Begriff, den die Erweiterung im Titel und semantisch im Vorschaubild sucht. Zum Beispiel: „Fußball“, „Elektroautos“, „Trump“. OCR kann zusätzlich für Text im Vorschaubild aktiviert werden.</div>
-      <div class="hint" data-i18n="kw_exc_hint">Ausnahmen gelten nur für ihr Wort. Kurze Begriffe (unter 4 Zeichen) treffen nur ein ganzes Wort; längere auch Wortstämme (Tennis → Tennisspieler).</div>
+      <div class="hint" data-i18n="lex_hint">Eine Zeile = ein Konzept. Varianten, Ausnahmen und Prompt bearbeitest du auf der breiten Matrix-Seite.</div>
     </fieldset>
 
     <fieldset>
@@ -282,11 +291,13 @@
     <div id="status"></div>
   </main>
   <script src="../matcher.js"></script>
+  <script src="../lexicon.js"></script>
   <script src="../quality-rules.js"></script>
   <script src="../image.js"></script>
   <script src="../semantic.js"></script>
   <script src="../folder-store.js"></script>
   <script src="i18n.js"></script>
+  <script src="lexicon-data.js"></script>
   <script src="stale-tabs.js"></script>
   <script src="popup.js"></script>
 </body>

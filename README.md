@@ -9,7 +9,7 @@ die im Popup gewählte **Videoqualität** fest.
 
 | Erkennungskanal | Methode | Benötigte Bibliothek |
 |---|---|---|
-| Videotitel | Exakter Token-Abgleich mit der Schlüsselwortliste (Fälle, ё/е, Bindestriche und Satzzeichen normalisiert; Wortvarianten explizit eintragen) | nein |
+| Videotitel | Exakter Token-Abgleich mit den Varianten der Begriffsmatrix (Fälle, ё/е, Bindestriche und Satzzeichen normalisiert; Wortvarianten explizit eintragen) | nein |
 | Foto — OCR | Text im Vorschaubild wird mit PaddleOCR.js (PP-OCRv5 mobile) erkannt und in der Wortliste gesucht. Ein Detektor und zwei Erkenner liegen lokal im Paket: `en` für Latein, `eslav` für Kyrillisch. Bei `eng+rus` entscheidet die Schrift von Titel/Kanal, welche Pipeline zuerst läuft; beide können vom Popup vorgewärmt werden. ONNX-Runtime und OpenCV kommen ebenfalls aus `lib/` — kein CDN, kein Modell-Download zur Laufzeit | `ocr-host.js` + `lib/paddle.bundle.js` + `lib/opencv_js.wasm` + `lib/*_ppocrv5_*.tar` |
 | Foto — Vorlage | Schneller perzeptueller Vergleich dHash+pHash | nein (eingebautes canvas) |
 | Vorschaubild — Semantik | Lokales SigLIP: **Text aus deiner Liste → visueller Inhalt des Vorschaubilds**; Entscheidung über die kontrastive Margin (Ziel-Kosinus − bester Konkurrent), kein Sigmoid-Schwellwert, kein Hochladen von Referenzfotos. Modelle lokal (`setup.sh`) **oder** automatischer Erstbezug + Browser-Cache (siehe unten) | `transformers.min.js` + SigLIP-Modelle |
@@ -68,12 +68,16 @@ Bestätigung nach. Mindestversion: Chrome 116.
 ## Verwendung
 
 1. Öffne das Erweiterungs-Popup (Symbol in der Toolbar).
-2. Trage die Liste ein — ein Begriff pro Zeile (Themen, Namen, Kanalnamen).
-   Jeder Begriff wird im Titel und zusätzlich **semantisch im Vorschaubild**
-   gesucht (lokales SigLIP). Über die Route je Begriff (Auto/Titel/OCR/Bild/
-   Hybrid, siehe unten) lässt sich der Kanal einschränken. **OCR** lässt sich
-   für Text im Vorschaubild zusätzlich einschalten. Unter jedem Begriff können
-   **Ausnahmen** eingetragen werden (siehe „Ausnahmen je Schlüsselwort“).
+2. Trage die **Begriffsmatrix** ein: ein Konzept pro Zeile, darunter die
+   exakten Varianten (Schreibweisen, Formen, Transliterationen). Im Popup
+   schaltest du Gruppen direkt ein oder aus; **„Matrix öffnen“** führt zur
+   breiten Bearbeitungsseite mit Varianten, Ausnahmen und SigLIP-Prompt.
+   Jede Gruppe wird im Titel/Kanal und zusätzlich **semantisch im
+   Vorschaubild** gesucht (lokales SigLIP). Über die Route je Gruppe
+   (Auto/Text/Titel/OCR/Bild/Hybrid, siehe unten) lässt sich der Kanal
+   einschränken. **OCR** lässt sich für Text im Vorschaubild zusätzlich
+   einschalten. Ausnahmen gelten für die ganze Gruppe (siehe „Ausnahmen je
+   Schlüsselwort“).
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
 4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv und nutzt ausschließlich
@@ -213,17 +217,17 @@ und die mobile Web-App bleiben unverändert.
   reicht Chrome die MAIN-Steuerung in offene Tabs nach; in Firefox kann dafür
   einmalig ein Neuladen des YouTube-Tabs nötig sein.
 
-## Ausnahmen je Schlüsselwort (ab 1.5.13)
+## Ausnahmen je Gruppe (ab 1.5.13, Matrix ab 1.10.0)
 
-Jedes Wort kann eigene Ausnahmen tragen. Im Popup steht unter dem Wort das Feld
-**„Ausnahmen“**; in der Massenbearbeitung lautet das Format:
+Jede Gruppe kann eigene Ausnahmen tragen. Im Matrix-Editor steht unter der
+Gruppe das Feld **„Ausnahmen“** (kommagetrennt):
 
 ```
-Roboter => Tennis, Tischtennis, Ping-Pong, tennis, теніс
+Tennis, Tischtennis, Ping-Pong, tennis, теніс
 ```
 
-Eine Ausnahme hebt nur dieses eine Wort auf. Andere Wörter der Liste treffen
-weiterhin. Beispiel: „Робот-теннисист“ wird nicht wegen `Roboter` ausgeblendet;
+Eine Ausnahme hebt nur diese eine Gruppe auf. Andere Gruppen treffen
+weiterhin. Beispiel: „Робот-теннисист“ wird nicht wegen `Роботы` ausgeblendet;
 ein Video, das zusätzlich `news` trifft, bleibt blockiert.
 
 Eine globale Freigabeliste („Global freigeben“ / „Разрешать всё“) gibt es seit
@@ -232,7 +236,7 @@ harmlos und werden ignoriert.
 
 Matching: Groß-/Kleinschreibung, ё/е, Bindestriche und Satzzeichen werden
 normalisiert. Der Treffer ist danach **exakt**: keine Tippfehler-, Stamm- oder
-Mehrzahl-Toleranz. Varianten müssen ausdrücklich in der Liste stehen, z. B.
+Mehrzahl-Toleranz. Varianten müssen ausdrücklich in der Matrix stehen, z. B.
 `Drohne` und `drone`, `Tesla` und `Teslas`, `машина` und `машины`.
 Ausnahmen vergleichen kurze Begriffe (unter 4 Zeichen) nur als ganzes Wort;
 längere auch Wortstämme (`теннис` → `теннисист`, `tennis` → `tennisplayer`).
@@ -241,13 +245,47 @@ Phrasen werden als Wortfolge verglichen, das letzte Wort darf ein Stamm sein
 
 Grenzen:
 
-- Ausnahmen gelten nur für ihr eigenes Schlüsselwort.
+- Ausnahmen gelten nur für ihre eigene Gruppe.
 - KI-, Mitglieder- und Werbebadges werden durch Ausnahmen nicht aufgehoben.
-- Bei einem semantischen Bildtreffer werden freigegebene Konzepte aus der
-  Margin-Berechnung entfernt; ein anderes aktives Konzept kann weiterhin
+- Bei einem semantischen Bildtreffer werden freigegebene Gruppen aus der
+  Margin-Berechnung entfernt; eine andere aktive Gruppe kann weiterhin
   treffen. OCR und Sprache prüfen die Ausnahmen im jeweiligen Text mit.
 - Alte JSON-Listen ohne `exceptions` funktionieren unverändert; das frühere
   Feld `allowAll` wird beim Import verworfen.
+
+## Begriffsmatrix (ab 1.10.0)
+
+Die flache Wortliste ist zu einer **Matrix aus Sinnkonzepten** geworden: eine
+Zeile pro Konzept, darunter alle Varianten. Beispiel:
+
+```
+Дроны:  Дрон, Drone, Dron, dhrone, БПЛА, дроны, дронов, UAV, FPV, Shahed …
+Роботы: Робот, Robot, robotics, humanoid, робот, роботов, Roboter …
+```
+
+- **Ein Konzept = eine Zeile.** Varianten sind ausdrücklich aufgezählt —
+  Schreibweisen, Fälle, Transliterationen und typische Tippfehler. Es gibt
+  weiterhin **kein Fuzzy-Matching**: Was nicht in der Zeile steht, trifft nicht.
+- **Ein SigLIP-Prompt pro Gruppe.** Der Bildkanal bewertet nicht jede
+  Schreibweise einzeln, sondern genau einen visuellen Satz pro Konzept. So
+  konkurrieren `Дрон`/`Drone`/`Dron` nicht in der kontrastiven Margin.
+- **Quelle der Wahrheit** ist `storage.local.lexicon`. Das flache
+  `storage.local.keywords` wird als Spiegel für alte Versionen und Exporte
+  mitgeschrieben.
+- **Bearbeitung:** Das Popup zeigt die 25 Gruppen kompakt mit Schaltern,
+  Route und Anzahl der Varianten. **„Matrix öffnen“** öffnet die breite Seite
+  `popup/lexicon.html`: Varianten (eine pro Zeile), Ausnahmen (kommagetrennt),
+  Prompt, Route, Gruppe anlegen/löschen, Suche. Änderungen werden automatisch
+  gespeichert und sofort an offene YouTube-Tabs geschickt.
+- **Migration:** Beim ersten Öffnen nach dem Update werden die 54 Wörter des
+  alten Exports automatisch den kuratierten Gruppen zugeordnet; Ausnahmen und
+  der Aktiv-Zustand bleiben erhalten. Unbekannte Wörter werden nicht
+  verworfen, sondern zu einer Einzelgruppe. Neue Exporte enthalten `lexicon`
+  und weiterhin `keywords`; der Import akzeptiert beide Formate.
+
+Die 25 Startgruppen sind in `extension/popup/lexicon-data.js` hinterlegt und
+dienen nur der Migration und dem ersten Anlegen. Der Content-Script liest die
+gespeicherte Matrix und braucht diese Datei nicht.
 
 ## Kontrollbilder vor dem Ausblenden (ab 1.5.12)
 
@@ -373,21 +411,27 @@ Die Auswahl steht oben im Popup; ohne gespeicherte Wahl wird beim ersten
 Einstellungen gespeichert (`settings.uiLang`) und reist im JSON-Export mit —
 alte Exporte ohne `uiLang` behalten beim Import die aktuelle Sprache.
 
-## Routen je Begriff und Kalibrierung (ab 1.3.0)
+## Routen je Begriff und Kalibrierung (ab 1.3.0, Matrix ab 1.10.0)
 
-Jeder Begriff im Popup trägt optional eine **Route** — den Erkennungskanal:
+Jede Gruppe in der Matrix trägt optional eine **Route** — den Erkennungskanal:
 
 | Route | Bedeutung |
 |---|---|
 | Auto | bisheriges Verhalten: Titel/Kanal + semantisches Bild (+ OCR, wenn aktiviert) |
+| Text | nur Textkanäle: Titel/Kanal, OCR und Transkript — **kein SigLIP** |
 | Titel | nur Titel-/Kanalabgleich |
 | OCR | nur Texterkennung im Vorschaubild |
 | Bild | nur semantisches Bild-Scoring |
 | Hybrid | kontrollierte Kombination: Titel + OCR + Bild |
 
-Die Route wird im Popup je Zeile gewählt, im JSON-Export/Import (`"route"`)
-mitgeführt und ist ohne Codeänderungen konfigurierbar. Fehlt die Route
-(z. B. in alten Exporten), gilt weiterhin „Auto“ — bestehende Listen
+Acht kuratierte Gruppen laufen als `text`, weil ihr Bildbezug zu mehrdeutig
+ist: **Новости, Утечки, Скандал, Хакеры, Кликбейт, Политика, Россия, Китай**.
+Alle übrigen Gruppen stehen auf `auto`; visuell klare Konzepte (Дроны, Роботы,
+Tesla, Militär, Katastrophen) profitieren vom Bildkanal.
+
+Die Route wird in der Matrix je Gruppe gewählt, im JSON-Export/Import
+(`"route"`) mitgeführt und ist ohne Codeänderungen konfigurierbar. Fehlt die
+Route (z. B. in alten Exporten), gilt weiterhin „Auto“ — bestehende Listen
 funktionieren unverändert.
 
 Erfahrung aus den Kontrollbildern 10/2026: Namen und Nachrichtenbegriffe
@@ -404,6 +448,8 @@ Migration aus älteren Versionen:
   kontrastiven Margin (`semanticMargin`). Alte Speicherwerte sind harmlos
   und können ignoriert werden.
 - Schlüsselwörter ohne `route` verhalten sich wie bisher (alle Kanäle).
+- Alte flache Wortlisten werden beim ersten Öffnen in die Matrix überführt
+  (siehe „Begriffsmatrix“); `lexicon` hat danach Vorrang vor `keywords`.
 
 Kalibrierung: `gui-test-assets/padexp/` (siehe dortiges README) wertet ein
 CSV-Manifest mit Vorschaubildern aus und liefert Precision/Recall/F1/FPR,
@@ -499,6 +545,7 @@ extension/
   manifest.json   — MV2, content_scripts auf *.youtube.com
   content.js      — Orchestrator: DOM-Scan → Erkennung → Aktion
   matcher.js      — exakter Abgleich von Schlüsselwörtern und Ausnahmen
+  lexicon.js      — Begriffsmatrix: Normalisierung, Migration, Kanal-Expansion, Prompt pro Gruppe
   promo-rules.js  — Datenregeln für Werbekarten (Muster, Gewichte, Schwelle)
   promo.js        — mehrstufige Werbekarten-Erkennung + Diagnose-Fingerabdruck
   image.js        — visuelle Deskriptoren (legacy; Referenzfotos nicht mehr nötig)
@@ -521,7 +568,10 @@ extension/
   quality-rules.js — reine Qualitätsregeln: IDs, Normalisierung, Fallback, Geltungsbereich
   quality.js      — MAIN-World-Controller: Player-API, Watchdog, Werbung, manuelle Wahl
   background.js   — Badge-Zähler, Konfigurations-Cache, Semantik-/OCR-/Face-Routing, Kontrollbilder
-  popup/          — Verwaltung von Liste und Einstellungen
+  popup/          — Verwaltung von Matrix und Einstellungen
+  popup/lexicon-data.js — kuratierte Startmatrix (25 Gruppen, 451 Varianten)
+  popup/lexicon.html    — breite Bearbeitungsseite der Matrix
+  popup/lex-table.js    — Matrix-Editor: Suche, Varianten, Prompt, Autosave
   lib/ models/    — externe Bibliotheken; Face-/OCR-Modelle im Paket, SigLIP lokal (setup.sh) oder automatischer Erstbezug von HuggingFace in den Browser-Cache
 ```
 
@@ -549,7 +599,8 @@ node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erk
 node tests/test-exceptions.js    # Ausnahmen pro Wort, Semantik-Filter
 node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele, Diagnose
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
-node tests/test-routes.js        # Routen je Schlüsselwort (title/ocr/image/hybrid)
+node tests/test-routes.js        # Routen je Schlüsselwort (text/title/ocr/image/hybrid)
+node tests/test-lexicon.js       # Begriffsmatrix: 54-Wörter-Migration, Kanäle, ein Prompt pro Gruppe
 node tests/test-ocr-client.js    # OCR-Client: Nachrichtenformat, Kette, Fehler, Timeout
 node tests/test-ocr-host-image.js # OCR-Host: AVIF/JPEG/WebP, lokale Modell-URLs, Sprachwahl, Queue/Cache
 node tests/test-background-route.js # Nachrichtenrouting (Firefox-Route / Chrome-Offscreen / FSA ohne Download)

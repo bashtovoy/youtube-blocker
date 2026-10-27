@@ -117,15 +117,34 @@
   }
 
   /* ---- Routen je Schlüsselwort (docs/SEMANTIC_FILTER_ROUTING.md, Punkt 1) ----
-     route ∈ 'title' | 'ocr' | 'image' | 'hybrid'. Eine fehlende Route bedeutet
-     das bisherige Verhalten (alle Kanäle); 'hybrid' ist die kontrollierte
+     route ∈ 'text' | 'title' | 'ocr' | 'image' | 'hybrid'. Eine fehlende Route
+     bedeutet das bisherige Verhalten (alle Kanäle); 'text' ist die reine
+     Textspur (Titel, Kanal, OCR, Transkript) ohne SigLIP, 'hybrid' die alte
      Kombination (Titel + OCR + Bild). Eingabe: {text, enabled, route?}[] oder
      reine Strings (dann gelten sie für alle Kanäle). */
-  const ROUTES = ['title', 'ocr', 'image', 'hybrid'];
+  const ROUTES = ['text', 'title', 'ocr', 'image', 'hybrid'];
 
   function routeOf(keyword) {
     const r = keyword && typeof keyword === 'object' ? keyword.route : null;
     return ROUTES.indexOf(r) >= 0 ? r : null;
+  }
+
+  /* Gilt eine Route in diesem Kanal? 'speech' ist ein reiner Textkanal:
+     title/ocr/image-Einträge gehören dort nicht hinein. */
+  function routeApplies(route, channel) {
+    if (route === null || route === 'hybrid') return true;
+    if (route === 'text') return channel === 'title' || channel === 'ocr' || channel === 'speech';
+    if (channel === 'speech') return false;
+    return route === channel;
+  }
+
+  function entryMeta(kw, entry) {
+    if (kw && typeof kw === 'object') {
+      if (kw.group) entry.group = String(kw.group);
+      if (kw.label) entry.label = String(kw.label);
+      if (kw.prompt) entry.prompt = true;
+    }
+    return entry;
   }
 
   function channelEntries(keywords, channel) {
@@ -136,8 +155,8 @@
       if (!text) continue;
       if (isObj && kw.enabled === false) continue;
       const route = isObj ? routeOf(kw) : null;
-      if (route === null || route === 'hybrid' || route === channel) {
-        out.push({ text, exceptions: exceptionsOf(kw) });
+      if (routeApplies(route, channel)) {
+        out.push(entryMeta(kw, { text, exceptions: exceptionsOf(kw) }));
       }
     }
     return out;
@@ -163,7 +182,7 @@
       if (!tokensMatch(textTokens, kwTokens)) continue;
       const ex = isObj ? normalizeExceptions(entry.exceptions) : [];
       if (firstException(ctx, ex)) continue;
-      return { text: raw, exceptions: ex };
+      return entryMeta(entry, { text: raw, exceptions: ex });
     }
     return null;
   }
@@ -217,7 +236,7 @@
   window.YB = window.YB || {};
   window.YB.matcher = {
     normalize, tokenize, matchKeywords,
-    channelKeywords, channelEntries, matchEntries, routeOf,
+    channelKeywords, channelEntries, matchEntries, routeOf, routeApplies,
     normalizeExceptions, exceptionsOf,
     firstException, exceptionMatches, termMatches, activeScores,
     isMembersOnlyText, isAiBadgeText

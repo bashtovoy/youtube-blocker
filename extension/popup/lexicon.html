@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title data-i18n="lex_editor_title">Begriffsmatrix — Youtube Blocker</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: #33354f;
+      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg,#fff7ee 0%,#fdeef4 50%,#eaf4ff 100%); }
+    header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+      padding: 12px 22px; color: #fff; background: linear-gradient(135deg,#ff8a65 0%,#ff5c8a 55%,#b06bf5 100%);
+      box-shadow: 0 2px 10px rgba(176,107,245,.25); }
+    header h1 { flex: 1 1 auto; margin: 0; font-size: 17px; letter-spacing: .2px; }
+    header h1::before { content: "\1F9E9  "; }
+    header button { font: inherit; font-size: 12px; font-weight: 600; color: #fff; cursor: pointer;
+      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45);
+      border-radius: 999px; padding: 5px 12px; }
+    header button:hover { background: rgba(255,255,255,.3); }
+    main { max-width: 1120px; margin: 0 auto; padding: 18px 22px 60px; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .toolbar input[type=search] { flex: 1 1 260px; min-width: 180px; font: inherit; padding: 8px 12px;
+      border: 1px solid #d9ccf7; border-radius: 10px; background: rgba(255,255,255,.85); }
+    .toolbar input[type=search]:focus, .group input:focus, .group textarea:focus, .group select:focus {
+      outline: 2px solid #c9b4f7; outline-offset: 1px; border-color: #b48af5; }
+    .btn { font: inherit; font-weight: 600; cursor: pointer; border-radius: 10px; padding: 8px 14px;
+      border: 1px solid #d9ccf7; background: #fff; color: #6b3fd6; }
+    .btn:hover { background: #f3edff; }
+    .btn.primary { border-color: #ff5c8a; background: #ff5c8a; color: #fff; }
+    .btn.primary:hover { background: #f04b7c; }
+    .total { color: #7a7391; font-size: 12px; white-space: nowrap; }
+    .hint { color: #7a7391; font-size: 12.5px; margin: 0 0 16px; }
+    #save { min-height: 20px; font-size: 12.5px; font-weight: 600; color: #12a150; margin-bottom: 10px; }
+    #save.err { color: #e0356a; }
+    .group { background: rgba(255,255,255,.82); border: 1px solid #eadfe9; border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(120,90,160,.06);
+      transition: border-color .2s, box-shadow .2s; }
+    .group.hit { border-color: #ff5c8a; box-shadow: 0 0 0 3px rgba(255,92,138,.16); }
+    .group.off { opacity: .6; }
+    .group.dup { border-color: #e0356a; }
+    .ghead { display: grid; grid-template-columns: auto minmax(140px, 1fr) auto auto auto; gap: 9px; align-items: center; }
+    .ghead input[type=checkbox] { width: 17px; height: 17px; accent-color: #2dd4bf; margin: 0; }
+    .ghead .label { font: inherit; font-weight: 700; font-size: 15px; color: #33354f;
+      background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; min-width: 0; }
+    .ghead .label:hover { border-color: #e5d9f5; }
+    .ghead select { font: inherit; font-size: 12px; font-weight: 600; color: #6b3fd6; background: #f3edff;
+      border: 1px solid #ddd0f5; border-radius: 999px; padding: 4px 8px; cursor: pointer; }
+    .gcount { color: #8b84a6; font-size: 11px; white-space: nowrap; }
+    .del { font: inherit; font-size: 18px; line-height: 1; cursor: pointer; color: #b3a9c4;
+      background: transparent; border: 0; padding: 2px 4px; border-radius: 6px; }
+    .del:hover { color: #e0356a; background: #fdeaf1; }
+    .gbody { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.35fr); gap: 10px; margin-top: 10px; }
+    .field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .field label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8b84a6; }
+    .field input, .field textarea { width: 100%; font: inherit; font-size: 13px; color: #33354f;
+      background: #fff; border: 1px solid #e5ddef; border-radius: 8px; padding: 6px 8px; }
+    .field textarea { resize: vertical; min-height: 74px; }
+    .field .sub { font-size: 10.5px; color: #a49bb5; }
+    .field.full { grid-column: 1 / -1; }
+    .empty { text-align: center; color: #8b84a6; padding: 48px 10px; font-size: 15px; }
+    @media (max-width: 760px) {
+      .gbody { grid-template-columns: 1fr; }
+      .ghead { grid-template-columns: auto minmax(100px, 1fr) auto auto; }
+      .gcount { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 data-i18n="lex_editor_h1">Begriffsmatrix</h1>
+    <button id="back" data-i18n="lex_back">Zurück zum Popup</button>
+  </header>
+  <main>
+    <div class="toolbar">
+      <input type="search" id="search" data-i18n-placeholder="lex_search_ph" placeholder="Gruppe oder Variante suchen…">
+      <button id="add" class="btn primary" data-i18n="lex_add_group">Gruppe hinzufügen</button>
+      <span class="total" id="total"></span>
+    </div>
+    <p class="hint" data-i18n="lex_editor_hint">Ein Konzept = eine Zeile. Varianten sind exakte Schreibweisen (kein Fuzzy). Ein Prompt pro Gruppe für SigLIP.</p>
+    <div id="save" role="status"></div>
+    <div id="groups"></div>
+    <div id="noResults" class="empty" hidden data-i18n="lex_no_results">Keine Gruppe passt zur Suche</div>
+  </main>
+
+  <script src="../matcher.js"></script>
+  <script src="../lexicon.js"></script>
+  <script src="i18n.js"></script>
+  <script src="lexicon-data.js"></script>
+  <script src="lex-table.js"></script>
+</body>
+</html>
