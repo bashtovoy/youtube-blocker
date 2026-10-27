@@ -16,6 +16,19 @@
 
   const api = (typeof browser !== 'undefined') ? browser : chrome;
   const root = self;
+  /* Das MediaPipe-Bundle meldet Nutzungsdaten an odml.pa.googleapis.com. Die
+     CSP blockiert das bereits; der Guard beendet den Aufruf vorher, damit die
+     Blockade nicht als Konsolenfehler in der AMO-Validierung auftaucht. */
+  const nativeFetch = root.fetch;
+  if (typeof nativeFetch === 'function') {
+    root.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (/^https?:\/\/odml\.pa\.googleapis\.com\//.test(url)) {
+        return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') });
+      }
+      return nativeFetch.call(root, input, init);
+    };
+  }
   const SCORE = root.YB_FACE_SCORE;
   const LIB_DIR = api.runtime.getURL('lib/mediapipe/');
   const VISION_SCRIPT = LIB_DIR + 'vision_bundle.js';

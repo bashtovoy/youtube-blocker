@@ -258,7 +258,9 @@ async function main() {
       /Refused to (load|execute)/i,
       /wasm-unsafe-eval/i,
       /Failed to fetch dynamically imported module/i,
-      /Face-Host nicht geladen/i
+      /Face-Host nicht geladen/i,
+      /odml\.pa\.googleapis\.com/i,
+      /violates the following Content Security Policy/i
     ];
     const joined = cdp.consoleLines.join('\n');
     const hits = forbidden.filter(re => re.test(joined));

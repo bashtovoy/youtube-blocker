@@ -244,5 +244,19 @@ function makeHost(opts = {}) {
     host.reset();
   }
 
+  /* ---- 8) MediaPipe-Telemetrie wird lokal beendet, bevor die CSP greift ---- */
+  {
+    const { stats, sandbox } = makeHost();
+    const blocked = await sandbox.fetch('https://odml.pa.googleapis.com/v1/log', {
+      method: 'POST',
+      body: new Uint8Array([1, 2, 3])
+    });
+    assert.strictEqual(blocked.status, 204);
+    assert.strictEqual(stats.fetch.length, 0, 'kein Netzversuch an odml');
+    const thumb = await sandbox.fetch('https://i.ytimg.com/vi/' + ID + '/mqdefault.jpg');
+    assert.strictEqual(thumb.status, 200);
+    assert.strictEqual(stats.fetch.length, 1, 'andere URLs laufen weiter über fetch');
+  }
+
   console.log('face-host tests: OK');
 })().catch(e => { console.error(e); process.exit(1); });

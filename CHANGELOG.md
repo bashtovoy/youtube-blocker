@@ -3,6 +3,24 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] — 2026-10-27
+
+### Geändert
+- **MediaPipe-Telemetrie wird lokal beendet.** Das gebündelte MediaPipe-Bundle
+  meldet Nutzungsdaten an `odml.pa.googleapis.com`; die CSP blockierte den
+  Aufruf bisher nur und erzeugte dadurch zwei Konsolenfehler in der
+  AMO-Validierung. Der Face-Host fängt genau diesen Host jetzt vor dem
+  Netzaufruf ab. Es werden weiterhin keine Daten gesendet und keine neuen
+  Berechtigungen benötigt.
+- Die übrigen MediaPipe-Meldungen (xnnpack-Hinweis, WebGL-2-auf-WebGL-1-
+  Rückfall) stammen aus dem lokalen Bundle und sind unkritisch; der Rückfall
+  betrifft vor allem Umgebungen ohne WebGL-2-Kontext.
+
+### Tests
+- Unit-Test belegt, dass der Telemetrieaufruf ohne Netzversuch endet und
+  normale Bildabrufe unverändert durchlaufen. Der Chrome-E2E-Test schlägt jetzt
+  zusätzlich bei CSP-Verstößen und odml-Anfragen fehl.
+
 ## [1.9.1] — 2026-10-27
 
 ### Geändert
