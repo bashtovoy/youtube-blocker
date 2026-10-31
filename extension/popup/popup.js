@@ -8,7 +8,7 @@ const t = (key, vars) => i18n.t(key, vars);
 console.log('[popup] import via tab v3 loaded');  /* Markierung: fehlt sie in der Konsole, läuft im Browser noch ein alter Build */
 $('ver').textContent = 'v' + api.runtime.getManifest().version;  /* sichtbare Build-Nummer im Kopfbereich */
 
-const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide'];
+const SETTING_IDS = ['enabled', 'checkTitle', 'checkSemanticImage', 'checkThumbOcr', 'checkSpeech', 'hideMembersOnly', 'hideLiveStreams', 'hideAiGenerated', 'hidePromoted', 'shotBeforeHide'];
 /* uiLang gehört zu den Werten, wird beim Laden aber gesondert behandelt
    (ohne gespeicherte Wahl gilt beim ersten Öffnen die Browsersprache). */
 const VALUE_IDS = ['uiLang', 'mode', 'ocrLangs', 'semanticMargin', 'actionDelayMs', 'speechLang', 'speechModel', 'speechMaxSeconds', 'hashThreshold', 'aiChannelMode', 'faceMode', 'faceThreshold', 'videoQuality'];
@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   faceThreshold: 0.65,
   videoQuality: 'hd1080',
   hideMembersOnly: false,
+  hideLiveStreams: false,
   hideAiGenerated: true,
   aiChannelMode: 'off',
   hidePromoted: true,
@@ -148,6 +149,7 @@ function renderStats() {
   /* Kanäle ohne Modell/Netzabhängigkeit: laufen, sobald aktiviert */
   setStat('statTitle', on('checkTitle') ? 'ok' : 'off', on('checkTitle') ? 'stat_ok' : 'stat_off');
   setStat('statMembersOnly', on('hideMembersOnly') ? 'ok' : 'off', on('hideMembersOnly') ? 'stat_ok' : 'stat_off');
+  setStat('statLive', on('hideLiveStreams') ? 'ok' : 'off', on('hideLiveStreams') ? 'stat_ok' : 'stat_off');
   setStat('statAi', on('hideAiGenerated') ? 'ok' : 'off', on('hideAiGenerated') ? 'stat_ok' : 'stat_off');
   setStat('statPromoted', on('hidePromoted') ? 'ok' : 'off', on('hidePromoted') ? 'stat_ok' : 'stat_off');
 

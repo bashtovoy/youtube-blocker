@@ -23,6 +23,7 @@
   const REASON_CODES = {
     'ai-generated': 'ai',
     'members-only': 'members',
+    live: 'live',
     promo: 'promo',
     title: 'title',
     channel: 'channel',

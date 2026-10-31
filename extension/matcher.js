@@ -233,12 +233,24 @@
     return AI_BADGE_TOKEN_RE.test(s) || AI_BADGE_PHRASE_RE.test(s);
   }
 
+  /* ---- LIVE-Badge: YouTube lokalisiert den Text, der CSS-Klassenname bleibt
+     gleich. Verifiziert am 31.10.2026 in vier Oberflächensprachen:
+     en/de „LIVE“, ru „В ЭФИРЕ“, uk „НАЖИВО“. Geprüft werden nur Badge-Knoten,
+     nie Titel oder Fließtext; der Textabgleich ist nur der Fallback, wenn eine
+     ältere YouTube-Variante keinen bekannten Klassenamen rendert. */
+  const LIVE_BADGE_RE = /^(live|live now|now live|jetzt live|en direct|en vivo|ao vivo|in diretta|na\s+[żz]ywo|canl[ıi]|в\s+эфире|прямой\s+эфир|прямая\s+трансляция|трансляция|наживо|прямий\s+ефір|пряма\s+трансляція|трансляція|ライブ|ライブ配信|直播|正在直播)$/i;
+
+  function isLiveBadgeText(text) {
+    const s = String(text || '').replace(/\s+/g, ' ').trim();
+    return !!s && LIVE_BADGE_RE.test(s);
+  }
+
   window.YB = window.YB || {};
   window.YB.matcher = {
     normalize, tokenize, matchKeywords,
     channelKeywords, channelEntries, matchEntries, routeOf, routeApplies,
     normalizeExceptions, exceptionsOf,
     firstException, exceptionMatches, termMatches, activeScores,
-    isMembersOnlyText, isAiBadgeText
+    isMembersOnlyText, isAiBadgeText, isLiveBadgeText
   };
 })();

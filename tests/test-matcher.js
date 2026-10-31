@@ -59,4 +59,22 @@ for (const text of [
 ]) {
   assert.strictEqual(m.isAiBadgeText(text), false, 'not an ai badge: ' + text);
 }
+/* LIVE-Badge wie auf youtube.com/results?search_query=live (31.10.2026):
+   Klassennamen sind sprachunabhängig, der sichtbare Text ist es nicht. */
+for (const text of [
+  'LIVE', 'live', 'Live now', 'Now live', 'Jetzt live',
+  'В ЭФИРЕ', 'в эфире', 'Прямой эфир', 'Прямая трансляция', 'Трансляция',
+  'НАЖИВО', 'Прямий ефір', 'Пряма трансляція', 'Трансляція',
+  'En direct', 'En vivo', 'Ao vivo', 'In diretta', 'Na żywo', 'Canlı',
+  'ライブ', '直播'
+]) {
+  assert.strictEqual(m.isLiveBadgeText(text), true, 'live badge: ' + text);
+}
+/* Gegenproben: Titelwörter und andere Badges dürfen nicht zählen. */
+for (const text of [
+  'Live news', 'LIVE: SpongeBob', 'New', '4K', 'Members only',
+  'AI', 'KI', 'Verified', '', null
+]) {
+  assert.strictEqual(m.isLiveBadgeText(text), false, 'not a live badge: ' + text);
+}
 console.log('matcher tests: OK');

@@ -3,6 +3,19 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Hinzugefügt
+- **LIVE-Streams ausblenden.** Neues optionales Häkchen „LIVE-Streams
+  ausblenden (Badge „LIVE“)“ im Popup. Karten mit aktivem LIVE-Badge
+  verschwinden lokal aus Feed, Suche und Empfehlungen, ohne
+  „Kein Interesse“-Klick. Erkannt werden der aktuelle Klassenname
+  `.ytBadgeShapeLive` und ältere Badge-Varianten; der Textabgleich deckt die
+  lokalisierten Beschriftungen „LIVE“, „В ЭФИРЕ“ und „НАЖИВО“ ab. Der Filter
+  ist standardmäßig aus, blockiert keine bereits geöffnete Live-Seite und
+  betrifft keine Premieren oder geplanten Streams ohne LIVE-Badge.
+- Kontrollbilder nennen den Grund `live` im Dateinamen.
+
 ## [1.10.0] — 2026-10-27
 
 ### Geändert

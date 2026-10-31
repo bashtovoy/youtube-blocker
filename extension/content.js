@@ -65,6 +65,7 @@
     /* Erzwungene Videoqualität: Default 1080p, nur auf watch/live angewendet. */
     videoQuality: 'hd1080',
     hideMembersOnly: false,
+    hideLiveStreams: false,
     hideAiGenerated: true,
     /* Kanalweite KI-Markierung: standardmäßig aus, nur auf Basis offizieller Befunde. */
     aiChannelMode: 'off',
@@ -154,6 +155,7 @@
        Textvarianten nur visuell aktiv sein. */
     return state.keywords.length > 0 || state.imageKeywords.length > 0 ||
       state.settings.hideMembersOnly ||
+      state.settings.hideLiveStreams ||
       state.settings.hideAiGenerated || state.settings.hidePromoted ||
       state.settings.faceMode !== 'off';
   }
@@ -173,6 +175,20 @@
     '.yt-badge-shape__text',
     '.badge-style-type-members-only'
   ].join(', ');
+  /* LIVE-Streams: Der Klassenname bleibt sprachunabhängig, der sichtbare Text
+     nicht („LIVE“ / „В ЭФИРЕ“ / „НАЖИВО“). Deshalb zuerst die stabilen
+     Klassen und Attribute prüfen; der Textabgleich in badgeFieldHit ist nur
+     der Fallback für ältere Layouts. `ytd-thumbnail[is-live-video]` ist die
+     Markierung der aktuellen Suchergebnis-Karten. */
+  const LIVE_BADGE_SELECTOR = [
+    '.ytBadgeShapeLive',
+    '.badge-style-type-live-now',
+    '.badge-style-type-live-now-alternate',
+    '.badge-shape-wiz--thumbnail-live',
+    '.badge-shape-wiz--live',
+    'ytd-thumbnail[is-live-video]',
+    'ytd-thumbnail-overlay-time-status-renderer[overlay-style="LIVE"]'
+  ].join(', ');
   /* Badge-Felder einzeln prüfen: „Members“ ist ein Teilstring-Muster, der
      KI-Token zählt dagegen nur als ganzes Feld — zusammengeklebt wäre
      „AI AI: Content was made with AI“ kein Token mehr. */
@@ -186,12 +202,16 @@
       if (!f) continue;
       if (state.settings.hideMembersOnly && window.YB.matcher.isMembersOnlyText(f)) return 'members-only';
       if (state.settings.hideAiGenerated && window.YB.matcher.isAiBadgeText(f)) return 'ai-generated';
+      if (state.settings.hideLiveStreams && window.YB.matcher.isLiveBadgeText(f)) return 'live';
     }
     return null;
   }
 
   function matchBadge(v) {
-    if ((!state.settings.hideMembersOnly && !state.settings.hideAiGenerated) || !v.item) return null;
+    const badgeChecks = state.settings.hideMembersOnly ||
+      state.settings.hideLiveStreams || state.settings.hideAiGenerated;
+    if (!badgeChecks || !v.item) return null;
+    if (state.settings.hideLiveStreams && v.item.querySelector(LIVE_BADGE_SELECTOR)) return 'live';
     for (const b of v.item.querySelectorAll(BADGE_SELECTOR)) {
       const hit = badgeFieldHit(b);
       if (hit) return hit;
@@ -1334,7 +1354,7 @@
         /* Neu gerenderter Knoten ohne Treffer: Badge kann jetzt — oder später —
            vorhanden sein. Prüfen und ggf. vormerken, sonst bleibt genau diese
            Karte dauerhaft sichtbar (früher `return` ohne Badge-Test). */
-        if (!reason && (state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted)) {
+        if (!reason && (state.settings.hideMembersOnly || state.settings.hideLiveStreams || state.settings.hideAiGenerated || state.settings.hidePromoted)) {
           const lateHit = matchBadge(current);
           if (lateHit) {
             state.processed.set(key, lateHit);
@@ -1443,7 +1463,7 @@
       notePromoSuspect(current, promo);
       /* YouTube hängt Badges teils erst nach dem ersten Rendern an. Karte
          vormerken und in scanNow erneut auf Badges prüfen. */
-      if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && current.item) state.badgeWatched.add(current.item);
+      if ((state.settings.hideMembersOnly || state.settings.hideLiveStreams || state.settings.hideAiGenerated || state.settings.hidePromoted) && current.item) state.badgeWatched.add(current.item);
     } finally {
       if (claimedKey) state.inFlight.delete(claimedKey);
       if (state.io && current.item) state.io.unobserve(current.item);
@@ -1642,7 +1662,7 @@
         /* Spät gerenderter Badge: Die Karte wurde bereits als „kein Treffer“
            verbucht, YouTube liefert den Badge aber erst danach nach. Nur
            vorgemerkte Karten erneut prüfen — billig, kein zweites OCR/Semantik. */
-        if ((state.settings.hideMembersOnly || state.settings.hideAiGenerated || state.settings.hidePromoted) && state.badgeWatched.has(item)) {
+        if ((state.settings.hideMembersOnly || state.settings.hideLiveStreams || state.settings.hideAiGenerated || state.settings.hidePromoted) && state.badgeWatched.has(item)) {
           const hit = matchBadge({ item });
           if (hit) {
             state.badgeWatched.delete(item);
@@ -1795,6 +1815,7 @@
       enabled: state.settings.enabled,
       mode: state.settings.mode,
       hideMembersOnly: state.settings.hideMembersOnly,
+      hideLiveStreams: state.settings.hideLiveStreams,
       hideAiGenerated: state.settings.hideAiGenerated,
       aiChannelMode: state.settings.aiChannelMode,
       aiChannels: Object.keys(state.aiChannels).length,

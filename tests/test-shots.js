@@ -20,6 +20,8 @@ assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'ai-generated'),
   'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_ai-generated.jpg');
 assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'members-only'),
   'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_members-only.jpg');
+assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'live'),
+  'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_live.jpg');
 assert.strictEqual(s.fileName(d, 'quzTROdLmU4', 'promo'),
   'YouTube Blocker/2026-10-20/163015_quzTROdLmU4_promo.jpg');
 assert.strictEqual(s.fileName(new Date(2026, 0, 2, 3, 4, 5), '', 'promo'),

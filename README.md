@@ -80,31 +80,37 @@ Bestätigung nach. Mindestversion: Chrome 116.
    Schlüsselwort“).
 3. Bei Bedarf **„Members only“ ausblenden** aktivieren — Videos mit
    Mitglieder-Badge werden dann unabhängig von der Liste versteckt.
-4. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv und nutzt ausschließlich
+4. Optional **„LIVE-Streams ausblenden“** aktivieren — Karten mit dem
+   LIVE-Badge verschwinden lokal aus Feed, Suche und Empfehlungen, ohne
+   „Kein Interesse“-Klick. Erkannt werden die aktuellen YouTube-Badges
+   (`.ytBadgeShapeLive`) und ältere Varianten; der Text darf lokalisiert sein
+   („LIVE“, „В ЭФИРЕ“, „НАЖИВО“). Eine bereits geöffnete Live-Seite wird nicht
+   blockiert, und geplante Premieren/Streams ohne LIVE-Badge bleiben sichtbar.
+5. **„KI-Inhalte ausblenden“** ist standardmäßig aktiv und nutzt ausschließlich
    die offizielle YouTube-Kennzeichnung („AI“/„KI“/„ИИ“/„ШІ“). YouTube zeigt
    sie häufig nur in den Metadaten der Videoseite, nicht auf der Feed-Karte.
    Beim Öffnen eines so gekennzeichneten Videos blockiert die Erweiterung die
    Wiedergabe und merkt sich die Video-Kennung lokal; Karten dieses Videos
    verschwinden danach auch ohne sichtbaren Badge aus Feed und Suche. Nicht
    gekennzeichnete Videos werden nicht heuristisch als KI eingestuft.
-5. **„Werbekarten ‚YouTube empfiehlt‘ ausblenden“** ist ebenfalls standardmäßig
+6. **„Werbekarten ‚YouTube empfiehlt‘ ausblenden“** ist ebenfalls standardmäßig
    aktiv: YouTube-eigene Werbe-/Empfehlungskarten („YouTube empfiehlt“,
    „Sponsored“, „Содержит платную рекламу“, CTA + „0 грн“ u. a.) verschwinden
    lokal, ohne „Kein Interesse“-Klick. Die Regeln liegen als Daten in
    `extension/promo-rules.js`; unter **„Diagnose der Werbeformate“** zeigt das
    Popup einen lokalen Bericht unbekannter Verdachtsfälle zum Kopieren.
-6. Für **Gesichter im Vorschaubild** zunächst **„Nur markieren“** wählen und
+7. Für **Gesichter im Vorschaubild** zunächst **„Nur markieren“** wählen und
    die Treffer mit dem 😱-Badge prüfen. Erst danach **„Ausblenden“** aktivieren
    (siehe eigener Abschnitt unten).
-7. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
+8. Aktion wählen („Kein Interesse“ oder „Nur ausblenden“) — die Einstellungen
    werden automatisch gespeichert (Auto-Speichern mit kurzem Debounce) und
    sofort auf alle YouTube-Tabs angewendet.
-8. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
+9. YouTube-Tabs aktualisieren. Danach arbeitet die Erweiterung von selbst: Sie
    scannt die Vorschläge (Startseite, Suche, Abos, Seitenleiste, Empfehlungen)
    über einen MutationObserver.
-9. Optional unter **„Videoqualität“** eine feste Stufe wählen (Default
-   **1080p**). Die Erweiterung verhindert damit, dass YouTube bei schwacher
-   Verbindung automatisch herunterschaltet (siehe eigener Abschnitt unten).
+10. Optional unter **„Videoqualität“** eine feste Stufe wählen (Default
+    **1080p**). Die Erweiterung verhindert damit, dass YouTube bei schwacher
+    Verbindung automatisch herunterschaltet (siehe eigener Abschnitt unten).
 
 Die Liste lässt sich als JSON exportieren; der Import öffnet einen eigenen Tab
 (im Firefox-Popup würde der Datei-Dialog das Popup sofort schließen).
@@ -595,7 +601,7 @@ extension/
 
 ```bash
 node --check extension/*.js      # Syntax
-node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erkennung (Members/KI)
+node tests/test-matcher.js       # Modultest des Text-Matchers und der Badge-Erkennung (Members/LIVE/KI)
 node tests/test-exceptions.js    # Ausnahmen pro Wort, Semantik-Filter
 node tests/test-promo.js         # Werbekarten: Signale, Schwelle, externe Ziele, Diagnose
 node tests/test-margin.js        # Kontrastive Margin-Entscheidung (Semantik)
