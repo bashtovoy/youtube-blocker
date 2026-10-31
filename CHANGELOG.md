@@ -3,7 +3,7 @@
 Alle bedeutenden Änderungen des Projekts sind hier dokumentiert. Format — [Keep a Changelog](https://keepachangelog.com/),
 Versionierung — [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.11.0] — 2026-10-31
 
 ### Hinzugefügt
 - **LIVE-Streams ausblenden.** Neues optionales Häkchen „LIVE-Streams
@@ -15,6 +15,10 @@ Versionierung — [Semantic Versioning](https://semver.org/).
   ist standardmäßig aus, blockiert keine bereits geöffnete Live-Seite und
   betrifft keine Premieren oder geplanten Streams ohne LIVE-Badge.
 - Kontrollbilder nennen den Grund `live` im Dateinamen.
+
+### Tests
+- `test-matcher.js` deckt die LIVE-Badge-Texte ab, `test-shots.js` den Grund
+  `live` im Dateinamen; `test-chrome-manifest.js` pinnt Version 1.11.0.
 
 ## [1.10.0] — 2026-10-27
 
